@@ -13,6 +13,7 @@ public final class Timeline {
         this.events=events.stream().sorted(Comparator.comparingLong(Event::second).thenComparingInt(Event::order).thenComparing(Event::id)).toList();
         if (this.events.stream().map(Event::id).distinct().count()!=this.events.size()) throw new IllegalArgumentException("duplicate event ID");
     }
+    public Optional<Event> peek() { return next < events.size() ? Optional.of(events.get(next)) : Optional.empty(); }
     public List<Event> poll(long elapsedSeconds) {
         if (elapsedSeconds<0) throw new IllegalArgumentException();
         var due=new ArrayList<Event>();

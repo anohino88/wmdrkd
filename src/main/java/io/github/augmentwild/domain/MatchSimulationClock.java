@@ -14,12 +14,16 @@ public final class MatchSimulationClock {
     private final List<String> emitted = new ArrayList<>();
     private long selectionEnd;
     private boolean selecting;
+    private boolean manualPause;
+    private long virtualNow;
+    private long lastWall;
     public MatchSimulationClock(GameSession session, MatchRules rules, LongSupplier wall, long selectionSeconds,
                                 long normalSupplySecond, long premiumSupplySecond) {
         this.session=Objects.requireNonNull(session); this.wall=Objects.requireNonNull(wall);
         if (selectionSeconds<0 || rules.gatheringSeconds()%rules.selectionInterval()!=0) throw new IllegalArgumentException();
         selectionNanos=Math.multiplyExact(selectionSeconds,1_000_000_000L);
-        clock=new MatchClock(wall);
+        lastWall=wall.getAsLong();
+        clock=new MatchClock(() -> virtualNow);
         var events=new ArrayList<Timeline.Event>();
         for (long time=rules.selectionInterval(), round=1; time<=rules.gatheringSeconds(); time=Math.addExact(time,rules.selectionInterval()),round++) {
             events.add(new Timeline.Event("selection-"+round,time,0,true));
@@ -33,19 +37,39 @@ public final class MatchSimulationClock {
     }
     public long elapsedSeconds() { return clock.elapsed().toSeconds(); }
     public List<String> events() { return List.copyOf(emitted); }
+    public boolean isPaused() { return manualPause || selecting; }
+    public void pause() { tick(); manualPause=true; }
+    public void resume() { tick(); manualPause=false; }
+    /** Overshoot at a selection boundary is discarded: selection starts when observed. */
     public void tick() {
-        if (session.state()==MatchState.ENDING || session.state()==MatchState.CLEANUP) return;
+        long now=wall.getAsLong();
+        long delta=Math.subtractExact(now,lastWall);
+        if (delta<0) throw new IllegalStateException("Clock moved backwards");
+        lastWall=now;
+        if (session.state()==MatchState.ENDING || session.state()==MatchState.CLEANUP) { selecting=false; manualPause=false; return; }
         if (selecting) {
-            if (wall.getAsLong()<selectionEnd) return;
-            selecting=false; session.transition(MatchState.GATHERING); clock.resume();
+            if (now<selectionEnd) return;
+            selecting=false; session.transition(MatchState.GATHERING);
+            // Selection time and late observation do not advance match time.
+            delta=0;
         }
-        for (var e : timeline.poll(elapsedSeconds())) {
-            emitted.add(e.id());
-            if (e.blocks()) {
-                session.transition(MatchState.AUGMENT_SELECTION); clock.pause(); selecting=true;
-                selectionEnd=Math.addExact(wall.getAsLong(),selectionNanos);
-            } else if (e.id().equals("pvp")) session.transition(MatchState.PVP);
-            else if (e.id().equals("sudden-death")) session.transition(MatchState.SUDDEN_DEATH);
+        if (manualPause) return;
+        long target=Math.addExact(virtualNow,delta);
+        while (timeline.peek().isPresent()) {
+            var next=timeline.peek().orElseThrow();
+            long boundary=Math.multiplyExact(next.second(),1_000_000_000L);
+            if (boundary>target) break;
+            virtualNow=Math.max(virtualNow,boundary);
+            for (var e : timeline.poll(next.second())) {
+                emitted.add(e.id());
+                if (e.blocks()) {
+                    session.transition(MatchState.AUGMENT_SELECTION); selecting=true;
+                    selectionEnd=Math.addExact(now,selectionNanos);
+                    return;
+                } else if (e.id().equals("pvp")) session.transition(MatchState.PVP);
+                else if (e.id().equals("sudden-death")) session.transition(MatchState.SUDDEN_DEATH);
+            }
         }
+        virtualNow=target;
     }
 }

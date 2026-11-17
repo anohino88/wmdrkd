@@ -26,6 +26,16 @@ public class MatchSimulation {
   var result=s.resolveTick(List.of(c,d),21_000_000_000L); require(result.outcome()==GameSession.Outcome.DRAW,"simultaneous draw");
   require(s.resolveTick(List.of(a),22_000_000_000L).equals(result),"ending immutable");
   var win=create(a,b); win.transition(MatchState.PVP); win.death(b,0); win.respawn(b,20_000_000_000L); require(win.resolveTick(List.of(b),21_000_000_000L).winner().equals(a),"winner");
-  System.out.println("2 simulation scenarios passed");
+  var delayed=create(a,b); var w=new AtomicLong(); var sc=new MatchSimulationClock(delayed,rules(),w::get,15,900,1500);
+  advance(w,330); sc.tick(); require(sc.elapsedSeconds()==300,"late tick freezes at selection");
+  sc.pause(); advance(w,15); sc.tick(); require(sc.isPaused() && sc.elapsedSeconds()==300,"manual pause survives selection");
+  advance(w,30); sc.tick(); require(sc.elapsedSeconds()==300,"manual freeze"); sc.resume(); advance(w,10); sc.tick(); require(sc.elapsedSeconds()==310,"manual resume");
+  require(sc.events().stream().filter(x->x.equals("selection-1")).count()==1,"late event once");
+  var inv=create(a,b); var match=new UUID(7,7);
+  var source=new Tracker.Player(a,"a",match,"w",null,Tracker.Status.ACTIVE,0,0,0);
+  var target=new Tracker.Player(b,"b",match,"w",null,Tracker.Status.ACTIVE,1,0,0);
+  require(inv.locate(a,List.of(source,target)).isPresent(),"session locate"); inv.death(b,0);
+  require(inv.locate(a,List.of(source,target)).isEmpty(),"respawning excluded");
+  System.out.println("4 simulation scenarios passed");
  }
 }
