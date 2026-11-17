@@ -14,6 +14,21 @@
 - 따라서 26.3 출시 여부, Paper 빌드, 실제 Maven 좌표와 버전, 요구 JDK, api-version 및 사용할 API의 존재를 확인하지 못했다. 검증 가능한 최신 지원 버전도 확인하지 못했다.
 - 저장소: 빈 Git 저장소, 현재 브랜치 `work`, 원격 `origin` 연결됨. GitHub API 접근도 Forbidden.
 
+## 2026-11-17 재검증 및 네트워크 허용 목록
+
+아래 HTTPS GET 요청은 모두 프록시의 CONNECT 단계에서 HTTP 403, curl 종료 코드 56을 반환했다. 원본 서버의 HTTP 응답은 받지 못했다 (`http_code=000`). 따라서 버전 부재 또는 미지원으로 판단할 수 없다.
+
+| 필요한 허용 도메인 | 차단된 요청 | 검증 목적 |
+| --- | --- | --- |
+| `piston-meta.mojang.com:443` | `/mc/game/version_manifest_v2.json` | Minecraft 공식 출시 목록 및 버전별 메타데이터 확인 |
+| `fill.papermc.io:443` | `/v3/projects/paper` | Paper 제공 버전과 빌드 확인 |
+| `repo.papermc.io:443` | `/repository/maven-public/io/papermc/paper/paper-api/maven-metadata.xml` | Paper API Maven 버전 및 의존성 확인 |
+| `docs.papermc.io:443` | `/paper/getting-started/`, `/paper/dev/project-setup/`, `/paper/dev/plugin-yml/` | Java 요구 사항, 프로젝트 설정 및 플러그인 메타데이터 확인 |
+
+네 도메인으로의 HTTPS CONNECT와 필요한 GET 및 공식 리디렉션 대상 접근을 허용해야 재검증할 수 있다. 버전별 메타데이터, 실제 Maven 아티팩트와 후속 문서가 다른 호스트를 가리키면 해당 호스트도 확인 후 추가 허용이 필요하다. Gradle 배포본과 빌드 의존성에 필요한 네트워크 접근은 PHASE 1에서 별도로 확인한다. 아직 실제 리디렉션 대상은 확인하지 못했다.
+
+이번 재검증에서도 공식 출시 여부, Paper 지원, Java 요구 버전, 정확한 Paper API 의존성, `api-version`, API 존재 및 최신 지원 버전을 확인하지 못했다. PHASE 1은 시작하지 않았다.
+
 ## 완료
 
 - 저장소 및 브랜치 확인, 공식 출처 접근 시도, 작업 규칙 기록.
