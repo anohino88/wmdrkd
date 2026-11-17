@@ -53,3 +53,29 @@ Codex 내부에서 위 내용, 실제 Maven 아티팩트, 안정 빌드 번호, 
 2. PHASE 1 설정 로딩·검증, 명령, CI를 완성한다. 현재 설정 객체는 YAML에 연결되지 않았고 관리자 수정이나 transactional reload도 없다.
 3. 상태 머신을 실제 경기 수명주기와 연결하고 clock, 플레이어 상태, snapshot 및 cleanup을 구현한다.
 4. 바다 없는 경기장 검색, 안전 스폰, 공유 월드 보호, 20초 리스폰, 관리자 수치 설정, 증강 엔진 및 전체 명세의 게임 기능을 단계별로 구현하고 테스트한다. 현재 모두 미구현이다.
+
+## 2026-11-17 빌드 경로 재검증
+
+시작 HEAD `5988792`, 브랜치 `work`, 작업 트리 clean. 실제 저장소에 wrapper가 있어 AGENTS.md의 기존 'wrapper 없음' 문구를 수정했다. 이 절은 위의 이전 실행 기록보다 최신이다.
+
+- 기본 `java --version`: OpenJDK 21.0.13; 기본 `javac --version`: 명령 없음. Oracle 공식 다운로드에서 Java 25 JDK를 임시 작업 공간에 확보했고 `javac 25.0.5.0.3` 확인. JDK는 저장소에 포함하지 않았다.
+- 기본 `./gradlew --version` 및 `./gradlew clean build --stacktrace`: 기본 Gradle 홈의 lock 디렉터리를 만들 수 없어 실패. 쓰기 가능한 별도 Gradle 홈에서는 wrapper의 직접 다운로드가 `UnknownHostException`으로 실패했다.
+- 공식 Gradle 9.1.0 배포본 SHA-256을 공식 `.sha256`에서 확인했고, 이전에 curl로 받은 배포본과 일치했다. 체크섬을 wrapper 설정에 추가했다. wrapper JAR의 SHA-256도 공식 `.sha256`과 일치했다. 배포본을 별도 캐시에 준비한 뒤 `./gradlew --version`은 성공했다.
+- Java 25, 프록시 설정 및 캐시된 wrapper로 `./gradlew clean build --stacktrace` 재시도: `compileJava`의 의존성 해석 실패. Paper Maven이 403, Maven Central은 프록시 인증서에 대한 Java PKIX 오류. Paper API는 resolve되지 않았고 plugin 컴파일·JUnit·JAR 생성은 이루어지지 않았다. 버전 미지원이라는 증거는 아니다.
+- Paper 비의존 도메인 클래스는 Java 25 `javac`로 직접 컴파일 성공. 새 MatchClock의 일시정지 및 역행 시간 거부를 별도의 임시 Java 실행 코드로 확인했다. JUnit은 실행하지 않았다. MatchClock은 아직 서버 이벤트와 연결되지 않았다.
+- CI는 Java 25, 버전 출력, stacktrace 빌드, 성공 시 JAR 업로드로 구성했다. GitHub Actions 조회는 API Forbidden으로 실패했다. **CI configured, not verified**. JDK setup, wrapper, 의존성, 컴파일, 테스트 및 JAR의 CI 결과는 모두 미확인이다.
+
+| Feature | Implemented | Compiled | Tested | Runtime Verified | Notes |
+| --- | --- | --- | --- | --- | --- |
+| Plugin bootstrap | yes | no | no | no | Paper 의존성 해석 실패 |
+| /aw status | yes | no | no | no | 등록과 동작 미검증 |
+| Match state machine | partial | yes | no | no | Java 25 직접 컴파일만; JUnit 미실행 |
+| Match clock | partial | yes | partial | no | 독립 시계; 임시 실행 코드 확인, JUnit 및 서버 통합 미실행 |
+| Config system | partial | yes | no | no | 값 객체만 직접 컴파일, YAML 연결 및 관리자 설정 없음 |
+| Arena finder | no | no | no | no | 바다 검사 및 안전 스폰 포함 미구현 |
+| Gathering respawn | no | no | no | no | 인벤토리 및 XP 보존 포함 미구현 |
+| Player tracker | no | no | no | no | 미구현 |
+| Augment engine | partial | yes | no | no | 빈 레지스트리만 직접 컴파일; 선택 풀 비어 있음 |
+| Supply, border, victory | no | no | no | no | 미구현 |
+
+PHASE 1은 미완료다. 다음에는 Paper Maven 접근과 Java 프록시 신뢰 설정을 해결하고 실제 `./gradlew clean build`, JUnit, JAR 및 Paper 26.3 runtime을 확인한다. 동적 Paper 버전은 공식 안정 빌드를 확인한 뒤 고정한다. 빌드 성공 전 PHASE 2의 Paper 연동을 시작하지 않는다.

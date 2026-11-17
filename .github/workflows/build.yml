@@ -1,5 +1,9 @@
 name: build
-on: [push, pull_request, workflow_dispatch]
+on:
+  push:
+    branches: [work]
+  pull_request:
+  workflow_dispatch:
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -10,4 +14,10 @@ jobs:
           distribution: temurin
           java-version: '25'
       - uses: gradle/actions/setup-gradle@v4
-      - run: ./gradlew clean build
+      - run: java --version
+      - run: ./gradlew clean build --stacktrace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: augmentwild-jar
+          path: build/libs/*.jar
+          if-no-files-found: error

@@ -2,7 +2,7 @@
 
 - 첨부된 최종 통합 개발 명세를 기준으로 `PROGRESS.md`를 먼저 읽고, 작업 결과와 차단 사유를 갱신한다.
 - 대상은 Minecraft/Paper 26.3, Java 25다. 사용자가 외부에서 확인한 공식 자료에 따른 설정이며, 이 환경에서 의존성 및 API를 직접 검증하지 못했다. 네트워크 복구 후 Paper 빌드를 확인해 고정한다.
-- 버전 검증 후 Gradle Kotlin DSL과 wrapper를 사용한다. 단계마다 `./gradlew clean build`, 테스트, `git diff --check`를 실행하고 실패를 해결한다. 현재 wrapper는 없다.
+- 버전 검증 후 Gradle Kotlin DSL과 wrapper를 사용한다. 단계마다 `./gradlew clean build`, 테스트, `git diff --check`를 실행하고 실패를 해결한다. Gradle wrapper는 저장소에 포함되어 있다.
 - 기존 브랜치를 유지하고 불필요한 브랜치를 만들지 않는다. 검증된 단계마다 의미 있는 커밋을 만든다.
 - 게임 수치를 하드코딩하지 않는다. 미구현 증강은 `implemented: false`로 표시하고 선택 풀에서 제외한다.
 - 모든 경기 상태 전환은 단일 상태 머신을 거치며 중복 사망과 승리 판정 경합을 방지한다. 경기 이벤트는 중앙 MatchClock에서 결정적으로 처리한다.
