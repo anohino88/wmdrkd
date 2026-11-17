@@ -1,0 +1,4 @@
+schema-version: 1
+# 전체 목록과 구현 계획은 docs/specification-ko.md 참조.
+# 구현 및 검증 전에는 선택 풀에 등록하지 않는다.
+augments: {}

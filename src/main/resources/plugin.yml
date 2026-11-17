@@ -1,0 +1,15 @@
+name: AugmentWild
+version: '0.1.0-SNAPSHOT'
+main: io.github.augmentwild.AugmentWildPlugin
+api-version: '26.3'
+commands:
+  aw:
+    description: 증강 야생 명령어
+    usage: /aw status
+permissions:
+  augmentwild.play:
+    default: true
+  augmentwild.track:
+    default: true
+  augmentwild.admin:
+    default: op

@@ -1,0 +1,23 @@
+schema-version: 1
+game:
+  min-players: 2
+  max-players: 16
+  gathering-seconds: 1800
+  selection-interval-seconds: 300
+  selection-duration-seconds: 15
+  pause-match-clock-during-selection: true
+  pvp-grace-seconds: 20
+arena:
+  mode: DEDICATED_WORLD
+  world: augment_world
+  width: 1000
+  height: 1000
+  biome:
+    ocean-policy: ZERO
+  search:
+    max-candidate-attempts: 80
+    max-search-seconds: 120
+respawn:
+  delay-seconds: 20
+combat:
+  lives: 2

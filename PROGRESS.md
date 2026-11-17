@@ -2,52 +2,54 @@
 
 기준일: 2026-11-17 (Asia/Seoul)
 
-## 현재 단계: PHASE 0 — 사용자 제공 공식 근거로 완료; PHASE 1 진행 중
+## 현재 단계
 
-사용자가 외부 환경에서 공식 자료를 확인하고 Minecraft/Paper 26.3, Java 25를 지정했다. 내부에서는 네트워크 제한으로 사실과 API를 독립 검증하지 못했다. 403은 미지원의 증거가 아니다.
+PHASE 0은 사용자 제공 공식 자료에 근거해 대상 플랫폼을 확정했다. PHASE 1은 기본 파일 작성 중이며 **빌드 및 서버 검증이 실패 또는 미실행 상태이므로 완료되지 않았다**. 현재 경기를 플레이할 수 없다.
 
-사용자 제공 근거: [Minecraft 26.3](https://www.minecraft.net/ko-kr/article/minecraft-java-edition-26-3), [Paper 26.3](https://papermc.io/news/26-3/), [Java 요구 사항](https://docs.papermc.io/paper/getting-started/), [프로젝트 설정](https://docs.papermc.io/paper/dev/project-setup/), [plugin.yml](https://docs.papermc.io/paper/dev/plugin-yml/). 제공된 설정은 Java 25, `io.papermc.paper:paper-api:26.3.build.+`, `api-version: '26.3'`이다. 동적 버전은 네트워크 복구 후 실제 안정 빌드로 고정한다.
+## 외부 확인과 내부 검증의 구분
 
-## 검증 시도 및 근거
+사용자는 외부 환경에서 다음 공식 자료를 확인했다고 제공했다. Minecraft/Paper 26.3, Java 25, `io.papermc.paper:paper-api:26.3.build.+`, `api-version: '26.3'`을 이 지시에 따라 적용했다.
 
-- Mojang 공식 버전 목록: https://piston-meta.mojang.com/mc/game/version_manifest_v2.json — 연결 시 프록시 HTTP 403.
-- Paper 공식 다운로드 API: https://fill.papermc.io/v3/projects/paper — CONNECT 프록시 HTTP 403.
-- Paper 공식 Maven 메타데이터: https://repo.papermc.io/repository/maven-public/io/papermc/paper/paper-api/maven-metadata.xml — CONNECT 프록시 HTTP 403.
-- 따라서 26.3 출시 여부, Paper 빌드, 실제 Maven 좌표와 버전, 요구 JDK, api-version 및 사용할 API의 존재를 확인하지 못했다. 검증 가능한 최신 지원 버전도 확인하지 못했다.
-- 저장소: 빈 Git 저장소, 현재 브랜치 `work`, 원격 `origin` 연결됨. GitHub API 접근도 Forbidden.
+- [Minecraft 26.3](https://www.minecraft.net/ko-kr/article/minecraft-java-edition-26-3)
+- [Paper 26.3](https://papermc.io/news/26-3/)
+- [Java 요구 사항](https://docs.papermc.io/paper/getting-started/)
+- [프로젝트 설정](https://docs.papermc.io/paper/dev/project-setup/)
+- [plugin.yml](https://docs.papermc.io/paper/dev/plugin-yml/)
 
-## 2026-11-17 재검증 및 네트워크 허용 목록
+Codex 내부에서 위 내용, 실제 Maven 아티팩트, 안정 빌드 번호, Paper 세부 API 및 plugin.yml 호환성은 독립적으로 검증하지 못했다. 동적 의존성은 접근 복구 후 실제 안정 빌드로 고정해야 한다.
 
-아래 HTTPS GET 요청은 모두 프록시의 CONNECT 단계에서 HTTP 403, curl 종료 코드 56을 반환했다. 원본 서버의 HTTP 응답은 받지 못했다 (`http_code=000`). 따라서 버전 부재 또는 미지원으로 판단할 수 없다.
+## 네트워크
 
-| 필요한 허용 도메인 | 차단된 요청 | 검증 목적 |
-| --- | --- | --- |
-| `piston-meta.mojang.com:443` | `/mc/game/version_manifest_v2.json` | Minecraft 공식 출시 목록 및 버전별 메타데이터 확인 |
-| `fill.papermc.io:443` | `/v3/projects/paper` | Paper 제공 버전과 빌드 확인 |
-| `repo.papermc.io:443` | `/repository/maven-public/io/papermc/paper/paper-api/maven-metadata.xml` | Paper API Maven 버전 및 의존성 확인 |
-| `docs.papermc.io:443` | `/paper/getting-started/`, `/paper/dev/project-setup/`, `/paper/dev/plugin-yml/` | Java 요구 사항, 프로젝트 설정 및 플러그인 메타데이터 확인 |
+이전 검증의 HTTPS GET은 다음 호스트에 대한 프록시 CONNECT 단계에서 403, curl 종료 코드 56, 원본 HTTP 코드 000이었다. 버전 미지원의 증거가 아니다.
 
-네 도메인으로의 HTTPS CONNECT와 필요한 GET 및 공식 리디렉션 대상 접근을 허용해야 재검증할 수 있다. 버전별 메타데이터, 실제 Maven 아티팩트와 후속 문서가 다른 호스트를 가리키면 해당 호스트도 확인 후 추가 허용이 필요하다. Gradle 배포본과 빌드 의존성에 필요한 네트워크 접근은 PHASE 1에서 별도로 확인한다. 아직 실제 리디렉션 대상은 확인하지 못했다.
+| 허용 필요 도메인 | 요청 |
+| --- | --- |
+| `piston-meta.mojang.com:443` | `/mc/game/version_manifest_v2.json` |
+| `fill.papermc.io:443` | `/v3/projects/paper` |
+| `repo.papermc.io:443` | `/repository/maven-public/io/papermc/paper/paper-api/maven-metadata.xml` |
+| `docs.papermc.io:443` | `/paper/getting-started/`, `/paper/dev/project-setup/`, `/paper/dev/plugin-yml/` |
 
-이번 재검증에서도 공식 출시 여부, Paper 지원, Java 요구 버전, 정확한 Paper API 의존성, `api-version`, API 존재 및 최신 지원 버전을 확인하지 못했다. PHASE 1은 시작하지 않았다.
+이번 작업에서 Paper Maven 메타데이터 재요청도 CONNECT 403이었다. 공식 리디렉션 대상이나 추가 의존성 호스트에도 접근이 필요할 수 있다. `services.gradle.org` 배포본은 curl로 다운로드했으나 Java wrapper 자체의 DNS 조회는 실패했다. 환경별 프록시 설정도 확인해야 한다.
 
-## 완료
+## 작성한 내용
 
-- 저장소 및 브랜치 확인, 공식 출처 접근 시도, 작업 규칙 기록.
+- Java 25 Gradle Kotlin DSL 설정, Paper API 동적 의존성, 공식 Gradle 9.1.0 배포본으로 생성한 wrapper, plugin.yml, 진입점 및 `/aw status`.
+- 경기 상태 전환 모델, 불변 설정 값 객체, 선택 가능 여부를 구분하는 빈 증강 레지스트리, 상태 전환 JUnit 테스트 초안.
+- 1000×1000, ZERO 바다 정책, 20초 리스폰 등 설정 초안. 아직 게임 로직과 연결되지 않았다.
+- 원본 전체 명세와 증강 목록을 `docs/specification-ko.md`에 보존. 증강은 구현되지 않았고 선택 풀은 비어 있다.
+- GitHub Actions 빌드 설정과 초기 한국어 README.
 
-## 미완료
+## 실제 검증 결과
 
-- PHASE 0의 공식 버전 확인과 빌드 전략 확정. PHASE 1–11 전체 및 게임 기능 전체.
-- 플러그인 코드, Gradle wrapper, CI, 테스트와 서버 실행 파일 없음. 플레이할 수 없음.
+- `gradle wrapper --gradle-version 9.1.0 --no-validate-url`: 성공. 공식 배포본을 curl로 다운로드하여 실행했다. URL의 Gradle 자체 검증은 실패해 비활성화했다.
+- `./gradlew clean build`: 실패. wrapper가 `services.gradle.org` DNS를 조회하지 못했다.
+- 다운로드한 Gradle로 `clean build`: 실패. Java 25 JDK가 없고 toolchain 다운로드 저장소가 구성되지 않았다.
+- `javac` 직접 컴파일: 실행 불가, javac 없음. JUnit 테스트, Paper 서버 기동, GitHub Actions는 실행하지 않았다.
+- `git diff --check`: 커밋 전 별도 확인. 게임 버그와 성능은 아직 평가할 수 없다.
 
-## 검증 상태
+## 미완료 및 다음 작업
 
-- `./gradlew clean build` 및 테스트: 실행 불가 (wrapper와 프로젝트가 아직 없음).
-- 실제 Paper 서버 테스트 및 GitHub Actions: 실행하지 않음.
-- 알려진 게임 버그와 성능 문제: 구현 및 실행 전이므로 평가하지 못함.
-
-## 다음 작업
-
-1. 공식 Mojang, Paper API, Paper Maven 저장소에 접근 가능한 환경에서 위 출처를 다시 조회한다. 공식 문서에서 요구 Java, 플러그인 메타데이터와 필요한 API를 확인하고 근거를 기록한다.
-2. 26.3 지원을 확인하지 못하면 최신 검증 버전과 근거를 기록하고 계속 BLOCKED로 둔다. 명세에 따라 임의로 대체하지 않는다.
-3. 26.3이 검증되면 PHASE 0을 마친 후 명세의 순서대로 bootstrap, 빌드, 테스트 및 커밋을 진행한다.
+1. Java 25 JDK와 Gradle/의존성 네트워크 접근을 마련하고 wrapper 빌드, 테스트 및 실제 Paper 기동을 검증한다. Paper API 메서드, `api-version` 및 선택한 안정 빌드를 직접 확인한다.
+2. PHASE 1 설정 로딩·검증, 명령, CI를 완성한다. 현재 설정 객체는 YAML에 연결되지 않았고 관리자 수정이나 transactional reload도 없다.
+3. 상태 머신을 실제 경기 수명주기와 연결하고 clock, 플레이어 상태, snapshot 및 cleanup을 구현한다.
+4. 바다 없는 경기장 검색, 안전 스폰, 공유 월드 보호, 20초 리스폰, 관리자 수치 설정, 증강 엔진 및 전체 명세의 게임 기능을 단계별로 구현하고 테스트한다. 현재 모두 미구현이다.
