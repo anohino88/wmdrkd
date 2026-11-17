@@ -146,3 +146,9 @@ PHASE_1C_CORE_COMPLETE는 아직 선언하지 않는다. 요청된 시나리오 
 Java 25에서 `scripts/test-domain.sh` 실행: 기존 331개 반복 포함 검사, 기존 시뮬레이션 4개, 통합 4개, 완료 검사 5개와 별도 JVM에서 실행한 A–G 7개 통과. A는 4인 경기 및 단일 우승, B 동시 사망 무승부, C 지연 틱, D 선택 중 리스폰 정지, E 이전 예약 차단, F 중첩 일시정지 및 탈퇴, G 전체 시간표와 자기장 축소 및 서든데스 종료를 확인했다. 시나리오는 순수 Java 모델의 검증이며 실제 Minecraft 효과나 월드 작업을 검증하지 않는다.
 
 요청된 범위의 A–G와 기존 회귀 검사에 한정하여 `PHASE_1C_CORE_COMPLETE = true`. `GRADLE_BUILD_VERIFIED = false`, `JUNIT_VERIFIED = false`, `JAR_CREATED = false` (이번 실행에서 미생성, CI 결과 미확인), `PAPER_RUNTIME_VERIFIED = false`. 전체 플러그인 PHASE 1은 미완료다. 기존 네트워크 차단이 변했다는 증거가 없어 로컬 Gradle 재시도는 하지 않았다. 빌드 검증 후 다음 우선 작업은 실제 Paper 로딩과 `/aw status` 및 서버 스케줄러 연동이다.
+
+## PHASE 2 빌드 경로 확인
+
+시작 HEAD `81b2a6d`, 기존 work를 강제 없이 origin/work에 푸시하고 원격 SHA `81b2a6d879066765e4041daaf8a86a1058344964` 일치를 확인했다. Actions API는 Forbidden으로 실행·로그 확인 불가: CI_NOT_VERIFIED. Paper Maven 메타데이터 요청은 프록시 CONNECT 403, 원본 HTTP 000이므로 이 환경의 Paper 의존성 해석도 차단 상태다. 버전 미지원이나 CI 실패로 해석하지 않는다.
+
+Java 25 독립 도메인 회귀 실행은 기존 331개 검사, 시뮬레이션 4개, 통합 4개, 완료 검사 5개, A–G 7개 모두 통과했다. JUnit, 전체 Gradle 빌드, plugin JAR, Paper 런타임은 이번에 검증하지 않았다. 빌드 가능한 환경이 확보된 경우 Paper 연동을 시작하라는 이번 지시에 따라 검증 불가능한 Paper API 코드는 추가하지 않았다. `/aw join`, admin start/stop, 서버 스케줄러 연결 및 서버 테스트는 미구현이다. 다음은 CI 로그 접근 또는 Paper Maven 허용과 검증된 Java 신뢰 경로 확보 후 전체 빌드 및 서버 실행이다.
