@@ -138,3 +138,11 @@ Java 25 독립 테스트: 기존 331개 반복 포함 검사, 기존 시뮬레�
 PHASE_1C_CORE_COMPLETE는 아직 선언하지 않는다. 요청된 시나리오 A–G 각각의 전체 통합 검증이 아직 없고 실제 추적 비용 계약을 세션·시간표와 함께 검증한 전체 경기 시나리오가 없다. 특히 선택지 제공자와 재접속·탈퇴, 스케줄러의 경기 종료 및 같은 틱 border 처리 등 추가 회귀 검증이 필요하다. 기존 Paper Maven 403 및 PKIX에 변화가 확인되지 않아 로컬 다운로드를 반복하지 않았다.
 
 `00fc7ab`을 origin/work에 푸시했다(원격 브랜치 신규 생성 확인). GitHub Actions API 조회는 Forbidden이므로 실행 및 JAR 결과는 CI_NOT_VERIFIED다. 워크플로는 Java 25, Gradle wrapper 및 Paper API 의존성을 사용하는 clean build와 성공 시 JAR 업로드를 설정한다.
+
+## PHASE 1C A–G 검증 및 CI 상태
+
+시작 `1718da8`, 원격 `refs/heads/work`도 동일 커밋임을 확인했다. GitHub Actions API 조회는 Forbidden이므로 CI_NOT_VERIFIED이며 실행의 성공 또는 실패를 판단하지 않는다. 워크플로는 Java 25, Gradle wrapper, clean build 및 성공 시 JAR 업로드를 설정한다. 실제 JAR과 내부 파일은 확인하지 못했다.
+
+Java 25에서 `scripts/test-domain.sh` 실행: 기존 331개 반복 포함 검사, 기존 시뮬레이션 4개, 통합 4개, 완료 검사 5개와 별도 JVM에서 실행한 A–G 7개 통과. A는 4인 경기 및 단일 우승, B 동시 사망 무승부, C 지연 틱, D 선택 중 리스폰 정지, E 이전 예약 차단, F 중첩 일시정지 및 탈퇴, G 전체 시간표와 자기장 축소 및 서든데스 종료를 확인했다. 시나리오는 순수 Java 모델의 검증이며 실제 Minecraft 효과나 월드 작업을 검증하지 않는다.
+
+요청된 범위의 A–G와 기존 회귀 검사에 한정하여 `PHASE_1C_CORE_COMPLETE = true`. `GRADLE_BUILD_VERIFIED = false`, `JUNIT_VERIFIED = false`, `JAR_CREATED = false` (이번 실행에서 미생성, CI 결과 미확인), `PAPER_RUNTIME_VERIFIED = false`. 전체 플러그인 PHASE 1은 미완료다. 기존 네트워크 차단이 변했다는 증거가 없어 로컬 Gradle 재시도는 하지 않았다. 빌드 검증 후 다음 우선 작업은 실제 Paper 로딩과 `/aw status` 및 서버 스케줄러 연동이다.

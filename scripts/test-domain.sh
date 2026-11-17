@@ -10,3 +10,6 @@ java -cp "$tmp" MatchSimulation
 java -cp "$tmp" IntegrationChecks
 
 java -cp "$tmp" CompletionChecks
+for scenario in A B C D E F G; do
+    java -cp "$tmp" ScenarioChecks "$scenario"
+done
