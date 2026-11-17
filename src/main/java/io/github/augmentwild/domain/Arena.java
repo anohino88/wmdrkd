@@ -24,4 +24,11 @@ public record Arena(double x, double z, double width, double height) {
         if (!Double.isFinite(distance) || distance < 0) throw new IllegalArgumentException();
         return Math.hypot(x-other.x,z-other.z) >= distance;
     }
+    /** Linear interpolation in match seconds; final width/height may differ. */
+    public Arena shrink(long elapsed, long start, long duration, double finalWidth, double finalHeight) {
+        if (elapsed < 0 || start < 0 || duration <= 0 || !Double.isFinite(finalWidth) || !Double.isFinite(finalHeight)
+                || finalWidth <= 0 || finalHeight <= 0 || finalWidth > width || finalHeight > height) throw new IllegalArgumentException();
+        double fraction = elapsed <= start ? 0 : Math.min(1.0, (double)(elapsed-start)/duration);
+        return new Arena(x,z,width+(finalWidth-width)*fraction,height+(finalHeight-height)*fraction);
+    }
 }
