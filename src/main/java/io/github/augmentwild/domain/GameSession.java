@@ -53,6 +53,22 @@ public final class GameSession {
         if (state()==MatchState.ENDING || state()==MatchState.CLEANUP || d==null || now<d.deadline() || !p.connected()) return false;
         deadlines.remove(id); return p.life().respawn();
     }
+    /** Rejects reservations from another match, previous death, or already consumed work. */
+    public boolean respawn(RespawnReservation request, long gameTime) {
+        Objects.requireNonNull(request);
+        var current = deadlines.get(request.playerId());
+        if (!matchId.equals(request.matchId()) || !request.equals(current)) return false;
+        return respawn(request.playerId(), gameTime);
+    }
+    /** Returns due work in deterministic order; disconnected participants remain pending. */
+    public List<UUID> respawnDue(long gameTime) {
+        var due = deadlines.values().stream().filter(r -> r.deadline() <= gameTime)
+                .sorted(Comparator.comparingLong(RespawnReservation::deadline).thenComparing(RespawnReservation::playerId))
+                .toList();
+        var completed = new ArrayList<UUID>();
+        for (var reservation : due) if (respawn(reservation, gameTime)) completed.add(reservation.playerId());
+        return List.copyOf(completed);
+    }
     /** Caller supplies one atomic position snapshot; session eligibility overrides snapshot status. */
     public Optional<Tracker.Result> locate(UUID source, Collection<Tracker.Player> snapshot) {
         var byId = new HashMap<UUID, Tracker.Player>();

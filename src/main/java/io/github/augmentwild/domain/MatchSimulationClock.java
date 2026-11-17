@@ -36,6 +36,10 @@ public final class MatchSimulationClock {
         timeline=new Timeline(events);
     }
     public long elapsedSeconds() { return clock.elapsed().toSeconds(); }
+    public long elapsedNanos() { return clock.elapsed().toNanos(); }
+    /** Advance scheduling before handling player work, so reservations use match time. */
+    public boolean death(UUID player) { tick(); return session.death(player, elapsedNanos()); }
+    public List<UUID> respawnDue() { tick(); return session.respawnDue(elapsedNanos()); }
     public List<String> events() { return List.copyOf(emitted); }
     public boolean isPaused() { return manualPause || selecting; }
     public void pause() { tick(); manualPause=true; }
