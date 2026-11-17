@@ -1,7 +1,7 @@
 # AugmentWild 작업 규칙
 
 - 첨부된 최종 통합 개발 명세를 기준으로 `PROGRESS.md`를 먼저 읽고, 작업 결과와 차단 사유를 갱신한다.
-- 목표는 Minecraft/Paper 26.3이다. 공식 출시 및 Paper 지원, Maven 좌표, Java 요구 버전, api-version과 API 존재를 검증하기 전 구현을 시작하거나 다른 버전으로 대체하지 않는다. Java 25는 예상일 뿐 검증되지 않았다.
+- 대상은 Minecraft/Paper 26.3, Java 25다. 사용자가 외부에서 확인한 공식 자료에 따른 설정이며, 이 환경에서 의존성 및 API를 직접 검증하지 못했다. 네트워크 복구 후 Paper 빌드를 확인해 고정한다.
 - 버전 검증 후 Gradle Kotlin DSL과 wrapper를 사용한다. 단계마다 `./gradlew clean build`, 테스트, `git diff --check`를 실행하고 실패를 해결한다. 현재 wrapper는 없다.
 - 기존 브랜치를 유지하고 불필요한 브랜치를 만들지 않는다. 검증된 단계마다 의미 있는 커밋을 만든다.
 - 게임 수치를 하드코딩하지 않는다. 미구현 증강은 `implemented: false`로 표시하고 선택 풀에서 제외한다.

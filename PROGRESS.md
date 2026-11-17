@@ -2,9 +2,11 @@
 
 기준일: 2026-11-17 (Asia/Seoul)
 
-## 현재 단계: PHASE 0 — BLOCKED
+## 현재 단계: PHASE 0 — 사용자 제공 공식 근거로 완료; PHASE 1 진행 중
 
-명세에 따라 Minecraft Java Edition 26.3과 Paper 26.3의 공식 지원 여부를 확인한 뒤 구현을 시작해야 한다. 현재 실행 환경의 네트워크 프록시가 공식 출처에 대한 연결을 HTTP 403으로 거부하여 이를 확인하지 못했다. 403은 해당 버전이 존재하지 않는다는 증거가 아니다. 요구 버전을 임의로 변경하지 않는다.
+사용자가 외부 환경에서 공식 자료를 확인하고 Minecraft/Paper 26.3, Java 25를 지정했다. 내부에서는 네트워크 제한으로 사실과 API를 독립 검증하지 못했다. 403은 미지원의 증거가 아니다.
+
+사용자 제공 근거: [Minecraft 26.3](https://www.minecraft.net/ko-kr/article/minecraft-java-edition-26-3), [Paper 26.3](https://papermc.io/news/26-3/), [Java 요구 사항](https://docs.papermc.io/paper/getting-started/), [프로젝트 설정](https://docs.papermc.io/paper/dev/project-setup/), [plugin.yml](https://docs.papermc.io/paper/dev/plugin-yml/). 제공된 설정은 Java 25, `io.papermc.paper:paper-api:26.3.build.+`, `api-version: '26.3'`이다. 동적 버전은 네트워크 복구 후 실제 안정 빌드로 고정한다.
 
 ## 검증 시도 및 근거
 
