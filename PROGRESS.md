@@ -79,3 +79,11 @@ Codex 내부에서 위 내용, 실제 Maven 아티팩트, 안정 빌드 번호, 
 | Supply, border, victory | no | no | no | no | 미구현 |
 
 PHASE 1은 미완료다. 다음에는 Paper Maven 접근과 Java 프록시 신뢰 설정을 해결하고 실제 `./gradlew clean build`, JUnit, JAR 및 Paper 26.3 runtime을 확인한다. 동적 Paper 버전은 공식 안정 빌드를 확인한 뒤 고정한다. 빌드 성공 전 PHASE 2의 Paper 연동을 시작하지 않는다.
+
+## 추가 검증 및 순수 도메인 작업
+
+시작 커밋 `0b3faaf`, `work`. Java 25.0.5.0.3와 javac, 캐시된 Gradle 9.1.0 실행을 확인했다. `clean build --stacktrace`는 Paper Maven CONNECT 403 및 Maven Central `SSLHandshakeException`/`PKIX path building failed`로 `compileJava` 의존성 해석에서 실패했다. curl의 Central 접근은 200이며 Java는 명시적인 프록시 설정을 사용했다. 운영체제와 Java의 신뢰 구성이 다를 가능성이 있으나 인증서 체인과 신뢰 근거를 충분히 확인하지 못해 원인을 확정하거나 인증서를 설치하지 않았다. 만료 및 호스트명 불일치도 독립적으로 배제하지 못했다. Paper DNS 조회는 결과가 없고 프록시 CONNECT가 403이다. `repo.papermc.io:443` 허용과 Central 프록시 CA 신뢰 경로의 관리자가 검증한 구성이 필요하다. 자격 증명이나 인증서 우회는 추가하지 않았다.
+
+`LifeState`는 파밍 무한 목숨, PvP 목숨 차감, 서든데스 탈락, 대기 중 중복 사망 방지를 순수 Java로 작성했다. Java 25 직접 컴파일 및 임시 독립 실행 검증(파밍, 중복 사망, PvP 두 사망) 성공. 서버 연결, 부활 증강, 예약 및 동시성 보장은 미구현이다. IMPLEMENTED/COMPILED는 해당 순수 모델에만 적용되며 JUnit TESTED, BUILD_VERIFIED, RUNTIME_VERIFIED는 아니다.
+
+GitHub Actions 조회는 Forbidden이고 원격 work 참조도 확인되지 않았다. CI_NOT_VERIFIED. 전체 JUnit과 서버 테스트 미실행, 플러그인 JAR 없음. PHASE 1 BLOCKED 및 미완료. 다음 작업은 프록시 허용과 신뢰 경로 확인 후 전체 빌드 및 테스트를 실행하고 실제 안정 Paper 빌드를 고정하는 것이다.
