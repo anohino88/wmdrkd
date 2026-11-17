@@ -87,3 +87,22 @@ PHASE 1은 미완료다. 다음에는 Paper Maven 접근과 Java 프록시 신�
 `LifeState`는 파밍 무한 목숨, PvP 목숨 차감, 서든데스 탈락, 대기 중 중복 사망 방지를 순수 Java로 작성했다. Java 25 직접 컴파일 및 임시 독립 실행 검증(파밍, 중복 사망, PvP 두 사망) 성공. 서버 연결, 부활 증강, 예약 및 동시성 보장은 미구현이다. IMPLEMENTED/COMPILED는 해당 순수 모델에만 적용되며 JUnit TESTED, BUILD_VERIFIED, RUNTIME_VERIFIED는 아니다.
 
 GitHub Actions 조회는 Forbidden이고 원격 work 참조도 확인되지 않았다. CI_NOT_VERIFIED. 전체 JUnit과 서버 테스트 미실행, 플러그인 JAR 없음. PHASE 1 BLOCKED 및 미완료. 다음 작업은 프록시 허용과 신뢰 경로 확인 후 전체 빌드 및 테스트를 실행하고 실제 안정 Paper 빌드를 고정하는 것이다.
+
+## PHASE 1B 순수 도메인 작업
+
+시작 `5cb10e8`, work. 전체 빌드 차단 상태는 변경되지 않았으며 PHASE 1은 미완료다.
+
+| 기능 | IMPLEMENTED | COMPILED | TESTED | BUILD / RUNTIME |
+| --- | --- | --- | --- | --- |
+| 경기 세션 및 목숨 | 부분 | Java 25 직접 | 독립 실행 | 미검증 |
+| 리스폰 | 부분 | Java 25 직접 | 독립 실행 | 미검증 |
+| 탐지 대상 선정 | 부분 | Java 25 직접 | 독립 실행 | 미검증 |
+| 경기장 기하 | 부분 | Java 25 직접 | 독립 실행 | 미검증 |
+| 불변 규칙 검증 | 부분 | Java 25 직접 | 독립 실행 | 미검증 |
+| 이벤트 순서 | 부분 | Java 25 직접 | 독립 실행 | 미검증 |
+
+`scripts/test-domain.sh`를 Java 25로 실행해 331개 assertion 통과. 100회 파밍 사망 반복 검사를 포함하며 독립 테스트이지 JUnit이나 전체 Gradle 빌드가 아니다. 기존 JUnit, Paper 서버, Actions는 실행하지 않았다. JAR 없음. `git ls-remote --exit-code origin refs/heads/work`는 종료 코드 2, 출력 없음으로 원격 work를 확인하지 못했다. CI_NOT_VERIFIED.
+
+`GameSession`은 기존 상태 머신과 LifeState를 사용한다. 재접속 중 만기 예약은 접속할 때까지 유지하고 종료·탈퇴 시 예약을 제거한다. 단일 스레드 호출을 전제로 하며 서버 스케줄러 및 동시성 제어는 미연결이다. `Timeline`은 시각과 순서로 한 번씩 반환하며 blocking 이벤트 뒤에는 호출자가 선택 완료까지 다음 poll을 보류해야 한다. 실제 기본 일정 구성, MatchClock 일시정지 연결, supply 및 세션 자동 단계 전환은 미구현이다. 승자 평가는 단일 생존자 조회만 제공하고 동시 사망 무승부 및 종료 큐는 미구현이다.
+
+탐지는 유효 대상과 3차원 거리 및 결정적 동률만 처리하며 다이아몬드 차감은 없다. 경기장은 연속 좌표의 하한 포함·상한 제외 규약이며 실제 지형, 바다, 스폰 검색이나 자기장 축소는 없다. 설정 객체는 값 검증만 제공하고 YAML, 관리자 명령과 연결되지 않았다. 인벤토리·XP 복원, 증강·중첩, 부활 효과, 참가자 연결에 따른 전체 정책도 미구현이다. 기존 증강 명세는 유지했다. Paper 통합 및 검증은 네트워크 복구와 전체 빌드 성공 후 계속한다.
