@@ -11,8 +11,25 @@ public final class MatchSimulationClock {
     private final LongSupplier wall;
     private final Timeline timeline;
     private final long selectionNanos;
+    private final long rulesGatheringSeconds;
     private final List<String> emitted = new ArrayList<>();
     private long selectionEnd;
+    @FunctionalInterface public interface OfferProvider {
+        Map<UUID,List<SelectionRound.Offer>> offers(UUID matchId, int round, Set<UUID> players);
+    }
+    private OfferProvider offerProvider;
+    private SelectionRound currentSelection;
+    private final List<Map<UUID,SelectionRound.Choice>> completedSelections = new ArrayList<>();
+    public void setOfferProvider(OfferProvider provider) { if (selecting) throw new IllegalStateException(); offerProvider=Objects.requireNonNull(provider); }
+    public Optional<SelectionRound> selection() { return Optional.ofNullable(currentSelection); }
+    public List<Map<UUID,SelectionRound.Choice>> completedSelections() { return List.copyOf(completedSelections); }
+    public boolean choose(UUID player, int round, String offer) {
+        tick();
+        if (!selecting || currentSelection==null) return false;
+        boolean accepted=currentSelection.select(session.matchId(),round,player,offer,wall.getAsLong());
+        if (currentSelection.complete()) tick();
+        return accepted;
+    }
     private boolean selecting;
     private boolean manualPause;
     private long virtualNow;
@@ -22,6 +39,7 @@ public final class MatchSimulationClock {
         this.session=Objects.requireNonNull(session); this.wall=Objects.requireNonNull(wall);
         if (selectionSeconds<0 || rules.gatheringSeconds()%rules.selectionInterval()!=0) throw new IllegalArgumentException();
         selectionNanos=Math.multiplyExact(selectionSeconds,1_000_000_000L);
+        rulesGatheringSeconds=rules.gatheringSeconds();
         lastWall=wall.getAsLong();
         clock=new MatchClock(() -> virtualNow);
         var events=new ArrayList<Timeline.Event>();
@@ -50,9 +68,17 @@ public final class MatchSimulationClock {
         long delta=Math.subtractExact(now,lastWall);
         if (delta<0) throw new IllegalStateException("Clock moved backwards");
         lastWall=now;
-        if (session.state()==MatchState.ENDING || session.state()==MatchState.CLEANUP) { selecting=false; manualPause=false; return; }
+        if (session.state()==MatchState.ENDING || session.state()==MatchState.CLEANUP) { if (currentSelection!=null) currentSelection.close(); selecting=false; manualPause=false; return; }
         if (selecting) {
-            if (now<selectionEnd) return;
+            if (currentSelection!=null) {
+                for (var id : new HashSet<>(currentSelection.choices().keySet()))
+                    if (!session.participantIds().contains(id)) currentSelection.leave(id);
+                currentSelection.expire(now);
+            }
+            if (now<selectionEnd && (currentSelection==null || !currentSelection.complete())) return;
+            if (currentSelection!=null) {
+                completedSelections.add(currentSelection.choices()); currentSelection.close(); currentSelection=null;
+            }
             selecting=false; session.transition(MatchState.GATHERING);
             // Selection time and late observation do not advance match time.
             delta=0;
@@ -69,6 +95,13 @@ public final class MatchSimulationClock {
                 if (e.blocks()) {
                     session.transition(MatchState.AUGMENT_SELECTION); selecting=true;
                     selectionEnd=Math.addExact(now,selectionNanos);
+                    if (offerProvider!=null) {
+                        int round=Integer.parseInt(e.id().substring("selection-".length()));
+                        var offers=offerProvider.offers(session.matchId(),round,session.participantIds());
+                        if (!offers.keySet().equals(session.participantIds())) throw new IllegalArgumentException("offers must cover participants");
+                        currentSelection=new SelectionRound(session.matchId(),round,selectionEnd,
+                                e.second()==rulesGatheringSeconds,offers);
+                    }
                     return;
                 } else if (e.id().equals("pvp")) session.transition(MatchState.PVP);
                 else if (e.id().equals("sudden-death")) session.transition(MatchState.SUDDEN_DEATH);

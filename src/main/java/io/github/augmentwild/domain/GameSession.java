@@ -28,6 +28,26 @@ public final class GameSession {
         if (players.putIfAbsent(id,new Participant(id,new LifeState(rules.lives()),true))!=null) throw new IllegalStateException();
     }
     public void leave(UUID id) { deadlines.remove(id); players.remove(id); }
+    public Set<UUID> participantIds() { return Set.copyOf(players.keySet()); }
+    /** Disconnect keeps the player eligible; voluntary departures are applied before deaths. */
+    public Result resolveTick(Collection<UUID> departures, Collection<UUID> deaths, long now) {
+        Objects.requireNonNull(departures); Objects.requireNonNull(deaths);
+        if (state()==MatchState.ENDING || state()==MatchState.CLEANUP) return result;
+        for (var id : departures) player(id);
+        for (var id : deaths) player(id);
+        var remainingDeaths = new LinkedHashSet<>(deaths);
+        remainingDeaths.removeAll(departures);
+        for (var id : new LinkedHashSet<>(departures)) leave(id);
+        return resolveTick(remainingDeaths,now);
+    }
+    /** Tick ordering: eligible respawns, then departures/deaths, then victory. */
+    public Result resolveCombatTick(Collection<UUID> departures, Collection<UUID> deaths, long now) {
+        if (state()==MatchState.ENDING || state()==MatchState.CLEANUP) return result;
+        for (var id : departures) player(id);
+        for (var id : deaths) player(id);
+        respawnDue(now);
+        return resolveTick(departures,deaths,now);
+    }
     public void connected(UUID id, boolean connected) { var p=player(id); players.put(id,new Participant(id,p.life(),connected)); }
     public Participant player(UUID id) { return Objects.requireNonNull(players.get(id),"unknown participant"); }
     public boolean death(UUID id, long now) {

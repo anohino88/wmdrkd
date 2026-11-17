@@ -8,3 +8,5 @@ java -cp "$tmp" DomainChecks
 java -cp "$tmp" MatchSimulation
 
 java -cp "$tmp" IntegrationChecks
+
+java -cp "$tmp" CompletionChecks
