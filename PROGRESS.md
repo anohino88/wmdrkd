@@ -136,3 +136,5 @@ PHASE 1C는 여전히 미완료: 경기 시간과 리스폰 예약의 API 연결
 Java 25 독립 테스트: 기존 331개 반복 포함 검사, 기존 시뮬레이션 4개, 기존 통합 시나리오 4개, 신규 통합 시나리오 5개 통과. JUnit/Gradle 전체 빌드/JAR/Paper runtime은 별도 미검증이다.
 
 PHASE_1C_CORE_COMPLETE는 아직 선언하지 않는다. 요청된 시나리오 A–G 각각의 전체 통합 검증이 아직 없고 실제 추적 비용 계약을 세션·시간표와 함께 검증한 전체 경기 시나리오가 없다. 특히 선택지 제공자와 재접속·탈퇴, 스케줄러의 경기 종료 및 같은 틱 border 처리 등 추가 회귀 검증이 필요하다. 기존 Paper Maven 403 및 PKIX에 변화가 확인되지 않아 로컬 다운로드를 반복하지 않았다.
+
+`00fc7ab`을 origin/work에 푸시했다(원격 브랜치 신규 생성 확인). GitHub Actions API 조회는 Forbidden이므로 실행 및 JAR 결과는 CI_NOT_VERIFIED다. 워크플로는 Java 25, Gradle wrapper 및 Paper API 의존성을 사용하는 clean build와 성공 시 JAR 업로드를 설정한다.
