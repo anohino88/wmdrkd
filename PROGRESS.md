@@ -213,3 +213,12 @@ PHASE 2B의 GitHub Actions #6에서 Java 버전 확인, `./gradlew clean build -
 - [Paper 프로브](https://github.com/anohino88/wmdrkd/actions/runs/44287841509/job/134745473636) PASS: 실제 Paper 26.3 기동·가상 보더 생성, 전역 월드 보더 불변(B19), 돼지 대상 OUTSIDE_BORDER 피해 이벤트 및 체력 2포인트 감소, 종료. 플레이어별 표시·정리·재접속(B16/B17) 및 참가자 PvP·리스폰·복원은 2인 클라이언트 미실행으로 NOT_RUN. `docs/phase4-playtest-ko.md`에 실행 절차를, `docs/post-phase4-design-ko.md`에 후속 확정 규칙을 남겼다.
 - 코드 HEAD `44246fd`의 [GitHub Actions](https://github.com/anohino88/wmdrkd/actions/runs/44288114740) PASS: Java 25 Gradle 빌드, 독립 검사, JAR 확인·업로드, Paper 프로브, 기존 경기장 벤치마크. [서버 JAR 아티팩트](https://github.com/anohino88/wmdrkd/actions/runs/44288114740/artifacts/14420042517).
 - 동일 실행의 로드된 평지 검사에서 100만 좌표, 청크 요청 4096건, 동시 최대 8건, 25.686초, 최대 틱 88.35ms(50ms 초과 38.35ms)를 관찰했다. 실경기의 자기장 피해 처리로 인한 틱 비용이나 2인 클라이언트는 측정하지 않았다.
+
+## PHASE 5 증강 선택 및 효과 (2026-11-18)
+
+- 기준 `319940a`. `3b6781e`에서 GUI, 경험치 희귀도와 12종 이벤트 효과를 경기 시계에 연결했다. `66c27e0`에서 확률·선택·쿨다운·재귀 검사와 Paper 속성 프로브를 추가했다. `b943d1d`에서 발동 조건을 설정으로 옮겼다.
+- 5분 간격, 현실 15초, 최종 프리즘 3종, 경기당 재추첨 1회, 마감 자동 선택을 구현했다. 재추첨은 같은 레벨 스냅샷을 사용하고 마감은 바꾸지 않는다. XP는 선택 비용으로 차감하지 않는다. 기존 고정 희귀도 가중치는 이 추첨에 사용하지 않는다.
+- `AugmentCatalog`에 실버·골드·프리즘이 각 4종 있으며, 실제 XP 이벤트 조정, 근접 피해·방어 수정, 시간 기반 회복과 임시 채굴·이동·방어 속성으로 연결했다. 같은 ID는 중첩되지 않으며 XP는 가장 큰 보너스를 사용한다. 명칭·수치·설정 및 PHASE 6 목록은 `docs/phase5-augments-ko.md` 참고.
+- 독립 Java 25 PASS: 기존 331개, 시나리오 23개, 자기장 검사 21개, 신규 증강 검사 127개. 로컬 Gradle BLOCKED: Paper Maven 403 및 Java PKIX.
+- `66c27e0` [Actions](https://github.com/anohino88/wmdrkd/actions/runs/44299783974) PASS. Paper 26.3 실제 테스트 엔티티에서 이동 속도 modifier를 두 번 적용해 중복 없음과 원복을 확인했다. 실제 클라이언트 GUI, XP 획득 이벤트, 2인 PvP·재접속·종료 처리는 NOT_RUN이다. 따라서 코드 구현과 서버 프로브 통과를 기록하지만 `PHASE_5_CORE_COMPLETE` 및 `REAL_CLIENT_VERIFIED`는 선언하지 않는다.
+- 최종 코드 `b943d1d`의 [GitHub Actions](https://github.com/anohino88/wmdrkd/actions/runs/44300111215) PASS: Java 25 Gradle/JUnit, 독립 회귀 검사, JAR 검사·업로드, Paper 26.3 속성·자기장 프로브, 경기장 벤치마크. [서버 JAR](https://github.com/anohino88/wmdrkd/actions/runs/44300111215/artifacts/14425452103).
