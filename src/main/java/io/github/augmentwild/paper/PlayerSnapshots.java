@@ -4,6 +4,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.BiPredicate;
 import org.bukkit.GameMode;
@@ -19,15 +21,28 @@ import org.bukkit.potion.PotionEffect;
 final class PlayerSnapshots {
     private final JavaPlugin plugin;
     private final Path directory;
+    private final Set<UUID> pending = new HashSet<>();
+    private final Set<UUID> restoring = new HashSet<>();
 
     PlayerSnapshots(JavaPlugin plugin) {
         this.plugin = plugin;
         directory = plugin.getDataFolder().toPath().resolve("recovery");
+        if (Files.isDirectory(directory)) {
+            try (var files = Files.newDirectoryStream(directory, "*.yml")) {
+                for (var file : files) {
+                    String name = file.getFileName().toString();
+                    pending.add(UUID.fromString(name.substring(0, name.length() - 4)));
+                }
+            } catch (IOException | IllegalArgumentException failure) {
+                throw new IllegalStateException("Could not index player recovery files", failure);
+            }
+        }
     }
 
     private Path path(UUID id) { return directory.resolve(id + ".yml"); }
 
-    boolean pending(UUID id) { return Files.exists(path(id)); }
+    boolean pending(UUID id) { return pending.contains(id); }
+    boolean restoring(UUID id) { return restoring.contains(id); }
 
     void capture(Player player) throws IOException {
         if (!player.getItemOnCursor().getType().isAir()) {
@@ -57,6 +72,7 @@ final class PlayerSnapshots {
         yaml.set("flying", player.isFlying());
         yaml.set("effects", player.getActivePotionEffects().stream().toList());
         MatchFiles.save(path, yaml);
+        pending.add(player.getUniqueId());
     }
 
     void enterMatch(Player player) {
@@ -73,8 +89,9 @@ final class PlayerSnapshots {
 
     boolean restore(Player player, BiPredicate<Player, Location> move) {
         Path path = path(player.getUniqueId());
-        if (!Files.exists(path)) return true;
-        if (player.isDead() || !player.isOnline()) return false;
+        UUID id = player.getUniqueId();
+        if (!pending(id)) return true;
+        if (player.isDead() || !player.isOnline() || !restoring.add(id)) return false;
         try {
             var yaml = MatchFiles.load(path);
             var world = plugin.getServer().getWorld(UUID.fromString(yaml.getString("world-id", "")));
@@ -89,29 +106,45 @@ final class PlayerSnapshots {
             var mode = GameMode.valueOf(yaml.getString("mode", ""));
             var original = new Location(world, yaml.getDouble("x"), yaml.getDouble("y"), yaml.getDouble("z"),
                     (float) yaml.getDouble("yaw"), (float) yaml.getDouble("pitch"));
+            int slot = yaml.getInt("held-slot", -1);
+            int level = yaml.getInt("level", -1);
+            double exp = yaml.getDouble("exp", -1);
+            double health = yaml.getDouble("health", -1);
+            if (slot < 0 || slot > 8 || level < 0 || !Double.isFinite(exp) || exp < 0 || exp > 1
+                    || !Double.isFinite(health) || health <= 0) {
+                throw new IllegalArgumentException("Invalid recovery slot, XP, or health");
+            }
+            original.checkFinite();
             if (!move.test(player, original)) return false;
             player.closeInventory();
-            player.setGameMode(mode);
+            if (player.getGameMode() != mode) player.setGameMode(mode);
+            if (player.getGameMode() != mode) return false;
+            // Overwrite the prior partial state on a retry; never add snapshot items.
             player.getInventory().setContents(items);
-            player.getInventory().setHeldItemSlot(yaml.getInt("held-slot"));
-            player.setLevel(yaml.getInt("level"));
-            player.setExp((float) yaml.getDouble("exp"));
+            player.getInventory().setHeldItemSlot(slot);
+            player.setLevel(level);
+            player.setExp((float) exp);
             player.setTotalExperience(yaml.getInt("total-exp"));
             player.setFoodLevel(yaml.getInt("hunger"));
             player.setSaturation((float) yaml.getDouble("saturation"));
             player.setExhaustion((float) yaml.getDouble("exhaustion"));
             player.getActivePotionEffects().forEach(effect -> player.removePotionEffect(effect.getType()));
-            savedEffects.forEach(player::addPotionEffect);
+            for (var effect : savedEffects) {
+                if (!player.addPotionEffect(effect)) return false;
+            }
             var maxHealth = player.getAttribute(org.bukkit.attribute.Attribute.MAX_HEALTH);
-            if (maxHealth != null) player.setHealth(Math.min(maxHealth.getValue(), yaml.getDouble("health")));
+            if (maxHealth != null) player.setHealth(Math.min(maxHealth.getValue(), health));
             player.setAllowFlight(yaml.getBoolean("flight"));
             player.setFlying(yaml.getBoolean("flight") && yaml.getBoolean("flying"));
             player.saveData();
             Files.delete(path);
+            pending.remove(id);
             return true;
         } catch (IOException | InvalidConfigurationException | RuntimeException failure) {
             plugin.getLogger().log(java.util.logging.Level.WARNING, "Recovery failed for " + player.getUniqueId(), failure);
             return false;
+        } finally {
+            restoring.remove(id);
         }
     }
 }

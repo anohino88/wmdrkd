@@ -393,6 +393,7 @@ public final class PaperMatchService implements Listener {
 
     private boolean isRestricted(Player player) {
         UUID id = player.getUniqueId();
+        if (snapshots.restoring(id)) return true;
         if (!contains(id)) return snapshots.pending(id);
         if (session.state() == MatchState.PREPARING) return captured.contains(id);
         return task != null && (deaths.containsKey(id) || departures.contains(id)

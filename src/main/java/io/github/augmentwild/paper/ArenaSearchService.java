@@ -1,5 +1,6 @@
 package io.github.augmentwild.paper;
 
+import com.destroystokyo.paper.event.server.ServerTickEndEvent;
 import io.github.augmentwild.domain.Arena;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -18,12 +19,14 @@ import org.bukkit.HeightMap;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.command.CommandSender;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 
 /** Read-only ZERO-policy preview of existing terrain. All block access runs on the server thread. */
-public final class ArenaSearchService {
+public final class ArenaSearchService implements Listener {
     private record Cell(int x, int z) { }
     private final JavaPlugin plugin;
     private final Random random = new Random();
@@ -63,7 +66,8 @@ public final class ArenaSearchService {
         abandoned = List.of();
         var cfg = plugin.getConfig();
         World world = plugin.getServer().getWorld(cfg.getString("arena.world", ""));
-        if (world == null || world.getEnvironment() != World.Environment.NORMAL) return "기존 오버월드를 arena.world에 지정하세요.";
+        if (world == null || world.getEnvironment() != World.Environment.NORMAL) return "경기 월드 '" + cfg.getString("arena.world") + "'를 사용할 수 없습니다. "
+                + "plugins/AugmentWild/config.yml의 arena.world를 서버에 로드된 기존 오버월드 이름으로 수정한 뒤 다시 시작하세요.";
         if (matchId != null && !world.getPVP()) return "경기 월드에서 PvP를 허용해야 합니다.";
         if (!"ZERO".equalsIgnoreCase(cfg.getString("arena.biome.ocean-policy"))) return "ZERO 검사 정책을 지정하세요.";
         try {
@@ -80,18 +84,33 @@ public final class ArenaSearchService {
     public void cancel() {
         if (task != null) task.cancel();
         task = null;
-        if (scan != null) abandoned = List.copyOf(scan.pending.values());
+        if (scan != null) {
+            scan.report("CANCELLED");
+            abandoned = List.copyOf(scan.pending.values());
+        }
         scan = null;
+    }
+
+    @EventHandler
+    public void observeTick(ServerTickEndEvent event) {
+        if (scan != null) scan.maxTickMillis = Math.max(scan.maxTickMillis, event.getTickDuration());
     }
 
     private void tick() {
         Scan current = scan;
-        try {
-            if (!current.advance()) return;
-        } catch (RuntimeException failure) {
-            plugin.getLogger().log(java.util.logging.Level.WARNING, "Arena search failed", failure);
-            current.sender.sendMessage("경기장 탐색 오류가 발생했습니다. 서버 로그를 확인하세요.");
+        if (!current.finished) {
+            try {
+                current.finished = current.advance();
+            } catch (RuntimeException failure) {
+                plugin.getLogger().log(java.util.logging.Level.WARNING, "Arena search failed", failure);
+                current.sender.sendMessage("경기장 탐색 오류가 발생했습니다. 서버 로그를 확인하세요.");
+                current.rejected.merge("exception:" + failure.getClass().getSimpleName(), 1, Integer::sum);
+                current.finished = true;
+            }
+            if (current.finished) current.finishedAt = System.nanoTime();
+            return; // Include this tick's Paper end-of-tick duration before reporting.
         }
+        current.report(current.result == null ? "FAILED" : "FOUND");
         cancel();
         current.done.accept(current.result);
     }
@@ -105,6 +124,11 @@ public final class ArenaSearchService {
         private final boolean generate;
         private final int progressTicks, spawnSamplesPerChunk, spawnPoolSize;
         private int ticks;
+        private boolean finished, reported;
+        private long finishedAt;
+        private long totalSamples, chunkRequests;
+        private int peakPending;
+        private double maxTickMillis;
         private ArenaContext result;
         private final int width, height, radius, attempts, stride, pipeline, spacing, margin;
         private final double historyBuffer;
@@ -171,6 +195,7 @@ public final class ArenaSearchService {
 
         boolean advance() {
             if (System.nanoTime() - started >= timeout || (cells.isEmpty() && attempt >= attempts)) {
+                rejected.merge(System.nanoTime() - started >= timeout ? "timeout" : "candidate-limit", 1, Integer::sum);
                 sender.sendMessage("경기장 탐색 실패. 후보 " + attempt + "개, 거부 사유 " + rejected);
                 return true;
             }
@@ -190,6 +215,11 @@ public final class ArenaSearchService {
                 var request = iterator.next();
                 if (!request.getValue().isDone()) continue;
                 handled++;
+                if (request.getValue().isCompletedExceptionally() || request.getValue().isCancelled()) {
+                    iterator.remove();
+                    reject("청크 요청 실패");
+                    return false;
+                }
                 Chunk chunk = request.getValue().join();
                 iterator.remove();
                 if (chunk == null || !world.isChunkLoaded(chunk.getX(), chunk.getZ())) {
@@ -219,6 +249,8 @@ public final class ArenaSearchService {
             for (int issued = 0; issued < pipeline && next < cells.size() && pending.size() < pipeline; issued++) {
                 var cell = cells.get(next++);
                 pending.put(cell, world.getChunkAtAsync(cell.x(), cell.z(), generate));
+                chunkRequests++;
+                peakPending = Math.max(peakPending, pending.size());
             }
             return false;
         }
@@ -265,6 +297,7 @@ public final class ArenaSearchService {
                     if ((z - minZ) % stride != 0 && z != maxZ) continue;
                     int y = world.getHighestBlockYAt(x, z, HeightMap.MOTION_BLOCKING_NO_LEAVES);
                     samples++;
+                    totalSamples++;
                     if (SafeArenaSurface.ocean(world, x, y, z)) return false;
                 }
             }
@@ -294,6 +327,18 @@ public final class ArenaSearchService {
                 if (spaced.size() == players) break;
             }
             return spaced;
+        }
+
+        void report(String outcome) {
+            if (reported) return;
+            reported = true;
+            long elapsed = (finished ? finishedAt : System.nanoTime()) - started;
+            plugin.getLogger().info(String.format(java.util.Locale.ROOT,
+                    "Arena search %s: size=%dx%d step=%d candidates=%d examined=%d finalSamples=%d "
+                            + "chunkRequests=%d peakPending=%d elapsedMs=%d maxTickMs=%.2f maxTickOverrunMs=%.2f rejected=%s",
+                    outcome, width, height, stride, attempt, totalSamples, result == null ? 0 : samples,
+                    chunkRequests, peakPending, TimeUnit.NANOSECONDS.toMillis(elapsed), maxTickMillis,
+                    Math.max(0, maxTickMillis - 50), rejected));
         }
 
         void reject(String reason) {

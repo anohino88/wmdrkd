@@ -42,7 +42,8 @@ final class ArenaPlacement {
     }
 
     boolean protectedFromDamage(UUID id, long tickTime) {
-        return protectedUntil.getOrDefault(id, Long.MIN_VALUE) > tickTime;
+        Long deadline = protectedUntil.get(id);
+        return deadline != null && deadline - tickTime > 0;
     }
 
     void forgetAttempt(UUID id) { attempts.remove(id); }

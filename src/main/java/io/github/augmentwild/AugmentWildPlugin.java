@@ -21,6 +21,7 @@ public final class AugmentWildPlugin extends JavaPlugin {
         arenaSearch = new ArenaSearchService(this);
         matches = new PaperMatchService(this, PaperMatchSettings.load(getConfig()), arenaSearch);
         Objects.requireNonNull(getCommand("aw"), "Missing aw command in plugin.yml").setExecutor(this);
+        getServer().getPluginManager().registerEvents(arenaSearch, this);
         getServer().getPluginManager().registerEvents(matches, this);
         getServer().getPluginManager().registerEvents(matches.restrictions(), this);
         matches.recoverOnlinePlayers();
@@ -30,6 +31,7 @@ public final class AugmentWildPlugin extends JavaPlugin {
         if (matches == null) return;
         HandlerList.unregisterAll(matches);
         HandlerList.unregisterAll(matches.restrictions());
+        HandlerList.unregisterAll(arenaSearch);
         arenaSearch.cancel();
         matches.shutdown();
         matches = null;
