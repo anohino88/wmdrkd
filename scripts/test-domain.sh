@@ -12,7 +12,7 @@ java -cp "$tmp" IntegrationChecks
 java -cp "$tmp" CompletionChecks
 java -cp "$tmp" BorderChecks
 java -cp "$tmp" AugmentChecks
-java -cp "$tmp" OfficialAugmentChecks
+java -cp "$tmp" OfficialAugmentChecks "$root"
 for scenario in A B C D E F G; do
     java -cp "$tmp" ScenarioChecks "$scenario"
 done

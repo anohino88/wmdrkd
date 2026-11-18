@@ -34,6 +34,7 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 
 final class PaperAugments implements Listener {
+    private static final Set<String> EXCHANGES = Set.of("forbidden_reconstruction", "forbidden_deal");
     private static final int[] SLOTS = {10, 13, 16};
     private static final int REROLL = 22;
     private record ProcKey(UUID player, String effect) { }
@@ -45,6 +46,7 @@ final class PaperAugments implements Listener {
     private final Predicate<Player> protectedPlayer;
     private final AugmentRegistry registry;
     private final AugmentRoller roller;
+    private final Random random = new Random();
     private final Map<UUID, Profile> profiles = new HashMap<>();
     private final ProcGuard guard;
     private final double lowHealth, strongHit, rearDot;
@@ -56,6 +58,23 @@ final class PaperAugments implements Listener {
         final AugmentTimers timers = new AugmentTimers();
         final Set<String> modifiers = new HashSet<>();
         int level, lastKnownLevel, shown, grantedRound;
+        AugmentExchange exchange;
+        String exchangeId;
+        boolean exchangeShown;
+    }
+
+    private static final class ExchangeMenu implements InventoryHolder {
+        final UUID match, owner;
+        final AugmentExchange exchange;
+        Inventory inventory;
+
+        ExchangeMenu(UUID match, UUID owner, AugmentExchange exchange) {
+            this.match = match;
+            this.owner = owner;
+            this.exchange = exchange;
+        }
+
+        @Override public Inventory getInventory() { return inventory; }
     }
 
     private static final class Menu implements InventoryHolder {
@@ -98,7 +117,7 @@ final class PaperAugments implements Listener {
                     var profile = profiles.get(player);
                     return profile == null ? Set.of() : profile.owned;
                 }, maxDepth);
-        roller = new AugmentRoller(registry, new Random());
+        roller = new AugmentRoller(registry, random);
         guard = new ProcGuard(maxDepth);
     }
 
@@ -132,9 +151,39 @@ final class PaperAugments implements Listener {
     private List<SelectionRound.Offer> roll(Profile profile, boolean last, List<SelectionRound.Offer> previous) {
         var ids = new HashSet<String>();
         previous.forEach(offer -> ids.add(offer.id()));
-        return roller.roll(profile.level, last, profile.owned, ids).stream()
+        return roller.roll(profile.level, last, profile.owned, ids, a -> canOffer(profile, a.id())).stream()
                 .map(a -> new SelectionRound.Offer(a.id(), a.rarity() == AugmentRarity.PRISMATIC, a.implemented()))
                 .toList();
+    }
+
+    private boolean canOffer(Profile profile, String id) {
+        if (profile.exchange != null && profile.exchange.reserves(id)) return false;
+        if (!EXCHANGES.contains(id)) return true;
+        return !profile.owned.contains(id) && profile.exchange == null
+                && sacrifice(profile, id).size() == (id.equals("forbidden_reconstruction") ? official.exchangeCount(id) : 0)
+                && rewards(profile, id).size() >= official.exchangeCount(id);
+    }
+
+    private List<String> sacrifice(Profile profile, String id) {
+        if (!id.equals("forbidden_reconstruction")) return List.of();
+        return profile.owned.stream().filter(owned -> registry.get(owned).rarity() == AugmentRarity.SILVER)
+                .limit(official.exchangeCount(id)).toList();
+    }
+
+    private List<String> rewards(Profile profile, String id) {
+        var rarity = id.equals("forbidden_reconstruction") ? AugmentRarity.PRISMATIC : AugmentRarity.GOLD;
+        return registry.selectable().stream().filter(a -> a.rarity() == rarity && !profile.owned.contains(a.id())
+                && !EXCHANGES.contains(a.id())).map(AugmentDefinition::id).toList();
+    }
+
+    private void startExchange(Profile profile, String id) {
+        if (!canOffer(profile, id)) return;
+        var pool = new ArrayList<>(rewards(profile, id));
+        Collections.shuffle(pool, random);
+        profile.exchange = new AugmentExchange(sacrifice(profile, id),
+                pool.subList(0, Math.min(official.exchangeOptions(), pool.size())), official.exchangeCount(id));
+        profile.exchangeId = id;
+        profile.exchangeShown = false;
     }
 
     void sync(Player player) {
@@ -160,6 +209,8 @@ final class PaperAugments implements Listener {
         }
         syncEffects(player, profile, timer.elapsedSeconds());
         official.sync(player);
+        if (profile.exchange != null && !profile.exchangeShown && active.test(player)
+                && (choice == null || choice.status() != SelectionRound.Status.PENDING)) showExchange(player, profile);
     }
 
     void collectCompleted() {
@@ -178,6 +229,10 @@ final class PaperAugments implements Listener {
         var definition = registry.get(choice.selected());
         if (definition == null || !definition.selectable()) return;
         profile.grantedRound = round;
+        if (EXCHANGES.contains(definition.id())) {
+            startExchange(profile, definition.id());
+            return;
+        }
         boolean added = profile.owned.add(definition.id());
         if (added) official.acquired(id, definition.id());
         plugin.getLogger().info("Augment " + choice.status() + " match=" + match + " player=" + id
@@ -195,6 +250,12 @@ final class PaperAugments implements Listener {
         var round = timer == null ? null : timer.selection().orElse(null);
         UUID id = player.getUniqueId();
         var choice = round == null ? null : round.choices().get(id);
+        var profile = profiles.get(id);
+        if (active.test(player) && profile != null && profile.exchange != null
+                && (choice == null || choice.status() != SelectionRound.Status.PENDING)) {
+            showExchange(player, profile);
+            return "교환 보상 선택지를 열었습니다.";
+        }
         if (!active.test(player) || choice == null || choice.status() != SelectionRound.Status.PENDING) {
             return "현재 선택할 증강이 없습니다.";
         }
@@ -241,6 +302,61 @@ final class PaperAugments implements Listener {
         player.sendActionBar(Component.text("증강을 선택하세요. 경험치는 소모되지 않습니다.", NamedTextColor.GOLD));
     }
 
+    private void showExchange(Player player, Profile profile) {
+        var menu = new ExchangeMenu(match, player.getUniqueId(), profile.exchange);
+        menu.inventory = plugin.getServer().createInventory(menu, 27, Component.text(registry.get(profile.exchangeId).name()));
+        refreshExchange(menu);
+        profile.exchangeShown = true;
+        player.openInventory(menu.inventory);
+    }
+
+    private void refreshExchange(ExchangeMenu menu) {
+        menu.inventory.clear();
+        int slot = 9;
+        for (String id : menu.exchange.candidates()) {
+            var definition = registry.get(id);
+            var material = definition.rarity() == AugmentRarity.GOLD ? Material.GOLD_INGOT : Material.AMETHYST_SHARD;
+            menu.inventory.setItem(slot++, item(material, Component.text(definition.name()),
+                    List.of(Component.text(definition.condition()))));
+        }
+        menu.inventory.setItem(22, item(Material.CLOCK, Component.text("남은 추가 선택 " + menu.exchange.remaining()), List.of()));
+    }
+
+    private void chooseExchange(Player player, ExchangeMenu menu, int rawSlot) {
+        var profile = profiles.get(player.getUniqueId());
+        if (profile == null || profile.exchange != menu.exchange || !menu.owner.equals(player.getUniqueId())
+                || !menu.match.equals(match) || !active.test(player) || clock.get().isPaused()) return;
+        int option = rawSlot - 9;
+        var candidates = menu.exchange.candidates();
+        if (option < 0 || option >= candidates.size() || !menu.exchange.select(candidates.get(option))) return;
+        if (menu.exchange.remaining() > 0) {
+            refreshExchange(menu);
+            return;
+        }
+        var commit = menu.exchange.finalizeAgainst(profile.owned);
+        String exchangeId = profile.exchangeId;
+        profile.exchange = null;
+        profile.exchangeId = null;
+        menu.inventory.clear();
+        if (commit.isEmpty()) {
+            player.sendMessage("보유 증강이 바뀌어 교환을 취소했습니다.");
+            return;
+        }
+        profile.owned.removeAll(commit.get().removed());
+        profile.owned.addAll(commit.get().awarded());
+        profile.owned.add(exchangeId);
+        for (String lost : commit.get().removed()) {
+            var definition = registry.get(lost);
+            if (profile.modifiers.contains(lost)) setModifier(player, profile, definition, attribute(definition.effect()), false);
+            profile.timers.remove(lost);
+            official.lost(player.getUniqueId(), lost);
+        }
+        commit.get().awarded().forEach(gained -> official.acquired(player.getUniqueId(), gained));
+        official.acquired(player.getUniqueId(), exchangeId);
+        official.exchangeCommitted(player, exchangeId);
+        player.sendMessage(registry.get(exchangeId).name() + " 완료");
+    }
+
     private void setCountdown(Menu menu, long seconds) {
         if (menu.lastSeconds == seconds) return;
         menu.lastSeconds = seconds;
@@ -258,6 +374,16 @@ final class PaperAugments implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST)
     public void click(InventoryClickEvent event) {
+        if (event.getView().getTopInventory().getHolder() instanceof ExchangeMenu exchange) {
+            boolean alreadyCancelled = event.isCancelled();
+            event.setCancelled(true);
+            if (!alreadyCancelled && event.getWhoClicked() instanceof Player player
+                    && (event.getClick() == org.bukkit.event.inventory.ClickType.LEFT
+                        || event.getClick() == org.bukkit.event.inventory.ClickType.RIGHT)) {
+                chooseExchange(player, exchange, event.getRawSlot());
+            }
+            return;
+        }
         if (!(event.getView().getTopInventory().getHolder() instanceof Menu menu)) return;
         boolean alreadyCancelled = event.isCancelled();
         event.setCancelled(true);
@@ -286,7 +412,8 @@ final class PaperAugments implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST)
     public void drag(InventoryDragEvent event) {
-        if (event.getView().getTopInventory().getHolder() instanceof Menu) event.setCancelled(true);
+        if (event.getView().getTopInventory().getHolder() instanceof Menu
+                || event.getView().getTopInventory().getHolder() instanceof ExchangeMenu) event.setCancelled(true);
     }
 
     private Menu ownedMenu(Player player) {
@@ -300,6 +427,7 @@ final class PaperAugments implements Listener {
         var profile = profiles.computeIfAbsent(player.getUniqueId(), ignored -> new Profile());
         profile.lastKnownLevel = Math.clamp(player.getLevel(), 0, 50);
         profile.shown = 0;
+        profile.exchangeShown = false;
         official.disconnected(player);
         removeModifiers(player, profile);
     }
@@ -309,7 +437,9 @@ final class PaperAugments implements Listener {
         Player player = plugin.getServer().getPlayer(id);
         official.remove(id, player);
         if (player != null && profile != null) {
-            if (ownedMenu(player) != null) player.closeInventory();
+            if (ownedMenu(player) != null || player.getOpenInventory().getTopInventory().getHolder() instanceof ExchangeMenu) {
+                player.closeInventory();
+            }
             removeModifiers(player, profile);
         }
     }

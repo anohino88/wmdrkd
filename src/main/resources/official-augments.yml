@@ -352,10 +352,14 @@ augments:
     group: CORE
     rarity: PRISMATIC
     name: '금단의 재구성'
-    enabled: false
-    implemented: false
-    condition: '미구현 · 추첨 제외'
-    amount: 1
+    enabled: true
+    implemented: true
+    condition: '실버 교환, 프리즘 추가 선택, 체력 감소 및 자연 회복 제한'
+    amount: 0.5
+    threshold: 2
+    duration: 10
+    cooldown: 0
+    cap: 0
   muscle_memory:
     group: ADDITIONAL
     rarity: SILVER
@@ -744,10 +748,14 @@ augments:
     group: ADDITIONAL
     rarity: PRISMATIC
     name: '금단의 거래'
-    enabled: false
-    implemented: false
-    condition: '미구현 · 추첨 제외'
-    amount: 1
+    enabled: true
+    implemented: true
+    condition: '최대 체력을 줄이고 골드 추가 선택 및 공격 피해 증가'
+    amount: 0.2
+    threshold: 2
+    duration: 0
+    cooldown: 0
+    cap: 0
   world_erosion:
     group: ADDITIONAL
     rarity: PRISMATIC
@@ -884,3 +892,5 @@ settings:
   erosion-max-damage: 8.0
   erosion-absorption-cap: 8.0
   erosion-absorption-ratio: 1.0
+  exchange-choice-options: 4
+  forbidden-deal-health-cost: 10.0

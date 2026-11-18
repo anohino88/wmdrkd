@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.random.RandomGenerator;
+import java.util.function.Predicate;
 
 public final class AugmentRoller {
     private final AugmentRegistry registry;
@@ -15,11 +16,16 @@ public final class AugmentRoller {
     }
 
     public List<AugmentDefinition> roll(int level, boolean finalRound, Set<String> owned, Set<String> previous) {
+        return roll(level, finalRound, owned, previous, augment -> true);
+    }
+
+    public List<AugmentDefinition> roll(int level, boolean finalRound, Set<String> owned, Set<String> previous,
+                                       Predicate<AugmentDefinition> eligible) {
         var pool = registry.selectable().stream()
-                .filter(a -> !finalRound || a.rarity() == AugmentRarity.PRISMATIC).toList();
-        if (pool.size() < 3) throw new IllegalStateException("Insufficient implemented augments");
+                .filter(a -> !finalRound || a.rarity() == AugmentRarity.PRISMATIC).filter(eligible).toList();
+        int slots = Math.min(3, pool.size());
         var result = new ArrayList<AugmentDefinition>(3);
-        for (int slot = 0; slot < 3; slot++) {
+        for (int slot = 0; slot < slots; slot++) {
             var rarity = finalRound ? AugmentRarity.PRISMATIC : AugmentRarity.roll(level, random.nextDouble(100));
             var remaining = pool.stream().filter(a -> !result.contains(a)).toList();
             var tier = remaining.stream().filter(a -> a.rarity() == rarity).toList();
@@ -30,9 +36,9 @@ public final class AugmentRoller {
             if (!fresh.isEmpty()) tier = fresh;
             result.add(tier.get(random.nextInt(tier.size())));
         }
-        if (!previous.isEmpty() && result.stream().allMatch(a -> previous.contains(a.id()))) {
+        if (!result.isEmpty() && !previous.isEmpty() && result.stream().allMatch(a -> previous.contains(a.id()))) {
             var alternatives = pool.stream().filter(a -> !previous.contains(a.id())).toList();
-            if (!alternatives.isEmpty()) result.set(2, alternatives.get(random.nextInt(alternatives.size())));
+            if (!alternatives.isEmpty()) result.set(result.size() - 1, alternatives.get(random.nextInt(alternatives.size())));
         }
         return List.copyOf(result);
     }

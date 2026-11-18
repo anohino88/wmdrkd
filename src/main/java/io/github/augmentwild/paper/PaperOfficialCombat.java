@@ -89,6 +89,7 @@ final class PaperOfficialCombat implements Listener {
         boolean barrage, hellLord, thousandSwords;
         final PaperAugmentBurns burns = new PaperAugmentBurns();
         double burned, woundDamage;
+        long naturalRegenBlockedUntil;
         UUID frenzyTarget;
         long frenzyAt;
         boolean instinctPending, veinGranted, transformedSmall;
@@ -162,6 +163,39 @@ final class PaperOfficialCombat implements Listener {
         if (augment.equals("endless_evolution") && now() >= catalog.count("endless-evolution-late-second")) {
             state.progress.add(augment, catalog.count("endless-evolution-late-stacks"), rule(augment).cap());
         }
+        refreshSynergies(id, state);
+    }
+
+    void lost(UUID id, String augment) {
+        var state = fighters.get(id);
+        if (state == null) return;
+        state.progress.reset(augment);
+        state.progress.reset("hits:" + augment);
+        switch (augment) {
+            case "iron_stomach" -> state.food.clear();
+            case "storm_chaser" -> state.stormDistance = 0;
+            case "blood_trace" -> state.traceTarget = null;
+            case "wound_record" -> state.woundDamage = 0;
+            case "frenzy_rhythm" -> state.frenzyTarget = null;
+            case "counter_shield" -> state.counterReady = false;
+            default -> { }
+        }
+        refreshSynergies(id, state);
+    }
+
+    int exchangeCount(String id) { return rule(id).threshold(); }
+    int exchangeOptions() { return catalog.count("exchange-choice-options"); }
+
+    void exchangeCommitted(Player player, String id) {
+        var state = fighter(player.getUniqueId());
+        if (id.equals("forbidden_reconstruction")) {
+            player.setHealth(Math.max(.01, player.getHealth() * (1 - rule(id).amount())));
+            state.naturalRegenBlockedUntil = now() + rule(id).duration();
+        }
+        applyAttributes(player, state, now());
+    }
+
+    private void refreshSynergies(UUID id, Fighter state) {
         boolean king = catalog.synergies.getBoolean("steel_king.enabled") && owned.apply(id).containsAll(STEEL_KING);
         if (king && !state.king) announce(id, "시너지 활성화 · 강철의 왕", catalog.synergies.getBoolean("steel_king.sound"));
         state.king = king;
@@ -367,6 +401,7 @@ final class PaperOfficialCombat implements Listener {
         for (String id : List.of("blood_record", "steel_heart", "iron_stomach", "wound_record", "heart_harvester", "endless_evolution")) {
             if (ids.contains(id)) health += progress.value(id) * rule(id).amount();
         }
+        if (ids.contains("forbidden_deal")) health -= catalog.setting("forbidden-deal-health-cost");
         if (ids.contains("blood_god")) health += progress.value("blood_god_kills") * catalog.setting("blood-god-kill-health");
         if (ids.contains("overgrowth")) {
             health += state.overgrowthAward + (second - state.acquiredGrowth) / rule("overgrowth").threshold()
@@ -404,7 +439,7 @@ final class PaperOfficialCombat implements Listener {
                 ids.contains("calamity_giant") ? catalog.setting("calamity-reach") : 0, Operation.ADD_NUMBER);
         int dolls = progress.value("revive:russian_doll");
         if (ids.contains("russian_doll")) speed += dolls * rule("russian_doll").amount();
-        modifier(player, Attribute.MAX_HEALTH, "official_health", Math.clamp(health, 0, 400), Operation.ADD_NUMBER);
+        modifier(player, Attribute.MAX_HEALTH, "official_health", Math.clamp(health, -catalog.setting("forbidden-deal-health-cost"), 400), Operation.ADD_NUMBER);
         double dollFactor = ids.contains("russian_doll") ? Math.pow(1 - rule("russian_doll").amount(), dolls) - 1 : 0;
         modifier(player, Attribute.MAX_HEALTH, "official_doll_health", dollFactor, Operation.MULTIPLY_SCALAR_1);
         modifier(player, Attribute.MOVEMENT_SPEED, "official_speed", Math.clamp(speed, -.5, 2), Operation.ADD_SCALAR);
@@ -430,6 +465,7 @@ final class PaperOfficialCombat implements Listener {
         double ratio = ids.contains("immortal_berserker") && state.immortalUntil > now()
                 ? rule("immortal_berserker").amount() : 0;
         if (ids.contains("mineral_addiction")) ratio += state.progress.value("mineral_addiction") * rule("mineral_addiction").amount();
+        if (ids.contains("forbidden_deal")) ratio += rule("forbidden_deal").amount();
         if (state.duelUntil > now() && target.getUniqueId().equals(state.duelTarget)) ratio += rule("duel_contract").amount();
         if (ids.contains("shadow_dash") && state.shadowUntil > now()) ratio += rule("shadow_dash").amount();
         if (melee && state.counterReady && ids.contains("counter_shield")) ratio += rule("counter_shield").amount();
@@ -1410,6 +1446,15 @@ final class PaperOfficialCombat implements Listener {
         if (ready(player, state, "iron_stomach")) {
             player.setHealth(Math.min(maxHealth(player), player.getHealth() + catalog.setting("iron-stomach-heal")));
         }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void naturalRegen(EntityRegainHealthEvent event) {
+        if (!(event.getEntity() instanceof Player player) || !active.test(player)) return;
+        var state = fighters.get(player.getUniqueId());
+        if (state != null && state.naturalRegenBlockedUntil > now()
+                && (event.getRegainReason() == EntityRegainHealthEvent.RegainReason.SATIATED
+                    || event.getRegainReason() == EntityRegainHealthEvent.RegainReason.REGEN)) event.setCancelled(true);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)

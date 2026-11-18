@@ -65,6 +65,7 @@ final class PlayerSnapshots {
         yaml.set("exp", player.getExp());
         yaml.set("total-exp", player.getTotalExperience());
         yaml.set("health", player.getHealth());
+        yaml.set("absorption", player.getAbsorptionAmount());
         yaml.set("hunger", player.getFoodLevel());
         yaml.set("saturation", player.getSaturation());
         yaml.set("exhaustion", player.getExhaustion());
@@ -85,6 +86,7 @@ final class PlayerSnapshots {
         player.setFlying(false);
         player.setAllowFlight(false);
         player.getActivePotionEffects().forEach(effect -> player.removePotionEffect(effect.getType()));
+        player.setAbsorptionAmount(0);
     }
 
     boolean restore(Player player, BiPredicate<Player, Location> move) {
@@ -111,6 +113,7 @@ final class PlayerSnapshots {
             int level = yaml.getInt("level", -1);
             double exp = yaml.getDouble("exp", -1);
             double health = yaml.getDouble("health", -1);
+            double absorption = yaml.getDouble("absorption", 0);
             int totalExp = yaml.getInt("total-exp", -1);
             int hunger = yaml.getInt("hunger", -1);
             float saturation = (float) yaml.getDouble("saturation", Double.NaN);
@@ -118,7 +121,7 @@ final class PlayerSnapshots {
             boolean allowFlight = yaml.getBoolean("flight");
             boolean flying = allowFlight && yaml.getBoolean("flying");
             if (slot < 0 || slot > 8 || level < 0 || !Double.isFinite(exp) || exp < 0 || exp > 1
-                    || !Double.isFinite(health) || health <= 0 || totalExp < 0 || hunger < 0
+                    || !Double.isFinite(health) || health <= 0 || !Double.isFinite(absorption) || absorption < 0 || totalExp < 0 || hunger < 0
                     || !Float.isFinite(saturation) || saturation < 0 || !Float.isFinite(exhaustion) || exhaustion < 0
                     || !yaml.isBoolean("flight") || !yaml.isBoolean("flying")) {
                 throw new IllegalArgumentException("Invalid recovery slot, XP, or health");
@@ -144,6 +147,7 @@ final class PlayerSnapshots {
             var maxHealth = player.getAttribute(org.bukkit.attribute.Attribute.MAX_HEALTH);
             double targetHealth = maxHealth == null ? health : Math.min(maxHealth.getValue(), health);
             player.setHealth(targetHealth);
+            player.setAbsorptionAmount(absorption);
             player.setAllowFlight(allowFlight);
             player.setFlying(flying);
             if (player.getGameMode() != mode || !Arrays.equals(items, player.getInventory().getContents())
@@ -151,6 +155,7 @@ final class PlayerSnapshots {
                     || player.getExp() != (float) exp || player.getTotalExperience() != totalExp
                     || player.getFoodLevel() != hunger || player.getSaturation() != saturation
                     || player.getExhaustion() != exhaustion || Math.abs(player.getHealth() - targetHealth) > 0.00001
+                    || Math.abs(player.getAbsorptionAmount() - absorption) > 0.00001
                     || player.getAllowFlight() != allowFlight || player.isFlying() != flying
                     || !new HashSet<>(player.getActivePotionEffects()).equals(new HashSet<>(savedEffects))) {
                 throw new IllegalStateException("Restored state did not match the recovery snapshot");

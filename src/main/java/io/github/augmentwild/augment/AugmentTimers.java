@@ -34,6 +34,12 @@ public final class AugmentTimers {
         }
     }
 
+    public void remove(String id) {
+        cooldowns.remove(id);
+        expires.remove(id);
+        lastPeriodic.remove(id);
+    }
+
     public void clearActive() {
         expires.clear();
         lastPeriodic.clear();

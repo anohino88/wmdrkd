@@ -24,7 +24,7 @@ final class OfficialAugments {
             "heart_harvester", "blood_crown", "storm_blade", "endless_evolution", "blood_god", "mad_scientist", "draw_the_sword", "last_demon",
             "falling_shockwave", "vein_overload", "blood_trace", "counter_shield", "immortal_armor", "venom_swarm",
             "bounty_hunter", "split_bow", "time_thief", "reflex", "earthquake_mage", "final_judgment",
-            "shadow_dash", "time_rewind", "void_lord", "bomb_alchemy", "duel_contract", "world_erosion");
+            "shadow_dash", "time_rewind", "void_lord", "bomb_alchemy", "duel_contract", "world_erosion", "forbidden_reconstruction", "forbidden_deal");
 
     record Rule(AugmentDefinition definition, String group, int threshold, int cap) {
         double amount() { return definition.amount(); }
@@ -111,6 +111,11 @@ final class OfficialAugments {
                 || setting("quake-dash-distance") <= 0 || setting("quake-dash-distance") > 20
                 || setting("shadow-dash-distance") <= 0 || setting("shadow-dash-distance") > 20) {
             throw new IllegalArgumentException("Invalid active augment settings");
+        }
+        if (rule("forbidden_reconstruction").threshold() < 1 || rule("forbidden_deal").threshold() < 1
+                || count("exchange-choice-options") < Math.max(rule("forbidden_reconstruction").threshold(), rule("forbidden_deal").threshold())
+                || count("exchange-choice-options") > 9 || setting("forbidden-deal-health-cost") <= 0) {
+            throw new IllegalArgumentException("Invalid exchange settings");
         }
         double chance = setting("crit-chance");
         if (chance < 0 || chance > 1 || setting("sword-reach") <= 0 || setting("sword-ray-size") < 0

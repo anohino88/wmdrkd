@@ -1,9 +1,15 @@
+import io.github.augmentwild.augment.AugmentExchange;
 import io.github.augmentwild.augment.AugmentProgress;
 import io.github.augmentwild.augment.DamageChain;
 import io.github.augmentwild.augment.MovementProgress;
 import io.github.augmentwild.augment.NaturalOreTracker;
 import io.github.augmentwild.augment.ReviveResolver;
 import java.util.List;
+import java.util.Set;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.HashSet;
+import java.util.regex.Pattern;
 import java.util.UUID;
 
 public class OfficialAugmentChecks {
@@ -14,7 +20,7 @@ public class OfficialAugmentChecks {
         checks++;
     }
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws Exception {
         var progress = new AugmentProgress();
         check(progress.add("steel", Integer.MAX_VALUE, 64) == 64, "first clamp");
         check(progress.add("steel", Integer.MAX_VALUE, 64) == 64, "no overflow");
@@ -81,6 +87,40 @@ public class OfficialAugmentChecks {
         check(movement.add(MovementProgress.horizontal(.3, .4, 1), 1.25) == 0, "tracks horizontal distance");
         check(movement.add(1, 1.25) == 1, "awards crossed threshold");
         check(movement.add(1, 1.25) == 1, "retains partial movement");
+        var exchange = new AugmentExchange(List.of("silver_a", "silver_b"), List.of("prism_a", "prism_b", "prism_c"), 2);
+        var owned = new HashSet<>(Set.of("silver_a", "silver_b"));
+        check(exchange.reserves("prism_a"), "bonus offers reserved from ordinary roll");
+        check(exchange.select("prism_a"), "first reward");
+        check(!exchange.select("prism_a"), "duplicate reward rejected");
+        check(exchange.finalizeAgainst(owned).isEmpty(), "partial selection cannot spend sacrifices");
+        check(exchange.select("prism_b"), "second reward");
+        check(exchange.finalizeAgainst(Set.of("silver_a")).isEmpty(), "missing sacrifice aborts exchange");
+        check(exchange.finalizeAgainst(Set.of("silver_a", "silver_b", "prism_a")).isEmpty(), "conflicting reward aborts exchange");
+        var committed = exchange.finalizeAgainst(owned).orElseThrow();
+        check(committed.removed().equals(List.of("silver_a", "silver_b")) && committed.awarded().equals(List.of("prism_a", "prism_b")), "atomic changes returned");
+        check(exchange.finalizeAgainst(owned).isEmpty() && owned.size() == 2, "single commit; exchange does not mutate the input");
+
+        var async = new DamageChain(2, 1);
+        DamageChain.Root root = new DamageChain.Root();
+        async.root(root, () -> check(async.hit(match, attacker, victim, "missile", 3, false, () -> true), "first missile"));
+        async.root(root, () -> check(!async.hit(match, attacker, victim, "missile", 3, false, () -> true), "preserves cap across ticks"));
+        checkCatalog(Path.of(args[0]));
         System.out.println(checks + " official augment engine checks passed");
+    }
+
+    private static void checkCatalog(Path root) throws Exception {
+        String spec = Files.readString(root.resolve("docs/specification-ko.md"));
+        String official = spec.substring(spec.indexOf("AG. 최신 핵심 증강 30종"), spec.indexOf("AI.", spec.indexOf("AH. 추가 증강 34종")));
+        var documented = new HashSet<String>();
+        var ids = Pattern.compile("(?m)^[a-z][a-z_]+$").matcher(official);
+        while (ids.find()) documented.add(ids.group());
+        String yaml = Files.readString(root.resolve("src/main/resources/official-augments.yml"));
+        var declared = new HashSet<String>();
+        var declarations = Pattern.compile("(?m)^  ([a-z_]+):$").matcher(yaml.substring(0, yaml.indexOf("settings:")));
+        while (declarations.find()) declared.add(declarations.group(1));
+        check(documented.size() == 64 && declared.equals(documented), "catalog exactly matches AG and AH IDs");
+        check(yaml.lines().filter(line -> line.equals("    implemented: true")).count() == 64, "all official entries bind effects");
+        String synergies = Files.readString(root.resolve("src/main/resources/synergies.yml"));
+        check(synergies.lines().filter(line -> line.equals("  enabled: true")).count() == 5, "five default synergies");
     }
 }
