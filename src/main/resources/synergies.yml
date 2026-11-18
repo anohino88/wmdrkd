@@ -8,7 +8,12 @@ steel_king:
   particles: true
 infinite_barrage:
   name: 무한 포격
-  enabled: false
+  enabled: true
+  missile-multiplier: 2
+  bounces: 1
+  bounce-radius: 7.0
+  sound: true
+  particles: true
 calamity_train:
   name: 재앙의 기관차
   enabled: true

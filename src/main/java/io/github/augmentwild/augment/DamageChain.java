@@ -12,8 +12,12 @@ public final class DamageChain {
 
     private final int maxDepth;
     private final int maxHitsPerTarget;
-    private final Map<UUID, Integer> hits = new HashMap<>();
-    private UUID original;
+    public static final class Root {
+        private final Map<UUID, Integer> hits = new HashMap<>();
+        private final UUID id = UUID.randomUUID();
+    }
+
+    private Root root;
     private Context current;
 
     public DamageChain(int maxDepth, int maxHitsPerTarget) {
@@ -24,26 +28,31 @@ public final class DamageChain {
 
     public Context current() { return current; }
 
+    public Root currentRoot() { return root; }
+
     public void root(Runnable action) {
-        if (original != null) return;
-        original = UUID.randomUUID();
+        root(new Root(), action);
+    }
+
+    public void root(Root origin, Runnable action) {
+        if (root != null) return;
+        root = origin;
         try {
             action.run();
         } finally {
-            original = null;
-            hits.clear();
+            root = null;
         }
     }
 
     public boolean hit(UUID match, UUID attacker, UUID victim, String augment, double amount,
                        boolean critical, Supplier<Boolean> action) {
-        if (original == null || attacker.equals(victim) || !Double.isFinite(amount) || amount <= 0
-                || hits.getOrDefault(victim, 0) >= maxHitsPerTarget) return false;
+        if (root == null || attacker.equals(victim) || !Double.isFinite(amount) || amount <= 0
+                || root.hits.getOrDefault(victim, 0) >= maxHitsPerTarget) return false;
         Context parent = current;
         int depth = parent == null ? 1 : parent.depth() + 1;
         if (depth > maxDepth || (parent != null && parent.augment().equals(augment))) return false;
-        hits.merge(victim, 1, Integer::sum);
-        current = new Context(match, attacker, victim, original, augment, depth, amount, critical, false);
+        root.hits.merge(victim, 1, Integer::sum);
+        current = new Context(match, attacker, victim, root.id, augment, depth, amount, critical, false);
         try {
             return action.get();
         } finally {

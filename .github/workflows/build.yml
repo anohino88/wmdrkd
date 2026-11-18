@@ -15,7 +15,18 @@ jobs:
           java-version: '25'
       - uses: gradle/actions/setup-gradle@v4
       - run: java --version
-      - run: ./gradlew clean build paperProbeJar --stacktrace
+      - name: Gradle build and JUnit
+        run: ./gradlew clean build paperProbeJar --stacktrace 2>&1 | tee "$RUNNER_TEMP/augmentwild-build.log"
+      - name: Summarize build diagnostics
+        if: failure()
+        run: |
+          if test -f "$RUNNER_TEMP/augmentwild-build.log"; then
+            {
+              printf '### Gradle diagnostics\n\n```text\n'
+              sed -n '1,65p' "$RUNNER_TEMP/augmentwild-build.log"
+              printf '\n```\n'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
       - run: bash scripts/test-domain.sh
       - name: Verify plugin JAR contents
         run: |

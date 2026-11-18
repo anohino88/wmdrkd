@@ -19,7 +19,7 @@ final class OfficialAugments {
             "berserk_engine", "overgrowth", "steel_heart", "eureka", "giant_slayer",
             "jeweled_gauntlet", "russian_doll", "muscle_memory", "predator", "mineral_devourer",
             "phoenix_heart", "gigantification", "clone_hand", "tank_engine", "storm_chaser",
-            "calamity_giant", "chain_impact", "explosive_arrow", "immortal_berserker", "iron_stomach");
+            "calamity_giant", "chain_impact", "explosive_arrow", "immortal_berserker", "iron_stomach", "ultimate_hydra", "magic_missile", "infinite_repeat");
 
     record Rule(AugmentDefinition definition, String group, int threshold, int cap) {
         double amount() { return definition.amount(); }
@@ -50,7 +50,7 @@ final class OfficialAugments {
             if (threshold < 0 || cap < 0 || cap > 100_000) throw new IllegalArgumentException(id);
             if (Set.of("blood_record", "mineral_addiction", "sword_wind", "overgrowth", "eureka",
                     "russian_doll", "muscle_memory", "predator", "mineral_devourer", "phoenix_heart", "clone_hand", "tank_engine", "storm_chaser", "chain_impact", "explosive_arrow",
-                    "immortal_berserker", "iron_stomach")
+                    "immortal_berserker", "iron_stomach", "ultimate_hydra", "magic_missile", "infinite_repeat")
                     .contains(id) && threshold < 1) throw new IllegalArgumentException("Invalid threshold: " + id);
             if (Set.of("blood_record", "mineral_addiction", "berserk_engine", "steel_heart", "eureka",
                     "muscle_memory", "mineral_devourer", "tank_engine", "iron_stomach", "immortal_berserker").contains(id) && cap < 1) {
@@ -64,6 +64,16 @@ final class OfficialAugments {
         }
         if (rules.size() != 64 || rules.values().stream().filter(r -> r.group().equals("CORE")).count() != 30
                 || !rules.keySet().containsAll(BOUND_EFFECTS)) throw new IllegalArgumentException("Official catalog incomplete");
+        if (count("missile-active-cap") > 40 || count("particles-per-second") > 150
+                || count("missile-evolved-count") > count("missile-active-cap") || setting("missile-speed") <= 0
+                || setting("hydra-radius") <= 0 || setting("hydra-shockwave-radius") <= 0
+                || synergies.getInt("infinite_barrage.missile-multiplier") < 1
+                || synergies.getInt("infinite_barrage.missile-multiplier") > 3
+                || synergies.getInt("infinite_barrage.bounces") < 0
+                || synergies.getInt("infinite_barrage.bounces") > 1
+                || synergies.getDouble("infinite_barrage.bounce-radius") <= 0) {
+            throw new IllegalArgumentException("Invalid missile settings");
+        }
         double chance = setting("crit-chance");
         if (chance < 0 || chance > 1 || setting("sword-reach") <= 0 || setting("sword-ray-size") < 0
                 || setting("overgrowth-growth") <= 0 || setting("overgrowth-late-health") <= 0

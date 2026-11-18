@@ -99,9 +99,13 @@ augments:
     group: CORE
     rarity: GOLD
     name: '궁극의 히드라'
-    enabled: false
-    condition: '미구현 · 추첨 제외'
-    amount: 1
+    enabled: true
+    condition: '근접 피해를 주변 적에게 전파하고 네 번째 타격마다 넓은 충격파'
+    amount: 0.5
+    threshold: 4
+    duration: 0
+    cooldown: 0
+    cap: 0
   infernal_conductor:
     group: CORE
     rarity: GOLD
@@ -124,9 +128,13 @@ augments:
     group: CORE
     rarity: GOLD
     name: '마법 미사일'
-    enabled: false
-    condition: '미구현 · 추첨 제외'
-    amount: 1
+    enabled: true
+    condition: '유효 타격마다 추적 미사일을 준비하고 누적 발사 수에 따라 진화'
+    amount: 3
+    threshold: 3
+    duration: 0
+    cooldown: 0
+    cap: 0
   phantom_weapon:
     group: CORE
     rarity: GOLD
@@ -189,9 +197,13 @@ augments:
     group: CORE
     rarity: PRISMATIC
     name: '무한 반복'
-    enabled: false
-    condition: '미구현 · 추첨 제외'
-    amount: 1
+    enabled: true
+    condition: '허용된 발동을 두 번, 매 세 번째에는 세 번 처리'
+    amount: 2
+    threshold: 3
+    duration: 0
+    cooldown: 0
+    cap: 0
   jeweled_gauntlet:
     group: CORE
     rarity: PRISMATIC
@@ -550,7 +562,7 @@ augments:
     amount: 1
 settings:
   ore-sites: 262144
-  max-hits-per-target: 3
+  max-hits-per-target: 24
   sword-reach: 7.0
   sword-ray-size: 0.3
   overgrowth-growth: 8.0
@@ -587,3 +599,15 @@ settings:
   immortal-berserker-lifesteal: 0.4
   immortal-berserker-revive-extension: 8
   iron-stomach-heal: 2.0
+  hydra-radius: 5.0
+  hydra-shockwave-radius: 8.0
+  hydra-shockwave-damage: 6.0
+  missile-count: 5
+  missile-evolved-count: 12
+  missile-evolution-shots: 100
+  missile-lifetime-ticks: 40
+  missile-speed: 0.65
+  missile-active-cap: 40
+  repeat-third-count: 3
+  particles-per-second: 150
+  missile-target-range: 12.0
