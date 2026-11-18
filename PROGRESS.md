@@ -192,3 +192,5 @@ PHASE 2B의 GitHub Actions #6에서 Java 버전 확인, `./gradlew clean build -
 - TESTED: Java 25 독립 도메인 검사 331개와 시나리오 23개 통과. 최종 60×60 영역 랜덤 후보의 다양성·경계 여유 및 빈 영역을 검증했다. 서버의 실제 안전 지표면 판정은 독립 검사의 범위 밖이다.
 - COMPILED / BUILD_VERIFIED / JAR_VERIFIED: `4fa56d9`의 [Actions 빌드](https://github.com/anohino88/wmdrkd/actions/runs/44266754367)는 컴파일, Gradle 테스트, 독립 도메인 및 JAR 업로드를 완료했다.
 - 서버 검증: 로컬 Paper 다운로드는 프록시 CONNECT 403. CI에는 서버 부팅·`/aw status`·정상 종료를 확인하는 분리된 작업을 추가했다. 실제 2인 경기 시나리오 A–H는 NOT_RUN이다. 별도 대기실 대신 네이티브 리스폰 위치에서 행동을 제한하며 전역 WorldBorder에 손대지 않는다. 이 단계의 경계 처리는 원래 경기장 밖 이동 제한과 랜덤 리스폰 시 축소 안전 영역 검사다.
+
+최종 코드 `711aab0`의 [Actions 실행](https://github.com/anohino88/wmdrkd/actions/runs/44268221316)이 성공했다. `COMPILED`, `BUILD_VERIFIED`, `JAR_VERIFIED` 및 Paper 26.3 기동·플러그인 활성화·콘솔 `/aw status`·종료 smoke 검증을 확인했다. `augmentwild-jar`와 `paper-smoke-log`가 Actions 아티팩트로 제공된다. 실제 2인 배치·전투·리스폰·복구에 대한 `RUNTIME_VERIFIED`는 미확인이다.
