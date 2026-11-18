@@ -8,6 +8,9 @@ target="${RUNNER_TEMP:-/tmp}/augmentwild-paper-smoke"
 mkdir -p "$target/plugins"
 cd "$target"
 cp "${jars[0]}" plugins/
+if [[ "${AW_BORDER_PROBE:-0}" == 1 ]]; then
+    cp "$root/build/paper-probe/augmentwild-paper-probe.jar" plugins/
+fi
 agent='AugmentWild-CI/1.0 (https://github.com/anohino88/wmdrkd)'
 curl --fail --silent --show-error --max-time 30 --user-agent "$agent" \
     https://fill.papermc.io/v3/projects/paper/versions/26.3/builds -o builds.json
@@ -63,6 +66,8 @@ with log.open("wb") as output:
             wait_for('Enabling AugmentWild', 5)
             command("aw status")
             wait_for('경기 단계 WAITING', 15)
+            if os.environ.get("AW_BORDER_PROBE") == "1":
+                wait_for("AW_BORDER_PROBE_PASS", 15)
             if benchmark:
                 commands = runpy.run_path(str(pathlib.Path(sys.argv[1]) / "scripts/paper-arena-benchmark.py"))
                 commands["benchmark_arena"](command, log, wait_for)

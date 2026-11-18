@@ -70,7 +70,7 @@ public final class AugmentWildPlugin extends JavaPlugin {
         }
         if (args.length != 1) return false;
         switch (args[0].toLowerCase(Locale.ROOT)) {
-            case "status" -> sender.sendMessage(matches.status());
+            case "status" -> sender.sendMessage(matches.status(sender));
             case "join" -> sender.sendMessage(sender instanceof Player player
                     ? matches.join(player) : "플레이어만 참가할 수 있습니다.");
             case "leave" -> sender.sendMessage(sender instanceof Player player

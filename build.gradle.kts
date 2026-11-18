@@ -18,3 +18,13 @@ dependencies {
 java { toolchain.languageVersion = JavaLanguageVersion.of(25) }
 tasks.withType<JavaCompile>().configureEach { options.encoding = "UTF-8" }
 tasks.test { useJUnitPlatform() }
+
+val paperProbe = sourceSets.create("paperProbe") {
+    compileClasspath += sourceSets.main.get().output + configurations.compileClasspath.get()
+}
+
+tasks.register<Jar>("paperProbeJar") {
+    from(paperProbe.output)
+    archiveFileName = "augmentwild-paper-probe.jar"
+    destinationDirectory = layout.buildDirectory.dir("paper-probe")
+}

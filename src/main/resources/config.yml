@@ -46,6 +46,8 @@ border:
   start-size: 1000
   final-size: 60
   shrink-duration-seconds: 600
+  damage-interval-seconds: 1
+  damage-hearts: 1.0
 tracker:
   amount: 1
   maximum-distance: -1

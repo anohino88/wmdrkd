@@ -4,7 +4,7 @@ import io.github.augmentwild.domain.MatchRules;
 import org.bukkit.configuration.file.FileConfiguration;
 
 public record PaperMatchSettings(MatchRules rules, int minimumPlayers, int maximumPlayers,
-                                 int selectionSeconds, int normalSupplySecond, int premiumSupplySecond, long placementTimeoutNanos) {
+                                 int selectionSeconds, int normalSupplySecond, int premiumSupplySecond, long placementTimeoutNanos, int borderDamageInterval, double borderDamagePoints) {
     public static PaperMatchSettings load(FileConfiguration config) {
         if (!config.getBoolean("gathering.pvp-enabled")) {
             throw new IllegalArgumentException("gathering.pvp-enabled must be true");
@@ -22,7 +22,16 @@ public record PaperMatchSettings(MatchRules rules, int minimumPlayers, int maxim
                 || !config.getBoolean("game.pause-match-clock-during-selection")) {
             throw new IllegalArgumentException("Invalid game, supply, or player limits in config.yml");
         }
-        int arenaSize = Math.min(config.getInt("arena.width"), config.getInt("arena.height"));
+        int arenaSize = config.getInt("arena.width");
+        if (arenaSize != config.getInt("arena.height") || arenaSize != config.getDouble("border.start-size")) {
+            throw new IllegalArgumentException("arena.width, arena.height and border.start-size must match for the virtual border");
+        }
+        int damageInterval = config.getInt("border.damage-interval-seconds");
+        double damagePoints = 2 * config.getDouble("border.damage-hearts");
+        if (damageInterval < 1 || !Double.isFinite(damagePoints) || damagePoints < 0
+                || config.getDouble("border.final-size") < 1) {
+            throw new IllegalArgumentException("Invalid border damage or final size");
+        }
         var rules = new MatchRules(gathering, (long) gathering + grace, config.getInt("respawn.delay-seconds"),
                 config.getInt("combat.lives"), arenaSize, config.getInt("arena.maximum-size"),
                 config.getInt("arena.spawn.min-player-distance"), config.getDouble("border.start-size"),
@@ -34,6 +43,6 @@ public record PaperMatchSettings(MatchRules rules, int minimumPlayers, int maxim
         int placementSeconds = config.getInt("arena.spawn.placement-timeout-seconds");
         if (placementSeconds < 1) throw new IllegalArgumentException("placement timeout must be positive");
         return new PaperMatchSettings(rules, minimum, maximum, selection, normal, premium,
-                java.util.concurrent.TimeUnit.SECONDS.toNanos(placementSeconds));
+                java.util.concurrent.TimeUnit.SECONDS.toNanos(placementSeconds), damageInterval, damagePoints);
     }
 }

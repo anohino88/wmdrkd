@@ -1,0 +1,5 @@
+name: AugmentWildPaperProbe
+version: 1.0
+main: io.github.augmentwild.probe.BorderProbe
+api-version: '26.3'
+depend: [AugmentWild]

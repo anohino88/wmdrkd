@@ -1,9 +1,9 @@
 package io.github.augmentwild.paper;
 
 import com.destroystokyo.paper.event.player.PlayerPostRespawnEvent;
-import io.github.augmentwild.domain.Arena;
 import io.github.augmentwild.domain.GameSession;
 import io.github.augmentwild.domain.MatchSimulationClock;
+import io.github.augmentwild.domain.MatchBorder;
 import io.github.augmentwild.match.LifeState;
 import io.github.augmentwild.match.MatchState;
 import java.util.List;
@@ -47,6 +47,8 @@ public final class PaperMatchService implements Listener {
     private final Map<UUID, TeleportPermit> permits = new LinkedHashMap<>();
     private ArenaSearchService.ArenaContext arena;
     private long tickNumber;
+    private MatchBorder border;
+    private PaperMatchBorder borderDisplay;
     private boolean regionCommitted;
 
     private record TeleportPermit(UUID matchId, Location target) { }
@@ -74,7 +76,7 @@ public final class PaperMatchService implements Listener {
         return Math.max(settings.minimumPlayers(), session.participantIds().size() - departures.size());
     }
 
-    public String status() {
+    public String status(CommandSender sender) {
         long elapsed = clock == null ? 0 : clock.elapsedSeconds();
         String remaining = switch (session.state()) {
             case GATHERING, AUGMENT_SELECTION -> Math.max(0, settings.rules().pvpStartSeconds() - elapsed) + "초 (목숨 제한 시작까지)";
@@ -82,9 +84,22 @@ public final class PaperMatchService implements Listener {
                     + "초 (서든데스까지)";
             default -> "해당 없음";
         };
-        return "경기 단계 " + session.state() + " | 참가자 " + (session.participantIds().size() - departures.size())
+        String status = "경기 단계 " + session.state() + " | 참가자 " + (session.participantIds().size() - departures.size())
                 + "명 | 경과 " + elapsed + "초 | 남은 시간 " + remaining
                 + " | 일시정지 " + (clock != null && clock.isPaused() ? "예" : "아니요");
+        if (border == null) return status;
+        var area = border.area(elapsed);
+        String shrink = elapsed < settings.rules().pvpStartSeconds()
+                ? "축소까지 " + (settings.rules().pvpStartSeconds() - elapsed) + "초"
+                : "축소 " + border.progressPercent(elapsed) + "%";
+        status += String.format(java.util.Locale.ROOT, " | 자기장 %.1f×%.1f | %s", area.width(), area.height(), shrink);
+        if (sender instanceof Player player && contains(player.getUniqueId())) {
+            var life = session.player(player.getUniqueId()).life();
+            String lives = elapsed < settings.rules().pvpStartSeconds() ? "무제한"
+                    : session.state() == MatchState.SUDDEN_DEATH ? "부활 불가" : Integer.toString(life.lives());
+            status += " | 생존 상태 " + life.status() + " | 남은 목숨 " + lives;
+        }
+        return status;
     }
 
     public String join(Player player) {
@@ -188,6 +203,8 @@ public final class PaperMatchService implements Listener {
         if (world == null || !world.getPVP() || players.stream().anyMatch(id -> !inside(context, available(id)))) {
             throw new IllegalStateException("Participant moved or arena settings changed before start");
         }
+        border = new MatchBorder(context.area(), settings.rules(), settings.borderDamageInterval());
+        borderDisplay = new PaperMatchBorder(plugin.getServer(), border.area(0));
         task = plugin.getServer().getScheduler().runTaskTimer(plugin, this::tick, 1L, 1L);
         usedRegions.start(context);
         regionCommitted = true;
@@ -202,7 +219,10 @@ public final class PaperMatchService implements Listener {
         sender.sendMessage("경기가 시작됐습니다. 파밍 중 PvP 허용, 목숨 무제한.");
         for (UUID id : players) {
             Player player = available(id);
-            if (player != null && player != sender) player.sendMessage("증강 야생 경기가 시작됐습니다.");
+            if (player != null) {
+                borderDisplay.attach(player);
+                if (player != sender) player.sendMessage("증강 야생 경기가 시작됐습니다.");
+            }
         }
     }
 
@@ -250,6 +270,9 @@ public final class PaperMatchService implements Listener {
                 plugin.getLogger().log(Level.WARNING, "Could not record arena end time", failure);
             }
         }
+        if (borderDisplay != null) borderDisplay.clear();
+        borderDisplay = null;
+        border = null;
         regionCommitted = false;
         arena = null;
         clock = null;
@@ -282,6 +305,8 @@ public final class PaperMatchService implements Listener {
                 placement.forget(id);
                 captured.remove(id);
                 Player player = available(id);
+                Player online = plugin.getServer().getPlayer(id);
+                if (online != null) borderDisplay.detach(online);
                 if (player != null) snapshots.restore(player, this::move);
             }
             deaths.values().forEach(session::applyDeath);
@@ -298,26 +323,27 @@ public final class PaperMatchService implements Listener {
             }
             var world = plugin.getServer().getWorld(arena.worldId());
             if (world == null) throw new IllegalStateException("Arena world unloaded");
-            Arena safe = currentSafeArea();
+            var frame = border.update(now, clock.isPaused());
+            borderDisplay.update(frame.area());
             tickNumber++;
             for (UUID id : session.participantIds()) {
                 Player player = available(id);
                 if (player != null && !awaitingNativeRespawn.contains(id)) {
-                    placement.respawn(player, world, safe, session, now, tickNumber, this::move);
+                    placement.respawn(player, world, frame.area(), session, now, tickNumber, this::move);
+                    for (var notice : frame.notices()) player.sendMessage(notice.message());
+                    if (frame.damagePulse() && settings.borderDamagePoints() > 0) {
+                        var location = player.getLocation();
+                        if (frame.damages(!isRestricted(player), world.equals(location.getWorld()),
+                                placement.protectedFromDamage(id, System.nanoTime()), location.getX(), location.getZ())) {
+                            PaperMatchBorder.applyDamage(player, settings.borderDamagePoints());
+                        }
+                    }
                 }
             }
         } catch (RuntimeException failure) {
             plugin.getLogger().log(Level.SEVERE, "Match tick failed", failure);
             clearMatch();
         }
-    }
-
-    private Arena currentSafeArea() {
-        if (session.state() != MatchState.PVP && session.state() != MatchState.SUDDEN_DEATH) return arena.area();
-        var area = arena.area();
-        var rules = settings.rules();
-        return area.shrink(clock.elapsedSeconds(), rules.pvpStartSeconds(), rules.shrinkSeconds(),
-                Math.min(area.width(), rules.borderFinal()), Math.min(area.height(), rules.borderFinal()));
     }
 
     private boolean outsideArena(Player player, Location destination) {
@@ -378,6 +404,7 @@ public final class PaperMatchService implements Listener {
                 return;
             }
             session.connected(id, true);
+            if (borderDisplay != null) borderDisplay.attach(event.getPlayer());
             if (!event.getPlayer().isDead()) awaitingNativeRespawn.remove(id);
         }
     }
@@ -385,6 +412,7 @@ public final class PaperMatchService implements Listener {
     @EventHandler public void onQuit(PlayerQuitEvent event) {
         UUID id = event.getPlayer().getUniqueId();
         if (!contains(id)) return;
+        if (borderDisplay != null) borderDisplay.detach(event.getPlayer());
         if (session.state() == MatchState.PREPARING) {
             clearMatch();
         } else if (task == null) session.leave(id);
@@ -432,6 +460,7 @@ public final class PaperMatchService implements Listener {
             return;
         }
         if (task == null || !awaitingNativeRespawn.remove(id) || departures.contains(id)) return;
+        borderDisplay.refresh(player);
         if (session.player(id).life().status() == LifeState.Status.ELIMINATED) {
             player.sendMessage("현재 경기에서 탈락했습니다.");
         } else {
