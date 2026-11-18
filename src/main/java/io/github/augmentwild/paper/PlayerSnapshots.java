@@ -104,14 +104,23 @@ final class PlayerSnapshots {
             var items = inventory.stream().map(value -> (ItemStack) value).toArray(ItemStack[]::new);
             var savedEffects = effects.stream().map(PotionEffect.class::cast).toList();
             var mode = GameMode.valueOf(yaml.getString("mode", ""));
-            var original = new Location(world, yaml.getDouble("x"), yaml.getDouble("y"), yaml.getDouble("z"),
-                    (float) yaml.getDouble("yaw"), (float) yaml.getDouble("pitch"));
+            var original = new Location(world, yaml.getDouble("x", Double.NaN), yaml.getDouble("y", Double.NaN),
+                    yaml.getDouble("z", Double.NaN), (float) yaml.getDouble("yaw", Double.NaN),
+                    (float) yaml.getDouble("pitch", Double.NaN));
             int slot = yaml.getInt("held-slot", -1);
             int level = yaml.getInt("level", -1);
             double exp = yaml.getDouble("exp", -1);
             double health = yaml.getDouble("health", -1);
+            int totalExp = yaml.getInt("total-exp", -1);
+            int hunger = yaml.getInt("hunger", -1);
+            float saturation = (float) yaml.getDouble("saturation", Double.NaN);
+            float exhaustion = (float) yaml.getDouble("exhaustion", Double.NaN);
+            boolean allowFlight = yaml.getBoolean("flight");
+            boolean flying = allowFlight && yaml.getBoolean("flying");
             if (slot < 0 || slot > 8 || level < 0 || !Double.isFinite(exp) || exp < 0 || exp > 1
-                    || !Double.isFinite(health) || health <= 0) {
+                    || !Double.isFinite(health) || health <= 0 || totalExp < 0 || hunger < 0
+                    || !Float.isFinite(saturation) || saturation < 0 || !Float.isFinite(exhaustion) || exhaustion < 0
+                    || !yaml.isBoolean("flight") || !yaml.isBoolean("flying")) {
                 throw new IllegalArgumentException("Invalid recovery slot, XP, or health");
             }
             original.checkFinite();
@@ -124,18 +133,28 @@ final class PlayerSnapshots {
             player.getInventory().setHeldItemSlot(slot);
             player.setLevel(level);
             player.setExp((float) exp);
-            player.setTotalExperience(yaml.getInt("total-exp"));
-            player.setFoodLevel(yaml.getInt("hunger"));
-            player.setSaturation((float) yaml.getDouble("saturation"));
-            player.setExhaustion((float) yaml.getDouble("exhaustion"));
+            player.setTotalExperience(totalExp);
+            player.setFoodLevel(hunger);
+            player.setSaturation(saturation);
+            player.setExhaustion(exhaustion);
             player.getActivePotionEffects().forEach(effect -> player.removePotionEffect(effect.getType()));
             for (var effect : savedEffects) {
                 if (!player.addPotionEffect(effect)) return false;
             }
             var maxHealth = player.getAttribute(org.bukkit.attribute.Attribute.MAX_HEALTH);
-            if (maxHealth != null) player.setHealth(Math.min(maxHealth.getValue(), health));
-            player.setAllowFlight(yaml.getBoolean("flight"));
-            player.setFlying(yaml.getBoolean("flight") && yaml.getBoolean("flying"));
+            double targetHealth = maxHealth == null ? health : Math.min(maxHealth.getValue(), health);
+            player.setHealth(targetHealth);
+            player.setAllowFlight(allowFlight);
+            player.setFlying(flying);
+            if (player.getGameMode() != mode || !Arrays.equals(items, player.getInventory().getContents())
+                    || player.getInventory().getHeldItemSlot() != slot || player.getLevel() != level
+                    || player.getExp() != (float) exp || player.getTotalExperience() != totalExp
+                    || player.getFoodLevel() != hunger || player.getSaturation() != saturation
+                    || player.getExhaustion() != exhaustion || Math.abs(player.getHealth() - targetHealth) > 0.00001
+                    || player.getAllowFlight() != allowFlight || player.isFlying() != flying
+                    || !new HashSet<>(player.getActivePotionEffects()).equals(new HashSet<>(savedEffects))) {
+                throw new IllegalStateException("Restored state did not match the recovery snapshot");
+            }
             player.saveData();
             Files.delete(path);
             pending.remove(id);

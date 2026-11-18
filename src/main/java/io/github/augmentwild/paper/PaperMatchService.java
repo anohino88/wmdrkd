@@ -333,6 +333,9 @@ public final class PaperMatchService implements Listener {
         try {
             return player.teleport(target, PlayerTeleportEvent.TeleportCause.PLUGIN)
                     && atTarget(player.getLocation(), target);
+        } catch (RuntimeException failure) {
+            plugin.getLogger().log(Level.WARNING, "Could not teleport match player " + id, failure);
+            return false;
         } finally {
             permits.remove(id, permit);
         }

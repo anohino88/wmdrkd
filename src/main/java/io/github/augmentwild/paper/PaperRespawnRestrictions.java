@@ -8,6 +8,7 @@ import org.bukkit.entity.AreaEffectCloud;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Projectile;
 import org.bukkit.entity.TNTPrimed;
+import org.bukkit.entity.Tameable;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -100,6 +101,9 @@ final class PaperRespawnRestrictions implements Listener {
             return blocksAttack(player);
         }
         if (source instanceof TNTPrimed tnt && tnt.getSource() instanceof Player player) {
+            return blocksAttack(player);
+        }
+        if (source instanceof Tameable tameable && tameable.getOwner() instanceof Player player) {
             return blocksAttack(player);
         }
         return source instanceof AreaEffectCloud cloud && cloud.getSource() instanceof Player player
