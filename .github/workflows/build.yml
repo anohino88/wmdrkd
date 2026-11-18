@@ -53,3 +53,28 @@ jobs:
           name: paper-smoke-log
           path: ${{ runner.temp }}/augmentwild-paper-smoke/server.log
           if-no-files-found: ignore
+  paper-arena-benchmark:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: actions/download-artifact@v4
+        with:
+          name: augmentwild-jar
+          path: build/libs
+      - name: Measure a full 1000x1000 arena scan
+        env:
+          AW_ARENA_BENCHMARK: '1'
+        run: bash scripts/test-paper-smoke.sh
+      - name: Upload arena benchmark log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: paper-arena-benchmark-log
+          path: ${{ runner.temp }}/augmentwild-paper-smoke/server.log
+          if-no-files-found: ignore

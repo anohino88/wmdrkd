@@ -19,14 +19,30 @@ printf '%s  paper.jar\n' "$sha" | sha256sum -c -
 # Disposable CI server only.
 printf 'eula=true\n' > eula.txt
 printf 'server-ip=127.0.0.1\nserver-port=25565\nview-distance=3\nsimulation-distance=3\n' > server.properties
-python3 - <<'PY'
+if [[ "${AW_ARENA_BENCHMARK:-0}" == 1 ]]; then
+    printf 'level-type=minecraft:flat\n' >> server.properties
+    mkdir -p plugins/AugmentWild
+    cat > plugins/AugmentWild/config.yml <<'YAML'
+arena:
+  world: world
+  search:
+    radius: 1
+    max-candidate-attempts: 1
+    surface-sample-step: 1
+YAML
+fi
+python3 - "$root" <<'PY'
+import os
 import pathlib
+import runpy
+import sys
 import subprocess
 import time
 
+benchmark = os.environ.get("AW_ARENA_BENCHMARK") == "1"
 log = pathlib.Path("server.log")
 with log.open("wb") as output:
-    with subprocess.Popen(["java", "-Xms512M", "-Xmx1536M", "-jar", "paper.jar", "--nogui"],
+    with subprocess.Popen(["java", "-Xms512M", "-Xmx4096M" if benchmark else "-Xmx1536M", "-jar", "paper.jar", "--nogui"],
                           stdin=subprocess.PIPE, stdout=output, stderr=subprocess.STDOUT) as server:
         def wait_for(marker, seconds):
             deadline = time.monotonic() + seconds
@@ -38,14 +54,19 @@ with log.open("wb") as output:
                 time.sleep(1)
             raise RuntimeError(f"Paper smoke marker missing: {marker}")
 
+        def command(text):
+            server.stdin.write((text + "\n").encode("utf-8"))
+            server.stdin.flush()
+
         try:
             wait_for('Done (', 140)
             wait_for('Enabling AugmentWild', 5)
-            server.stdin.write(b"aw status\n")
-            server.stdin.flush()
+            command("aw status")
             wait_for('경기 단계 WAITING', 15)
-            server.stdin.write(b"stop\n")
-            server.stdin.flush()
+            if benchmark:
+                commands = runpy.run_path(str(pathlib.Path(sys.argv[1]) / "scripts/paper-arena-benchmark.py"))
+                commands["benchmark_arena"](command, log, wait_for)
+            command("stop")
             if server.wait(timeout=30) != 0:
                 raise RuntimeError("Paper exited with an error")
             wait_for('Disabling AugmentWild', 1)
