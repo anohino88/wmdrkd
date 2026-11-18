@@ -222,3 +222,11 @@ PHASE 2B의 GitHub Actions #6에서 Java 버전 확인, `./gradlew clean build -
 - 독립 Java 25 PASS: 기존 331개, 시나리오 23개, 자기장 검사 21개, 신규 증강 검사 127개. 로컬 Gradle BLOCKED: Paper Maven 403 및 Java PKIX.
 - `66c27e0` [Actions](https://github.com/anohino88/wmdrkd/actions/runs/44299783974) PASS. Paper 26.3 실제 테스트 엔티티에서 이동 속도 modifier를 두 번 적용해 중복 없음과 원복을 확인했다. 실제 클라이언트 GUI, XP 획득 이벤트, 2인 PvP·재접속·종료 처리는 NOT_RUN이다. 따라서 코드 구현과 서버 프로브 통과를 기록하지만 `PHASE_5_CORE_COMPLETE` 및 `REAL_CLIENT_VERIFIED`는 선언하지 않는다.
 - 최종 코드 `b943d1d`의 [GitHub Actions](https://github.com/anohino88/wmdrkd/actions/runs/44300111215) PASS: Java 25 Gradle/JUnit, 독립 회귀 검사, JAR 검사·업로드, Paper 26.3 속성·자기장 프로브, 경기장 벤치마크. [서버 JAR](https://github.com/anohino88/wmdrkd/actions/runs/44300111215/artifacts/14425452103).
+
+## PHASE 6 공식 증강 확장 (2026-11-18)
+
+- 시작 기준 `f29958a`. 공식 AG 30종과 AH 34종의 효과 경로 및 진화 6종·시너지 5종을 연결했다. 공식 64개와 기존 PHASE 5 확장 12개를 별도 집계한다. 기본 설정에서 총 76개 ID가 등록·선택 가능하며, 교환형 2개에는 개별 자격을 적용한다. XP 확장 3종과 기존 선택 시계·GUI·스냅샷을 유지했다.
+- 명세 대응, 설정, 활성 증강 명령, 두 선택을 확정한 뒤에 비용을 부과하는 교환, 실플레이 검증 절차는 [PHASE 6 문서](docs/phase6-augments-ko.md)에 기록했다.
+- Java 25 독립 검사 통과. 331개 기존 검사, 시나리오 23개, 자기장 검사 21개, PHASE 5 증강 검사 127개, 신규 엔진 검사 49개와 `git diff --check`를 실행했다. 신규 검사는 64개 ID 대조, 연쇄 한도, 쿨다운·중첩, 광석·이동 기록, 부활 우선순위 및 교환의 원자적 완료를 포함한다.
+- 로컬 Gradle은 Paper Maven 메타데이터 GET 403 및 Maven Central Java PKIX로 의존성 해석에서 차단됐다. [전체 카탈로그가 포함된 2f0cd0b CI](https://github.com/anohino88/wmdrkd/actions/runs/44306582864)에서 Gradle 빌드·JUnit, JAR 구조 검사와 업로드, Paper 26.3 기동·속성·자기장 프로브 및 경기장 벤치마크가 통과했다.
+- 모든 증강의 실제 2인 FFA 효과 검증은 `NOT_RUN`이다. 현재 가동 중인 서버에 실제 26.3 클라이언트를 연결해 본 기록이 없으므로 실전 완료 상태는 미확정이다. 경기 이전에 설치된 광석의 자연 생성 여부는 판별할 수 없다.

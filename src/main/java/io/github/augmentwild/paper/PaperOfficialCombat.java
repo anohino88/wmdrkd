@@ -73,6 +73,9 @@ final class PaperOfficialCombat implements Listener {
     private boolean syntheticConfirmed;
     private double syntheticFinalDamage;
 
+    private record ArrowPath(Location position, org.bukkit.util.Vector velocity, double damage, int expires,
+                             DamageChain.Root root) { }
+    private record PoisonCloud(Location center, long expiresAt, Set<UUID> affected, DamageChain.Root root) { }
     private record Zone(String augment, Location start, Location end, long expiresAt, double damage) { }
     private record MissileShot(PaperMissiles.Missile missile, DamageChain.Root root) { }
 
@@ -85,6 +88,8 @@ final class PaperOfficialCombat implements Listener {
         final Set<Material> food = EnumSet.noneOf(Material.class);
         long immortalUntil;
         final List<MissileShot> missiles = new ArrayList<>();
+        final List<ArrowPath> arrows = new ArrayList<>();
+        final List<PoisonCloud> poisonClouds = new ArrayList<>();
         long particleSecond = -1;
         int particles;
         boolean barrage, hellLord, thousandSwords;
@@ -198,20 +203,20 @@ final class PaperOfficialCombat implements Listener {
 
     private void refreshSynergies(UUID id, Fighter state) {
         boolean king = catalog.synergies.getBoolean("steel_king.enabled") && owned.apply(id).containsAll(STEEL_KING);
-        if (king && !state.king) announce(id, "시너지 활성화 · 강철의 왕", catalog.synergies.getBoolean("steel_king.sound"));
+        if (king && !state.king) announceSynergy(id, "steel_king");
         state.king = king;
         boolean train = catalog.synergies.getBoolean("calamity_train.enabled")
                 && owned.apply(id).containsAll(Set.of("tank_engine", "calamity_giant", "berserk_engine"));
-        if (train && !state.train) announce(id, "시너지 활성화 · 재앙의 기관차", catalog.synergies.getBoolean("calamity_train.sound"));
+        if (train && !state.train) announceSynergy(id, "calamity_train");
         state.train = train;
         boolean barrage = catalog.synergies.getBoolean("infinite_barrage.enabled") && owned.apply(id).containsAll(INFINITE_BARRAGE);
-        if (barrage && !state.barrage) announce(id, "시너지 활성화 · 무한 포격", catalog.synergies.getBoolean("infinite_barrage.sound"));
+        if (barrage && !state.barrage) announceSynergy(id, "infinite_barrage");
         state.barrage = barrage;
         boolean hellLord = catalog.synergies.getBoolean("hell_lord.enabled") && owned.apply(id).containsAll(HELL_LORD);
-        if (hellLord && !state.hellLord) announce(id, "시너지 활성화 · 지옥의 군주", catalog.synergies.getBoolean("hell_lord.sound"));
+        if (hellLord && !state.hellLord) announceSynergy(id, "hell_lord");
         state.hellLord = hellLord;
         boolean swords = catalog.synergies.getBoolean("thousand_swords.enabled") && owned.apply(id).containsAll(THOUSAND_SWORDS);
-        if (swords && !state.thousandSwords) announce(id, "시너지 활성화 · 천 개의 검", catalog.synergies.getBoolean("thousand_swords.sound"));
+        if (swords && !state.thousandSwords) announceSynergy(id, "thousand_swords");
         state.thousandSwords = swords;
     }
 
@@ -243,6 +248,8 @@ final class PaperOfficialCombat implements Listener {
         Fighter state = fighters.get(player.getUniqueId());
         if (state != null) {
             state.missiles.clear();
+            state.arrows.clear();
+            state.poisonClouds.clear();
             state.burns.clear();
             state.history.clear();
             state.zones.clear();
@@ -342,6 +349,8 @@ final class PaperOfficialCombat implements Listener {
             state.history.clear();
             state.zones.clear();
             state.missiles.clear();
+            state.arrows.clear();
+            state.poisonClouds.clear();
             state.burns.clear();
             return;
         }
@@ -357,6 +366,8 @@ final class PaperOfficialCombat implements Listener {
         }
         if (valid(player)) {
             advanceMissiles(player, state);
+            advanceSplitArrows(player, state);
+            tickPoisonClouds(player, state);
             tickBurns(player, state, second);
             tickZones(player, state, second);
             remember(player, state, second);
@@ -391,7 +402,7 @@ final class PaperOfficialCombat implements Listener {
             int credited = (int) Math.clamp(Math.min(second, expires) - previous, 0, limit);
             int past = state.progress.value("berserk_seconds");
             if (credited > 0 && past < limit && state.progress.add("berserk_seconds", credited, limit) == limit) {
-                announce(player.getUniqueId(), "증강 진화 · 폭주 기관", true);
+                evolution(player, state, "berserk_engine");
             }
         }
         if (second >= expires) {
@@ -663,7 +674,7 @@ final class PaperOfficialCombat implements Listener {
     }
 
     String cast(Player player, String id) {
-        if (!Set.of("shadow_dash", "earthquake_mage", "time_rewind", "void_lord", "bomb_alchemy", "duel_contract").contains(id)) return "사용할 수 있는 발동형 증강 ID가 아닙니다.";
+        if (!Set.of("shadow_dash", "earthquake_mage", "time_rewind", "void_lord", "bomb_alchemy", "duel_contract", "calamity_giant").contains(id)) return "사용할 수 있는 발동형 증강 ID가 아닙니다.";
         if (!valid(player) || !owns(player, id)) return "현재 이 증강을 발동할 수 없습니다.";
         Fighter state = fighter(player.getUniqueId());
         if (!state.progress.ready(id, now())) return "증강 재사용 대기 중입니다.";
@@ -679,6 +690,12 @@ final class PaperOfficialCombat implements Listener {
                 yield true;
             }
             case "time_rewind" -> rewind(player, state);
+            case "calamity_giant" -> {
+                if (!player.isOnGround()) yield false;
+                afterDamage(player, () -> area(player, player.getLocation(), catalog.setting("calamity-slam-radius"),
+                        id, catalog.setting("calamity-slam-damage"), target -> { }));
+                yield true;
+            }
             case "duel_contract" -> {
                 var eye = player.getEyeLocation();
                 var rival = ray(player, eye, eye.getDirection(), catalog.setting("duel-range"));
@@ -858,13 +875,40 @@ final class PaperOfficialCombat implements Listener {
         if (direction.lengthSquared() == 0) return;
         double damage = original.getDamage() * catalog.setting("split-bow-ratio");
         afterDamage(player, () -> {
+            int reserve = owns(player, "bomb_alchemy") ? 1 : 0;
             for (double yaw : new double[] {-angle, angle}) {
-                var path = direction.clone().normalize().rotateAroundY(yaw);
-                var target = ray(player, start, path, catalog.setting("split-bow-reach"));
-                if (target != null) syntheticHit(player, target, "split_bow", damage);
-                particle(player, state, Particle.CRIT, start.clone().add(path));
+                if (state.arrows.size() + state.missiles.size() >= catalog.count("missile-active-cap") - reserve) break;
+                var path = direction.clone().rotateAroundY(yaw);
+                state.arrows.add(new ArrowPath(start.clone(), path, damage,
+                        Bukkit.getCurrentTick() + catalog.count("split-bow-lifetime-ticks"), chain.currentRoot()));
             }
         });
+    }
+
+    private void advanceSplitArrows(Player player, Fighter state) {
+        var iterator = state.arrows.iterator();
+        while (iterator.hasNext()) {
+            var path = iterator.next();
+            Location position = path.position();
+            var velocity = path.velocity();
+            double travel = velocity.length();
+            if (Bukkit.getCurrentTick() - path.expires() >= 0 || travel <= .01 || !arena.test(position)) {
+                iterator.remove();
+                continue;
+            }
+            var direction = velocity.clone().normalize();
+            var victim = ray(player, position, direction, travel);
+            if (victim != null) {
+                chain.root(path.root(), () -> syntheticHit(player, victim, "split_bow", path.damage()));
+                iterator.remove();
+            } else if (position.getWorld().rayTraceBlocks(position, direction, travel, FluidCollisionMode.NEVER, true) != null) {
+                iterator.remove();
+            } else {
+                position.add(velocity);
+                velocity.multiply(catalog.setting("split-bow-drag")).setY(velocity.getY() - catalog.setting("split-bow-gravity"));
+                particle(player, state, Particle.CRIT, position);
+            }
+        }
     }
 
     private void phantom(Player attacker, LivingEntity target, Fighter state) {
@@ -876,7 +920,7 @@ final class PaperOfficialCombat implements Listener {
         if (owns(attacker, "steel_heart") && (!phantom || allowlist.contains("steel_heart")) && ready(attacker, state, "steel_heart")) {
             int limit = catalog.count("steel-evolution-stacks"), before = state.progress.value("steel_heart");
             int after = state.progress.add("steel_heart", gain(attacker) * (before >= limit ? 2 : 1), rule("steel_heart").cap());
-            if (before < limit && after >= limit) announce(attacker.getUniqueId(), "증강 진화 · 강철심장", true);
+            if (before < limit && after >= limit) evolution(attacker, state, "steel_heart");
         }
         if (owns(attacker, "predator") && (!phantom || allowlist.contains("predator")) && every(state, "predator") && ready(attacker, state, "predator")) {
             attacker.setHealth(Math.min(maxHealth(attacker), attacker.getHealth() + rule("predator").amount()));
@@ -946,7 +990,7 @@ final class PaperOfficialCombat implements Listener {
                     if (syntheticHit(player, target, "infernal_conductor", burn.stacks() * rule("infernal_conductor").amount())
                             && !burnEvolved(state)) {
                         state.burned = Math.min(state.burned + syntheticFinalDamage, catalog.setting("burn-evolution-damage"));
-                        if (burnEvolved(state)) announce(player.getUniqueId(), "증강 진화 · 지옥의 전도체", true);
+                        if (burnEvolved(state)) evolution(player, state, "infernal_conductor");
                     }
                 });
             }
@@ -1010,7 +1054,7 @@ final class PaperOfficialCombat implements Listener {
         int multiplier = state.barrage ? catalog.synergies.getInt("infinite_barrage.missile-multiplier") : 1;
         int reserved = owns(player, "bomb_alchemy") ? 1 : 0;
         int count = Math.min(baseCount * multiplier * repetitions(player, state),
-                catalog.count("missile-active-cap") - reserved - state.missiles.size());
+                catalog.count("missile-active-cap") - reserved - state.missiles.size() - state.arrows.size());
         int bounces = state.barrage ? catalog.synergies.getInt("infinite_barrage.bounces") : 0;
         for (int i = 0; i < count; i++) {
             var start = player.getEyeLocation().add(0, (i % 5 - 2) * .08, 0);
@@ -1018,7 +1062,7 @@ final class PaperOfficialCombat implements Listener {
             state.missiles.add(new MissileShot(missile, chain.currentRoot()));
         }
         if (count > 0 && before < threshold && state.progress.add("missile_shots", count, threshold) == threshold) {
-            announce(player.getUniqueId(), "증강 진화 · 마법 미사일", true);
+            evolution(player, state, "magic_missile");
         }
     }
 
@@ -1111,7 +1155,7 @@ final class PaperOfficialCombat implements Listener {
                 int past = state.progress.value("tank_engine");
                 int next = state.progress.add("tank_engine", earned * gain(player), rule("tank_engine").cap());
                 int evolution = catalog.count("tank-evolution-stacks");
-                if (past < evolution && next >= evolution) announce(player.getUniqueId(), "증강 진화 · 탱크 엔진", true);
+                if (past < evolution && next >= evolution) evolution(player, state, "tank_engine");
             }
         }
         boolean tank = owns(player, "tank_engine") && evolved(state, "tank_engine", "tank-evolution-stacks");
@@ -1123,6 +1167,9 @@ final class PaperOfficialCombat implements Listener {
         var nearby = opponents(player, event.getTo(), radius);
         if (nearby.isEmpty() || !state.progress.cooldown("contact", now(), cooldown(player, wait))) return;
         afterDamage(player, () -> {
+            if (train && catalog.synergies.getBoolean("calamity_train.particles")) {
+                particle(player, state, Particle.SWEEP_ATTACK, player.getLocation().add(0, 1, 0));
+            }
             for (var target : nearby) {
                 if (!opponent(player, target) || target.getLocation().distanceSquared(player.getLocation()) > radius * radius) continue;
                 if (train || tank) syntheticHit(player, target, train ? "calamity_train" : "tank_engine",
@@ -1133,18 +1180,6 @@ final class PaperOfficialCombat implements Listener {
                 }
             }
         });
-    }
-
-    @EventHandler(priority = EventPriority.HIGH)
-    public void slam(PlayerInteractEvent event) {
-        Player player = event.getPlayer();
-        if (event.getHand() != EquipmentSlot.HAND || event.getAction() != Action.RIGHT_CLICK_AIR
-                || !player.isSneaking() || !player.getInventory().getItemInMainHand().getType().isAir()
-                || !valid(player) || clock.get().isPaused() || !owns(player, "calamity_giant")) return;
-        Fighter state = fighter(player.getUniqueId());
-        if (!ready(player, state, "calamity_giant")) return;
-        afterDamage(player, () -> area(player, player.getLocation(), catalog.setting("calamity-slam-radius"),
-                "calamity_giant", catalog.setting("calamity-slam-damage"), target -> { }));
     }
 
     private Player attacker(EntityDamageByEntityEvent event) {
@@ -1185,7 +1220,7 @@ final class PaperOfficialCombat implements Listener {
             if (victim != null && hit.add(victim.getUniqueId()) && syntheticHit(player, victim, "sword_wind", rule("sword_wind").amount())) {
                 int limit = catalog.count("sword-evolution-hits");
                 if (state.progress.value("sword_hits") < limit && state.progress.add("sword_hits", 1, limit) == limit) {
-                    announce(player.getUniqueId(), "증강 진화 · 검풍", true);
+                    evolution(player, state, "sword_wind");
                 }
                 phantom(player, victim, state);
             }
@@ -1237,6 +1272,26 @@ final class PaperOfficialCombat implements Listener {
                 victim.setNoDamageTicks(Math.max(cooldown, victim.getNoDamageTicks()));
             }
         });
+    }
+
+    private void announceSynergy(UUID id, String synergy) {
+        Player player = plugin.getServer().getPlayer(id);
+        if (player == null) return;
+        String message = "시너지 활성화 · " + catalog.synergies.getString(synergy + ".name", synergy);
+        if (catalog.synergies.getBoolean("announcements.broadcast")) {
+            plugin.getServer().broadcast(net.kyori.adventure.text.Component.text(player.getName() + " · " + message));
+            if (catalog.synergies.getBoolean(synergy + ".sound")) {
+                player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, .6f, 1.3f);
+            }
+        } else announce(id, message, catalog.synergies.getBoolean(synergy + ".sound"));
+    }
+
+    private void evolution(Player player, Fighter state, String id) {
+        announce(player.getUniqueId(), "증강 진화 · " + rule(id).definition().name(),
+                catalog.config.getBoolean("settings.evolution-sound"));
+        if (catalog.config.getBoolean("settings.evolution-particles")) {
+            particle(player, state, Particle.END_ROD, player.getLocation().add(0, 1, 0));
+        }
     }
 
     private void announce(UUID id, String message, boolean sound) {
@@ -1299,8 +1354,24 @@ final class PaperOfficialCombat implements Listener {
         Long poisonedUntil = state.poisoned.remove(id);
         if (owns(killer, "venom_swarm") && poisonedUntil != null && poisonedUntil > now() && ready(killer, state, "venom_swarm")) {
             Location center = killed.getLocation();
-            afterDamage(killer, () -> area(killer, center, catalog.setting("venom-radius"), "venom_swarm",
-                    rule("venom_swarm").amount(), victim -> applyVenom(state, victim)));
+            afterDamage(killer, () -> state.poisonClouds.add(new PoisonCloud(center,
+                    now() + catalog.count("venom-cloud-duration"), new HashSet<>(), chain.currentRoot())));
+        }
+    }
+
+    private void tickPoisonClouds(Player player, Fighter state) {
+        for (var cloud : List.copyOf(state.poisonClouds)) {
+            if (cloud.expiresAt() <= now() || !arena.test(cloud.center())) {
+                state.poisonClouds.remove(cloud);
+                continue;
+            }
+            chain.root(cloud.root(), () -> {
+                for (var target : opponents(player, cloud.center(), catalog.setting("venom-radius"))) {
+                    if (!cloud.affected().add(target.getUniqueId())) continue;
+                    if (syntheticHit(player, target, "venom_swarm", rule("venom_swarm").amount())) applyVenom(state, target);
+                }
+            });
+            particle(player, state, Particle.WITCH, cloud.center().clone().add(0, .3, 0));
         }
     }
 

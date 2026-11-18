@@ -36,3 +36,5 @@ thousand_swords:
   side-angle-radians: 0.45
   sound: true
   particles: true
+announcements:
+  broadcast: true
