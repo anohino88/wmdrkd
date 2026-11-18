@@ -15,11 +15,12 @@ public final class SelectionRound {
     private final int round;
     private final long deadline;
     private final Map<UUID,Choice> choices = new LinkedHashMap<>();
+    private final boolean prismaticOnly;
     private boolean closed;
     public SelectionRound(UUID matchId, int round, long deadline, boolean prismaticOnly, Map<UUID,List<Offer>> offers) {
         this.matchId=Objects.requireNonNull(matchId);
         if (round<1 || deadline<0) throw new IllegalArgumentException();
-        this.round=round; this.deadline=deadline;
+        this.round=round; this.deadline=deadline; this.prismaticOnly=prismaticOnly;
         offers.forEach((id,list) -> {
             Objects.requireNonNull(id);
             var valid=list.stream().filter(Offer::implemented).filter(o -> !prismaticOnly || o.prismatic()).toList();
@@ -37,6 +38,17 @@ public final class SelectionRound {
         if (choice==null || choice.status()!=Status.PENDING || choice.offers().stream().noneMatch(o -> o.id().equals(id))) return false;
         choices.put(player,new Choice(choice.offers(),id,Status.SELECTED)); return true;
     }
+    public long deadline() { return deadline; }
+    public boolean prismaticOnly() { return prismaticOnly; }
+    public boolean replace(UUID player, List<Offer> offers, long now) {
+        var saved = choices.get(player);
+        if (closed || now >= deadline || saved == null || saved.status() != Status.PENDING
+                || offers.size() != 3 || offers.stream().anyMatch(o -> !o.implemented() || (prismaticOnly && !o.prismatic()))
+                || offers.stream().map(Offer::id).distinct().count() != 3) return false;
+        choices.put(player, new Choice(offers, null, Status.PENDING));
+        return true;
+    }
+
     public void expire(long now) {
         if (closed || now<deadline) return;
         choices.replaceAll((id,c) -> c.status()==Status.PENDING

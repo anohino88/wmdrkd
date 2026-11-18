@@ -24,6 +24,7 @@ public final class AugmentWildPlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(arenaSearch, this);
         getServer().getPluginManager().registerEvents(matches, this);
         getServer().getPluginManager().registerEvents(matches.restrictions(), this);
+        getServer().getPluginManager().registerEvents(matches.augmentListener(), this);
         matches.recoverOnlinePlayers();
     }
 
@@ -31,6 +32,7 @@ public final class AugmentWildPlugin extends JavaPlugin {
         if (matches == null) return;
         HandlerList.unregisterAll(matches);
         HandlerList.unregisterAll(matches.restrictions());
+        HandlerList.unregisterAll(matches.augmentListener());
         HandlerList.unregisterAll(arenaSearch);
         arenaSearch.cancel();
         matches.shutdown();
@@ -70,6 +72,7 @@ public final class AugmentWildPlugin extends JavaPlugin {
         }
         if (args.length != 1) return false;
         switch (args[0].toLowerCase(Locale.ROOT)) {
+            case "augment" -> sender.sendMessage(sender instanceof Player player ? matches.openAugments(player) : "플레이어 전용 명령입니다.");
             case "status" -> sender.sendMessage(matches.status(sender));
             case "join" -> sender.sendMessage(sender instanceof Player player
                     ? matches.join(player) : "플레이어만 참가할 수 있습니다.");

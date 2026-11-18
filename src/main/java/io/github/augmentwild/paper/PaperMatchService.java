@@ -54,6 +54,7 @@ public final class PaperMatchService implements Listener {
     private record TeleportPermit(UUID matchId, Location target) { }
     private int loggedEvents;
     private final PaperRespawnRestrictions restrictions;
+    private final PaperAugments augments;
 
     public PaperMatchService(JavaPlugin plugin, PaperMatchSettings settings, ArenaSearchService search) {
         this.plugin = plugin;
@@ -68,9 +69,25 @@ public final class PaperMatchService implements Listener {
         restrictions = new PaperRespawnRestrictions(this::isRestricted, this::outsideArena,
                 this::consumePermit, player -> placement.protectedFromDamage(player.getUniqueId(), System.nanoTime()));
         session = new GameSession(settings.rules());
+        augments = new PaperAugments(plugin, () -> clock, this::augmentMember, this::augmentActive,
+                player -> placement.protectedFromDamage(player.getUniqueId(), System.nanoTime()),
+                settings.rules().procDepth());
     }
 
     public Listener restrictions() { return restrictions; }
+    public Listener augmentListener() { return augments; }
+    public String openAugments(Player player) { return augments.open(player); }
+
+    private boolean augmentMember(UUID id) {
+        return task != null && contains(id) && !departures.contains(id)
+                && session.player(id).life().status() != LifeState.Status.ELIMINATED;
+    }
+
+    private boolean augmentActive(Player player) {
+        return augmentMember(player.getUniqueId()) && !player.isDead() && !isRestricted(player)
+                && arena != null && arena.worldId().equals(player.getWorld().getUID())
+                && !outsideArena(player, player.getLocation());
+    }
 
     public int previewPlayerCount() {
         return Math.max(settings.minimumPlayers(), session.participantIds().size() - departures.size());
@@ -216,6 +233,7 @@ public final class PaperMatchService implements Listener {
         long started = System.nanoTime();
         clock = new MatchSimulationClock(session, settings.rules(), () -> System.nanoTime() - started,
                 settings.selectionSeconds(), settings.normalSupplySecond(), settings.premiumSupplySecond());
+        augments.start(session.matchId(), clock);
         sender.sendMessage("경기가 시작됐습니다. 파밍 중 PvP 허용, 목숨 무제한.");
         for (UUID id : players) {
             Player player = available(id);
@@ -273,6 +291,7 @@ public final class PaperMatchService implements Listener {
         if (borderDisplay != null) borderDisplay.clear();
         borderDisplay = null;
         border = null;
+        augments.clear();
         regionCommitted = false;
         arena = null;
         clock = null;
@@ -301,6 +320,7 @@ public final class PaperMatchService implements Listener {
             long now = clock.elapsedNanos();
             awaitingNativeRespawn.removeAll(departures);
             for (UUID id : departures) {
+                augments.remove(id);
                 session.leave(id);
                 placement.forget(id);
                 captured.remove(id);
@@ -312,6 +332,7 @@ public final class PaperMatchService implements Listener {
             deaths.values().forEach(session::applyDeath);
             departures.clear();
             deaths.clear();
+            augments.collectCompleted();
             if (session.state() == MatchState.PVP || session.state() == MatchState.SUDDEN_DEATH) {
                 session.resolveTick(Set.of(), now);
             } else if (session.participantIds().isEmpty()) {
@@ -329,9 +350,11 @@ public final class PaperMatchService implements Listener {
             tickNumber++;
             for (UUID id : activeSession.participantIds()) {
                 if (session != activeSession || task == null) return;
+                Player online = plugin.getServer().getPlayer(id);
+                if (online != null) augments.sync(online);
                 Player player = available(id);
                 if (player != null && !awaitingNativeRespawn.contains(id)) {
-                    placement.respawn(player, world, frame.area(), activeSession, now, tickNumber, this::move);
+                    if (!clock.isPaused()) placement.respawn(player, world, frame.area(), activeSession, now, tickNumber, this::move);
                     if (session != activeSession || task == null) return;
                     for (var notice : frame.notices()) player.sendMessage(notice.message());
                     if (frame.damagePulse() && settings.borderDamagePoints() > 0) {

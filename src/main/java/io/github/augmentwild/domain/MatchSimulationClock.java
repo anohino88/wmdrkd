@@ -12,6 +12,8 @@ public final class MatchSimulationClock {
     private final Timeline timeline;
     private final long selectionNanos;
     private final long rulesGatheringSeconds;
+    private final long selectionInterval;
+    private final Set<UUID> rerolled = new HashSet<>();
     private final List<String> emitted = new ArrayList<>();
     private long selectionEnd;
     @FunctionalInterface public interface OfferProvider {
@@ -23,9 +25,23 @@ public final class MatchSimulationClock {
     public void setOfferProvider(OfferProvider provider) { if (selecting) throw new IllegalStateException(); offerProvider=Objects.requireNonNull(provider); }
     public Optional<SelectionRound> selection() { return Optional.ofNullable(currentSelection); }
     public List<Map<UUID,SelectionRound.Choice>> completedSelections() { return List.copyOf(completedSelections); }
+    public boolean isFinalRound(int round) { return round == rulesGatheringSeconds / selectionInterval; }
+    public long selectionRemainingSeconds() {
+        long remaining = Math.max(0, selectionEnd - wall.getAsLong());
+        return remaining / 1_000_000_000L + (remaining % 1_000_000_000L == 0 ? 0 : 1);
+    }
+    public boolean hasRerolled(UUID player) { return rerolled.contains(player); }
+    public boolean reroll(UUID player, int round, List<SelectionRound.Offer> replacements) {
+        tick();
+        if (!session.participantIds().contains(player) || !selecting || currentSelection == null
+                || round != currentSelection.round() || rerolled.contains(player)
+                || !currentSelection.replace(player, replacements, wall.getAsLong())) return false;
+        rerolled.add(player);
+        return true;
+    }
     public boolean choose(UUID player, int round, String offer) {
         tick();
-        if (!selecting || currentSelection==null) return false;
+        if (!session.participantIds().contains(player) || !selecting || currentSelection==null) return false;
         boolean accepted=currentSelection.select(session.matchId(),round,player,offer,wall.getAsLong());
         if (currentSelection.complete()) tick();
         return accepted;
@@ -40,6 +56,7 @@ public final class MatchSimulationClock {
         if (selectionSeconds<0 || rules.gatheringSeconds()%rules.selectionInterval()!=0) throw new IllegalArgumentException();
         selectionNanos=Math.multiplyExact(selectionSeconds,1_000_000_000L);
         rulesGatheringSeconds=rules.gatheringSeconds();
+        selectionInterval=rules.selectionInterval();
         lastWall=wall.getAsLong();
         clock=new MatchClock(() -> virtualNow);
         var events=new ArrayList<Timeline.Event>();

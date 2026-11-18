@@ -59,6 +59,19 @@ augments:
     prismatic-weight: 2
   proc:
     max-depth: 2
+  effects:
+    xp_silver: {enabled: true, amount: 0.5, duration: 0, cooldown: 0}
+    miner: {enabled: true, amount: 0.35, duration: 6, cooldown: 12}
+    speed: {enabled: true, amount: 0.08, duration: 0, cooldown: 0}
+    heal: {enabled: true, amount: 1.0, duration: 4, cooldown: 30}
+    xp_gold: {enabled: true, amount: 1.0, duration: 0, cooldown: 0}
+    rear: {enabled: true, amount: 0.2, duration: 0, cooldown: 0}
+    fall: {enabled: true, amount: 0.25, duration: 0, cooldown: 0}
+    armor: {enabled: true, amount: 3.0, duration: 5, cooldown: 12}
+    xp_prism: {enabled: true, amount: 2.0, duration: 0, cooldown: 0}
+    berserk: {enabled: true, amount: 0.25, duration: 5, cooldown: 20}
+    defense: {enabled: true, amount: 0.35, duration: 0, cooldown: 25}
+    pursuit: {enabled: true, amount: 0.2, duration: 4, cooldown: 12}
 supply:
   normal:
     time-seconds: 900

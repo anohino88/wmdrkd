@@ -10,6 +10,7 @@ public final class AugmentRegistry {
     public void register(AugmentDefinition definition) {
         if (entries.putIfAbsent(definition.id(), definition) != null) throw new IllegalArgumentException("Duplicate augment: " + definition.id());
     }
+    public AugmentDefinition get(String id) { return entries.get(id); }
     public Collection<AugmentDefinition> all() { return List.copyOf(entries.values()); }
     public List<AugmentDefinition> selectable() { return entries.values().stream().filter(AugmentDefinition::selectable).toList(); }
 }
