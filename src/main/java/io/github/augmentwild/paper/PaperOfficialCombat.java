@@ -40,6 +40,7 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitTask;
 
 final class PaperOfficialCombat implements Listener {
     private static final Set<String> THOUSAND_SWORDS = Set.of("sword_wind", "ultimate_hydra", "dual_wielder");
@@ -62,7 +63,10 @@ final class PaperOfficialCombat implements Listener {
     private final PaperErosion erosion;
     private final Map<UUID, Fighter> fighters = new HashMap<>();
     private final Map<EntityDamageEvent, Double> rawDamage = new WeakHashMap<>();
-    private final Set<UUID> splitArrows = new HashSet<>();
+    private final Map<UUID, Integer> splitArrows = new HashMap<>();
+    private final Deque<Deferred> deferred = new ArrayDeque<>();
+    private BukkitTask deferredTask;
+    private int expiredArrowsAt = Integer.MIN_VALUE;
     private final Set<EntityDamageEvent> splitEvents = Collections.newSetFromMap(new WeakHashMap<>());
     private final Set<EntityDamageEvent> counted = Collections.newSetFromMap(new WeakHashMap<>());
     private final Set<EntityDeathEvent> countedKills = Collections.newSetFromMap(new WeakHashMap<>());
@@ -73,6 +77,7 @@ final class PaperOfficialCombat implements Listener {
     private boolean syntheticConfirmed;
     private double syntheticFinalDamage;
 
+    private record Deferred(UUID match, Player player, DamageChain.Root origin, Runnable action) { }
     private record ArrowPath(Location position, org.bukkit.util.Vector velocity, double damage, int expires,
                              DamageChain.Root root) { }
     private record PoisonCloud(Location center, long expiresAt, Set<UUID> affected, DamageChain.Root root) { }
@@ -240,6 +245,11 @@ final class PaperOfficialCombat implements Listener {
         counted.clear();
         splitEvents.clear();
         splitArrows.clear();
+        deferred.clear();
+        if (deferredTask != null) {
+            deferredTask.cancel();
+            deferredTask = null;
+        }
         countedKills.clear();
         match = null;
     }
@@ -356,6 +366,11 @@ final class PaperOfficialCombat implements Listener {
         }
         long second = now();
         erosion.tick(second);
+        int tick = Bukkit.getCurrentTick();
+        if (expiredArrowsAt != tick) {
+            expiredArrowsAt = tick;
+            splitArrows.values().removeIf(expires -> tick - expires >= 0);
+        }
         recordTopSpeed(player, state, second);
         boolean transform = owns(player, "mad_scientist") && small(state, second) != state.transformedSmall;
         double healthFraction = transform ? player.getHealth() / maxHealth(player) : 0;
@@ -493,7 +508,7 @@ final class PaperOfficialCombat implements Listener {
         if (ids.contains("bounty_hunter") && state.bountyUntil > now() && target.getUniqueId().equals(state.bountyTarget)) {
             ratio += rule("bounty_hunter").amount();
         }
-        if (event.getDamager() instanceof AbstractArrow arrow && splitArrows.contains(arrow.getUniqueId())) {
+        if (event.getDamager() instanceof AbstractArrow arrow && splitArrows.containsKey(arrow.getUniqueId())) {
             ratio += rule("split_bow").amount() - 1;
         }
         if (state.lastDemonUntil > now() && ids.contains("last_demon")) ratio += rule("last_demon").amount();
@@ -651,12 +666,15 @@ final class PaperOfficialCombat implements Listener {
         if (!state.king && !state.thousandSwords && !owns(attacker, "sword_wind") && !owns(attacker, "clone_hand")
                 && !owns(attacker, "ultimate_hydra") && !owns(attacker, "dual_wielder") && !owns(attacker, "draw_the_sword")) return;
         double base = rawDamage(event);
+        var offhand = attacker.getInventory().getItemInOffHand().clone();
         afterDamage(attacker, () -> {
             if (owns(attacker, "ultimate_hydra")) hydra(attacker, target, state, base);
             if (owns(attacker, "sword_wind") && every(state, "sword_wind")) sword(attacker, state);
             if (state.thousandSwords) swords(attacker, state);
             if (owns(attacker, "draw_the_sword")) drawSword(attacker, state);
-            if (owns(attacker, "dual_wielder")) offhand(attacker, target);
+            if (owns(attacker, "dual_wielder") && offhand.equals(attacker.getInventory().getItemInOffHand())) {
+                offhand(attacker, target);
+            }
             if (owns(attacker, "clone_hand") && every(state, "clone_hand") && ready(attacker, state, "clone_hand")) {
                 syntheticHit(attacker, target, "clone_hand", base * rule("clone_hand").amount());
             }
@@ -711,7 +729,9 @@ final class PaperOfficialCombat implements Listener {
                 if (state.bomb != null) yield false;
                 state.bomb = player.launchProjectile(Snowball.class);
                 state.bombLaunchTick = Bukkit.getCurrentTick();
-                yield state.bomb.isValid();
+                if (state.bomb.isValid()) yield true;
+                removeBomb(state);
+                yield false;
             }
             case "void_lord" -> {
                 state.zones.add(new Zone(id, before, before, now() + rule(id).duration(), rule(id).amount()));
@@ -864,11 +884,7 @@ final class PaperOfficialCombat implements Listener {
                 || !valid(player) || !owns(player, "split_bow")) return;
         Fighter state = fighter(player.getUniqueId());
         if (!every(state, "split_bow") || !ready(player, state, "split_bow")) return;
-        splitArrows.add(original.getUniqueId());
-        UUID matchId = match;
-        plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
-            if (matchId.equals(match)) splitArrows.remove(original.getUniqueId());
-        }, catalog.count("missile-lifetime-ticks"));
+        splitArrows.put(original.getUniqueId(), Bukkit.getCurrentTick() + catalog.count("missile-lifetime-ticks"));
         double angle = catalog.setting("split-bow-angle");
         var start = player.getEyeLocation();
         var direction = original.getVelocity();
@@ -1106,13 +1122,19 @@ final class PaperOfficialCombat implements Listener {
     }
 
     private void afterDamage(Player source, Runnable action) {
-        UUID currentMatch = match;
+        if (deferred.size() >= catalog.count("max-deferred-effects")) return;
         DamageChain.Root root = chain.currentRoot() != null ? chain.currentRoot() : originalHit;
-        if (root == null) root = new DamageChain.Root();
-        DamageChain.Root origin = root;
-        plugin.getServer().getScheduler().runTask(plugin, () -> {
-            if (currentMatch.equals(match) && valid(source)) chain.root(origin, action);
-        });
+        deferred.addLast(new Deferred(match, source, root == null ? new DamageChain.Root() : root, action));
+        if (deferredTask == null) deferredTask = plugin.getServer().getScheduler().runTask(plugin, this::applyDeferred);
+    }
+
+    private void applyDeferred() {
+        deferredTask = null;
+        var scheduled = List.copyOf(deferred);
+        deferred.clear();
+        for (var effect : scheduled) {
+            if (effect.match().equals(match) && valid(effect.player())) chain.root(effect.origin(), effect.action());
+        }
     }
 
     private List<LivingEntity> opponents(Player source, Location center, double radius) {

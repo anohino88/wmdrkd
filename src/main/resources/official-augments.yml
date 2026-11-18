@@ -899,3 +899,4 @@ settings:
   split-bow-drag: 0.99
   split-bow-gravity: 0.05
   venom-cloud-duration: 3
+  max-deferred-effects: 512
