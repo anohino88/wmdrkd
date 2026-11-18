@@ -22,6 +22,7 @@ import org.bukkit.attribute.AttributeModifier.Operation;
 import org.bukkit.block.Block;
 import org.bukkit.damage.DamageType;
 import org.bukkit.entity.AbstractArrow;
+import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Monster;
 import org.bukkit.entity.Player;
@@ -40,6 +41,7 @@ import org.bukkit.potion.PotionEffectType;
 import org.bukkit.plugin.java.JavaPlugin;
 
 final class PaperOfficialCombat implements Listener {
+    private static final Set<String> THOUSAND_SWORDS = Set.of("sword_wind", "ultimate_hydra", "dual_wielder");
     private static final Set<String> HELL_LORD = Set.of("infernal_conductor", "center_of_universe", "jeweled_gauntlet");
     private static final Set<String> INFINITE_BARRAGE = Set.of("magic_missile", "eureka", "infinite_repeat");
     private static final Set<String> STEEL_KING = Set.of("steel_heart", "stack_dinosaur", "heavy_fist");
@@ -56,6 +58,7 @@ final class PaperOfficialCombat implements Listener {
     private final NaturalOreTracker ores;
     private final Map<UUID, Fighter> fighters = new HashMap<>();
     private final Map<EntityDamageEvent, Double> rawDamage = new WeakHashMap<>();
+    private final Set<EntityDamageEvent> splitEvents = Collections.newSetFromMap(new WeakHashMap<>());
     private final Set<EntityDamageEvent> counted = Collections.newSetFromMap(new WeakHashMap<>());
     private final Set<UUID> deadMobs = new HashSet<>();
     private Random random;
@@ -76,7 +79,7 @@ final class PaperOfficialCombat implements Listener {
         final List<MissileShot> missiles = new ArrayList<>();
         long particleSecond = -1;
         int particles;
-        boolean barrage, hellLord;
+        boolean barrage, hellLord, thousandSwords;
         final PaperAugmentBurns burns = new PaperAugmentBurns();
         double burned;
         int forcedAt;
@@ -141,6 +144,9 @@ final class PaperOfficialCombat implements Listener {
         boolean hellLord = catalog.synergies.getBoolean("hell_lord.enabled") && owned.apply(id).containsAll(HELL_LORD);
         if (hellLord && !state.hellLord) announce(id, "시너지 활성화 · 지옥의 군주", catalog.synergies.getBoolean("hell_lord.sound"));
         state.hellLord = hellLord;
+        boolean swords = catalog.synergies.getBoolean("thousand_swords.enabled") && owned.apply(id).containsAll(THOUSAND_SWORDS);
+        if (swords && !state.thousandSwords) announce(id, "시너지 활성화 · 천 개의 검", catalog.synergies.getBoolean("thousand_swords.sound"));
+        state.thousandSwords = swords;
     }
 
     void remove(UUID id, Player player) {
@@ -158,6 +164,7 @@ final class PaperOfficialCombat implements Listener {
         deadMobs.clear();
         rawDamage.clear();
         counted.clear();
+        splitEvents.clear();
         match = null;
     }
 
@@ -203,6 +210,7 @@ final class PaperOfficialCombat implements Listener {
         if (Set.of("tank_engine", "calamity_giant", "berserk_engine").contains(augment)) {
             lines.add("재앙의 기관차 · " + (state != null && state.train ? "활성" : "미활성"));
         }
+        if (THOUSAND_SWORDS.contains(augment)) lines.add("천 개의 검 · " + (state != null && state.thousandSwords ? "활성" : "미활성"));
         if (HELL_LORD.contains(augment)) lines.add("지옥의 군주 · " + (state != null && state.hellLord ? "활성" : "미활성"));
         if (INFINITE_BARRAGE.contains(augment)) lines.add("무한 포격 · " + (state != null && state.barrage ? "활성" : "미활성"));
         if (STEEL_KING.contains(augment)) lines.add("강철의 왕 · " + (state != null && state.king ? "활성" : "미활성"));
@@ -340,8 +348,13 @@ final class PaperOfficialCombat implements Listener {
             }
             if (ids.contains("gigantification")) ratio += catalog.setting("gigantification-damage");
         }
+        boolean split = ids.contains("split_attack") && state.progress.value("split_charge") > 0;
+        if (split) splitEvents.add(event);
         double flat = melee && ids.contains("heavy_fist") ? rule("heavy_fist").amount() * maxHealth(attacker) : 0;
-        if (ratio > 0 || flat > 0) event.setDamage(base + Math.min(catalog.setting("max-extra-damage"), (base * ratio) + flat));
+        if (ratio > 0 || flat > 0 || split) {
+            double damage = base + Math.min(catalog.setting("max-extra-damage"), (base * ratio) + flat);
+            event.setDamage(split ? damage * rule("split_attack").amount() : damage);
+        }
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -392,26 +405,30 @@ final class PaperOfficialCombat implements Listener {
             afterDamage(attacker, () -> area(attacker, center, catalog.setting("arrow-explosion-range"),
                     "explosive_arrow", rule("explosive_arrow").amount(), victim -> { }));
         }
-        if (!event.getDamager().equals(attacker)) return;
-        if (owns(attacker, "steel_heart") && ready(attacker, state, "steel_heart")) {
-            int limit = catalog.count("steel-evolution-stacks"), before = state.progress.value("steel_heart");
-            int after = state.progress.add("steel_heart", gain(attacker) * (before >= limit ? 2 : 1), rule("steel_heart").cap());
-            if (before < limit && after >= limit) announce(attacker.getUniqueId(), "증강 진화 · 강철심장", true);
+        if (owns(attacker, "split_attack")) {
+            if (splitEvents.remove(event)) {
+                state.progress.reset("split_charge");
+                double damage = event.getDamage();
+                afterDamage(attacker, () -> {
+                    for (int i = 0; i < catalog.count("split-extra-hits"); i++) syntheticHit(attacker, target, "split_attack", damage);
+                });
+            } else if (every(state, "split_attack")) {
+                state.progress.add("split_charge", 1, 1);
+            }
         }
-        if (!state.king && !owns(attacker, "chain_impact") && !owns(attacker, "sword_wind")
-                && !owns(attacker, "predator") && !owns(attacker, "clone_hand") && !owns(attacker, "ultimate_hydra")) return;
+        if (!event.getDamager().equals(attacker)) {
+            if (event.getDamager() instanceof AbstractArrow) phantom(attacker, target, state);
+            return;
+        }
+        meleeEffects(attacker, target, state, false);
+        if (!state.king && !state.thousandSwords && !owns(attacker, "sword_wind") && !owns(attacker, "clone_hand")
+                && !owns(attacker, "ultimate_hydra") && !owns(attacker, "dual_wielder")) return;
         double base = rawDamage(event);
         afterDamage(attacker, () -> {
             if (owns(attacker, "ultimate_hydra")) hydra(attacker, target, state, base);
-            if (owns(attacker, "chain_impact") && every(state, "chain_impact") && ready(attacker, state, "chain_impact")) {
-                var effect = new PotionEffect(PotionEffectType.SLOWNESS, rule("chain_impact").duration() * 20, 0);
-                area(attacker, attacker.getLocation(), catalog.setting("chain-impact-range"), "chain_impact",
-                        rule("chain_impact").amount(), victim -> victim.addPotionEffect(effect));
-            }
             if (owns(attacker, "sword_wind") && every(state, "sword_wind")) sword(attacker, state);
-            if (owns(attacker, "predator") && every(state, "predator") && ready(attacker, state, "predator")) {
-                attacker.setHealth(Math.min(maxHealth(attacker), attacker.getHealth() + rule("predator").amount()));
-            }
+            if (state.thousandSwords) swords(attacker, state);
+            if (owns(attacker, "dual_wielder")) offhand(attacker, target);
             if (owns(attacker, "clone_hand") && every(state, "clone_hand") && ready(attacker, state, "clone_hand")) {
                 syntheticHit(attacker, target, "clone_hand", base * rule("clone_hand").amount());
             }
@@ -426,6 +443,61 @@ final class PaperOfficialCombat implements Listener {
                 }
             }
         });
+    }
+
+    private void phantom(Player attacker, LivingEntity target, Fighter state) {
+        if (owns(attacker, "phantom_weapon")) meleeEffects(attacker, target, state, true);
+    }
+
+    private void meleeEffects(Player attacker, LivingEntity target, Fighter state, boolean phantom) {
+        var allowlist = catalog.config.getStringList("settings.phantom-melee-effects");
+        if (owns(attacker, "steel_heart") && (!phantom || allowlist.contains("steel_heart")) && ready(attacker, state, "steel_heart")) {
+            int limit = catalog.count("steel-evolution-stacks"), before = state.progress.value("steel_heart");
+            int after = state.progress.add("steel_heart", gain(attacker) * (before >= limit ? 2 : 1), rule("steel_heart").cap());
+            if (before < limit && after >= limit) announce(attacker.getUniqueId(), "증강 진화 · 강철심장", true);
+        }
+        if (owns(attacker, "predator") && (!phantom || allowlist.contains("predator")) && every(state, "predator") && ready(attacker, state, "predator")) {
+            attacker.setHealth(Math.min(maxHealth(attacker), attacker.getHealth() + rule("predator").amount()));
+        }
+        if (owns(attacker, "chain_impact") && (!phantom || allowlist.contains("chain_impact"))
+                && every(state, "chain_impact") && ready(attacker, state, "chain_impact")) {
+            var effect = new PotionEffect(PotionEffectType.SLOWNESS, rule("chain_impact").duration() * 20, 0);
+            afterDamage(attacker, () -> area(attacker, attacker.getLocation(), catalog.setting("chain-impact-range"), "chain_impact",
+                    rule("chain_impact").amount(), victim -> victim.addPotionEffect(effect)));
+        }
+    }
+
+    private void offhand(Player source, LivingEntity target) {
+        var item = source.getInventory().getItemInOffHand();
+        var type = item.getType().name();
+        if (!type.endsWith("_SWORD") && !type.endsWith("_AXE") && !type.equals("TRIDENT") && !type.equals("MACE")
+                && !type.endsWith("_SPEAR")) return;
+        var meta = item.getItemMeta();
+        var custom = meta == null ? null : meta.getAttributeModifiers(EquipmentSlot.HAND);
+        var modifiers = custom == null ? item.getType().getDefaultAttributeModifiers(EquipmentSlot.HAND) : custom;
+        double damage = modifiers.get(Attribute.ATTACK_DAMAGE).stream()
+                .filter(modifier -> modifier.getOperation() == Operation.ADD_NUMBER)
+                .mapToDouble(modifier -> modifier.getAmount()).sum();
+        int sharpness = item.getEnchantmentLevel(Enchantment.SHARPNESS);
+        if (sharpness > 0) damage += catalog.setting("offhand-sharpness-base") + sharpness * catalog.setting("offhand-sharpness-per-level");
+        if (!syntheticHit(source, target, "dual_wielder", damage * rule("dual_wielder").amount())) return;
+        int fire = item.getEnchantmentLevel(Enchantment.FIRE_ASPECT);
+        if (fire > 0 && !target.isDead()) target.setFireTicks(Math.max(target.getFireTicks(), fire * catalog.count("offhand-fire-ticks")));
+        int knockback = item.getEnchantmentLevel(Enchantment.KNOCKBACK);
+        var push = target.getLocation().toVector().subtract(source.getLocation().toVector()).setY(0);
+        if (knockback > 0 && push.lengthSquared() > 0 && !target.isDead()) {
+            target.setVelocity(push.normalize().multiply(knockback * catalog.setting("offhand-knockback-velocity")));
+        }
+        source.damageItemStack(EquipmentSlot.OFF_HAND, catalog.count("offhand-durability-cost"));
+    }
+
+    @EventHandler(priority = EventPriority.HIGH)
+    public void shield(PlayerInteractEvent event) {
+        if (active.test(event.getPlayer()) && owns(event.getPlayer(), "dual_wielder")
+                && event.hasItem() && event.getItem().getType() == Material.SHIELD) {
+            event.setUseItemInHand(Event.Result.DENY);
+            if (event.getPlayer().getActiveItem().getType() == Material.SHIELD) event.getPlayer().clearActiveItem();
+        }
     }
 
     private boolean burnEvolved(Fighter state) {
@@ -666,6 +738,15 @@ final class PaperOfficialCombat implements Listener {
         return true;
     }
 
+    private LivingEntity ray(Player player, Location start, org.bukkit.util.Vector direction, double reach) {
+        var block = player.getWorld().rayTraceBlocks(start, direction, reach, FluidCollisionMode.NEVER, true);
+        if (block != null) reach = Math.max(0, block.getHitPosition().distance(start.toVector()) - .01);
+        if (reach == 0) return null;
+        var entity = player.getWorld().rayTraceEntities(start, direction, reach, catalog.setting("sword-ray-size"),
+                candidate -> candidate instanceof LivingEntity living && opponent(player, living));
+        return entity != null && entity.getHitEntity() instanceof LivingEntity victim ? victim : null;
+    }
+
     private void sword(Player player, Fighter state) {
         var start = player.getEyeLocation();
         var forward = start.getDirection();
@@ -674,20 +755,29 @@ final class PaperOfficialCombat implements Listener {
                 forward.clone().rotateAroundY(-.18).setY(forward.getY() - .18).normalize()) : List.of(forward);
         var hit = new HashSet<UUID>();
         for (var direction : rays) {
-            double reach = catalog.setting("sword-reach");
-            var block = player.getWorld().rayTraceBlocks(start, direction, reach, FluidCollisionMode.NEVER, true);
-            if (block != null) reach = Math.max(0, block.getHitPosition().distance(start.toVector()) - .01);
-            if (reach == 0) continue;
-            var entity = player.getWorld().rayTraceEntities(start, direction, reach, catalog.setting("sword-ray-size"),
-                    candidate -> candidate instanceof LivingEntity living && opponent(player, living));
-            if (entity != null && entity.getHitEntity() instanceof LivingEntity victim && hit.add(victim.getUniqueId())
-                    && syntheticHit(player, victim, "sword_wind", rule("sword_wind").amount())) {
+            var victim = ray(player, start, direction, catalog.setting("sword-reach"));
+            if (victim != null && hit.add(victim.getUniqueId()) && syntheticHit(player, victim, "sword_wind", rule("sword_wind").amount())) {
                 int limit = catalog.count("sword-evolution-hits");
                 if (state.progress.value("sword_hits") < limit && state.progress.add("sword_hits", 1, limit) == limit) {
                     announce(player.getUniqueId(), "증강 진화 · 검풍", true);
                 }
+                phantom(player, victim, state);
             }
             particle(player, state, Particle.SWEEP_ATTACK, start.clone().add(direction));
+        }
+    }
+
+    private void swords(Player player, Fighter state) {
+        var start = player.getEyeLocation();
+        var forward = start.getDirection();
+        double angle = catalog.synergies.getDouble("thousand_swords.side-angle-radians");
+        for (double offset : new double[] {0, -angle, angle}) {
+            var direction = forward.clone().rotateAroundY(offset);
+            var victim = ray(player, start, direction, catalog.synergies.getDouble("thousand_swords.reach"));
+            if (victim != null && syntheticHit(player, victim, "thousand_swords", catalog.synergies.getDouble("thousand_swords.damage"))) {
+                phantom(player, victim, state);
+            }
+            if (catalog.synergies.getBoolean("thousand_swords.particles")) particle(player, state, Particle.SWEEP_ATTACK, start.clone().add(direction));
         }
     }
 

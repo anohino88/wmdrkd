@@ -214,7 +214,7 @@ final class PaperAugments implements Listener {
                 case PRISMATIC -> Material.AMETHYST_SHARD;
             };
             double shown = a.unit().startsWith("%") ? a.amount() * 100 : a.amount();
-            var lore = new ArrayList<>(List.of(
+            List<Component> lore = new ArrayList<>(List.of(
                     Component.text(a.rarity().name(), color), Component.text("조건: " + a.condition()),
                     Component.text(String.format(Locale.ROOT, "효과: %.2f%s", shown, a.unit())),
                     Component.text("지속 " + (a.duration() == 0 ? "상시 또는 즉시" : a.duration() + "초")

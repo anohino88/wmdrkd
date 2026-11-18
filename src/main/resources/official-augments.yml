@@ -156,10 +156,14 @@ augments:
     group: CORE
     rarity: GOLD
     name: '환영 무기'
-    enabled: false
-    implemented: false
-    condition: '미구현 · 추첨 제외'
+    enabled: true
+    implemented: true
+    condition: '화살·검기 적중 시 허용된 근접 효과만 발동'
     amount: 1
+    threshold: 0
+    duration: 0
+    cooldown: 0
+    cap: 0
   tank_engine:
     group: CORE
     rarity: GOLD
@@ -188,10 +192,14 @@ augments:
     group: CORE
     rarity: GOLD
     name: '분열하는 공격'
-    enabled: false
-    implemented: false
-    condition: '미구현 · 추첨 제외'
-    amount: 1
+    enabled: true
+    implemented: true
+    condition: '유효 공격 네 번 후 다음 공격을 세 번으로 분할'
+    amount: 0.75
+    threshold: 4
+    duration: 0
+    cooldown: 0
+    cap: 0
   storm_chaser:
     group: CORE
     rarity: GOLD
@@ -256,10 +264,14 @@ augments:
     group: CORE
     rarity: PRISMATIC
     name: '양손잡이'
-    enabled: false
-    implemented: false
-    condition: '미구현 · 추첨 제외'
+    enabled: true
+    implemented: true
+    condition: '보조 손 무기로 추가 공격하고 방패 사용 제한'
     amount: 1
+    threshold: 0
+    duration: 0
+    cooldown: 0
+    cap: 0
   earthquake_mage:
     group: CORE
     rarity: PRISMATIC
@@ -694,3 +706,10 @@ settings:
   orb-height: 1.2
   orb-radians-per-tick: 0.15
   orb-particle-tick-interval: 4
+  split-extra-hits: 2
+  offhand-durability-cost: 1
+  offhand-sharpness-base: 0.5
+  offhand-sharpness-per-level: 0.5
+  offhand-knockback-velocity: 0.45
+  offhand-fire-ticks: 80
+  phantom-melee-effects: [steel_heart, predator, chain_impact]

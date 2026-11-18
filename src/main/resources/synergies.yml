@@ -30,4 +30,9 @@ hell_lord:
   particles: true
 thousand_swords:
   name: 천 개의 검
-  enabled: false
+  enabled: true
+  reach: 7.0
+  damage: 8.0
+  side-angle-radians: 0.45
+  sound: true
+  particles: true

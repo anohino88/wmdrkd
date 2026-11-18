@@ -19,7 +19,8 @@ final class OfficialAugments {
             "berserk_engine", "overgrowth", "steel_heart", "eureka", "giant_slayer",
             "jeweled_gauntlet", "russian_doll", "muscle_memory", "predator", "mineral_devourer",
             "phoenix_heart", "gigantification", "clone_hand", "tank_engine", "storm_chaser",
-            "calamity_giant", "chain_impact", "explosive_arrow", "immortal_berserker", "iron_stomach", "ultimate_hydra", "magic_missile", "infinite_repeat", "infernal_conductor", "center_of_universe");
+            "calamity_giant", "chain_impact", "explosive_arrow", "immortal_berserker", "iron_stomach", "ultimate_hydra", "magic_missile", "infinite_repeat", "infernal_conductor", "center_of_universe",
+            "phantom_weapon", "split_attack", "dual_wielder");
 
     record Rule(AugmentDefinition definition, String group, int threshold, int cap) {
         double amount() { return definition.amount(); }
@@ -50,7 +51,7 @@ final class OfficialAugments {
             if (threshold < 0 || cap < 0 || cap > 100_000) throw new IllegalArgumentException(id);
             if (Set.of("blood_record", "mineral_addiction", "sword_wind", "overgrowth", "eureka",
                     "russian_doll", "muscle_memory", "predator", "mineral_devourer", "phoenix_heart", "clone_hand", "tank_engine", "storm_chaser", "chain_impact", "explosive_arrow",
-                    "immortal_berserker", "iron_stomach", "ultimate_hydra", "magic_missile", "infinite_repeat")
+                    "immortal_berserker", "iron_stomach", "ultimate_hydra", "magic_missile", "infinite_repeat", "split_attack")
                     .contains(id) && threshold < 1) throw new IllegalArgumentException("Invalid threshold: " + id);
             if (Set.of("blood_record", "mineral_addiction", "berserk_engine", "steel_heart", "eureka",
                     "muscle_memory", "mineral_devourer", "tank_engine", "iron_stomach", "immortal_berserker").contains(id) && cap < 1) {
@@ -80,6 +81,13 @@ final class OfficialAugments {
                 || setting("burn-evolution-damage") <= 0 || setting("orb-hit-radius") <= 0
                 || setting("orb-radius") <= 0 || synergies.getInt("hell_lord.orb-burn-stacks") < 1) {
             throw new IllegalArgumentException("Invalid orb and burn settings");
+        }
+        if (count("split-extra-hits") > 3 || !Set.of("steel_heart", "predator", "chain_impact")
+                .containsAll(config.getStringList("settings.phantom-melee-effects"))
+                || synergies.getDouble("thousand_swords.reach") <= 0
+                || synergies.getDouble("thousand_swords.damage") <= 0
+                || synergies.getDouble("thousand_swords.side-angle-radians") <= 0) {
+            throw new IllegalArgumentException("Invalid linked melee settings");
         }
         double chance = setting("crit-chance");
         if (chance < 0 || chance > 1 || setting("sword-reach") <= 0 || setting("sword-ray-size") < 0
