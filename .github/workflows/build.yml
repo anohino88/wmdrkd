@@ -27,6 +27,10 @@ jobs:
               sed -n '1,65p' "$RUNNER_TEMP/augmentwild-build.log"
               printf '\n```\n'
             } >> "$GITHUB_STEP_SUMMARY"
+            diagnostic=$(sed -n '1,45p' "$RUNNER_TEMP/augmentwild-build.log")
+            diagnostic=${diagnostic//%/%25}
+            diagnostic=${diagnostic//$'\n'/%0A}
+            printf '::error title=Gradle failure::%s\n' "$diagnostic"
           fi
       - run: bash scripts/test-domain.sh
       - name: Verify plugin JAR contents

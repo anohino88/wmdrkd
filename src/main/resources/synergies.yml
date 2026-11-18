@@ -24,7 +24,10 @@ calamity_train:
   particles: true
 hell_lord:
   name: 지옥의 군주
-  enabled: false
+  enabled: true
+  orb-burn-stacks: 1
+  sound: true
+  particles: true
 thousand_swords:
   name: 천 개의 검
   enabled: false

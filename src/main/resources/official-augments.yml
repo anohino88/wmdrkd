@@ -5,6 +5,7 @@ augments:
     rarity: SILVER
     name: '중첩 공룡'
     enabled: true
+    implemented: true
     condition: '다른 영구 스택 획득 배율'
     amount: 2
     threshold: 0
@@ -16,6 +17,7 @@ augments:
     rarity: SILVER
     name: '육중한 주먹'
     enabled: true
+    implemented: true
     condition: '자신의 최대 체력 비례 근접 추가 피해'
     amount: 0.08
     threshold: 0
@@ -27,6 +29,7 @@ augments:
     rarity: SILVER
     name: '피의 기록'
     enabled: true
+    implemented: true
     condition: '자연 적대 몬스터 처치마다 영구 최대 체력 성장'
     amount: 2
     threshold: 5
@@ -38,6 +41,7 @@ augments:
     rarity: SILVER
     name: '광물 중독'
     enabled: true
+    implemented: true
     condition: '자연 광석 채굴에 따라 공격 피해 증가'
     amount: 0.04
     threshold: 12
@@ -49,6 +53,7 @@ augments:
     rarity: SILVER
     name: '검풍'
     enabled: true
+    implemented: true
     condition: '근접 타격 누적으로 벽을 관통하지 않는 전방 검기'
     amount: 8
     threshold: 3
@@ -60,6 +65,7 @@ augments:
     rarity: SILVER
     name: '폭주 기관'
     enabled: true
+    implemented: true
     condition: '유효 타격마다 이동 속도 증가'
     amount: 0.06
     threshold: 0
@@ -71,6 +77,7 @@ augments:
     rarity: SILVER
     name: '반사 신경'
     enabled: false
+    implemented: false
     condition: '미구현 · 추첨 제외'
     amount: 1
   overgrowth:
@@ -78,6 +85,7 @@ augments:
     rarity: SILVER
     name: '과잉 성장'
     enabled: true
+    implemented: true
     condition: '획득 및 경기 시간이 지나면 최대 체력 성장'
     amount: 16
     threshold: 300
@@ -89,6 +97,7 @@ augments:
     rarity: GOLD
     name: '강철심장'
     enabled: true
+    implemented: true
     condition: '근접 유효 타격으로 영구 최대 체력 증가'
     amount: 2
     threshold: 0
@@ -100,6 +109,7 @@ augments:
     rarity: GOLD
     name: '궁극의 히드라'
     enabled: true
+    implemented: true
     condition: '근접 피해를 주변 적에게 전파하고 네 번째 타격마다 넓은 충격파'
     amount: 0.5
     threshold: 4
@@ -110,14 +120,20 @@ augments:
     group: CORE
     rarity: GOLD
     name: '지옥의 전도체'
-    enabled: false
-    condition: '미구현 · 추첨 제외'
-    amount: 1
+    enabled: true
+    implemented: true
+    condition: '타격 시 화상 중첩, 처치 시 전염 및 누적 화상 피해로 진화'
+    amount: 0.6
+    threshold: 0
+    duration: 6
+    cooldown: 0
+    cap: 6
   eureka:
     group: CORE
     rarity: GOLD
     name: '유레카'
     enabled: true
+    implemented: true
     condition: 'XP 레벨 5당 증강 재사용 대기시간 감소'
     amount: 0.05
     threshold: 5
@@ -129,6 +145,7 @@ augments:
     rarity: GOLD
     name: '마법 미사일'
     enabled: true
+    implemented: true
     condition: '유효 타격마다 추적 미사일을 준비하고 누적 발사 수에 따라 진화'
     amount: 3
     threshold: 3
@@ -140,6 +157,7 @@ augments:
     rarity: GOLD
     name: '환영 무기'
     enabled: false
+    implemented: false
     condition: '미구현 · 추첨 제외'
     amount: 1
   tank_engine:
@@ -147,6 +165,7 @@ augments:
     rarity: GOLD
     name: '탱크 엔진'
     enabled: true
+    implemented: true
     condition: '수평 이동 거리마다 크기와 최대 체력 성장'
     amount: 4
     threshold: 250
@@ -158,6 +177,7 @@ augments:
     rarity: GOLD
     name: '거인 학살자'
     enabled: true
+    implemented: true
     condition: '상대 최대 체력이 높을수록 피해 증가'
     amount: 1.2
     threshold: 0
@@ -169,6 +189,7 @@ augments:
     rarity: GOLD
     name: '분열하는 공격'
     enabled: false
+    implemented: false
     condition: '미구현 · 추첨 제외'
     amount: 1
   storm_chaser:
@@ -176,6 +197,7 @@ augments:
     rarity: GOLD
     name: '폭풍 추적자'
     enabled: true
+    implemented: true
     condition: '유효 이동 후 다음 타격에 낙뢰'
     amount: 12
     threshold: 6
@@ -187,6 +209,7 @@ augments:
     rarity: PRISMATIC
     name: '재앙의 거인'
     enabled: true
+    implemented: true
     condition: '크기·최대 체력·사거리 증가, 질주 밀치기 및 웅크리고 빈손 우클릭 지진'
     amount: 50
     threshold: 0
@@ -198,6 +221,7 @@ augments:
     rarity: PRISMATIC
     name: '무한 반복'
     enabled: true
+    implemented: true
     condition: '허용된 발동을 두 번, 매 세 번째에는 세 번 처리'
     amount: 2
     threshold: 3
@@ -209,6 +233,7 @@ augments:
     rarity: PRISMATIC
     name: '보석 건틀릿'
     enabled: true
+    implemented: true
     condition: '합성 증강 피해에 치명타 적용'
     amount: 2.5
     threshold: 0
@@ -220,6 +245,7 @@ augments:
     rarity: PRISMATIC
     name: '불멸의 광전사'
     enabled: true
+    implemented: true
     condition: '유효 타격으로 광폭화, 흡혈 및 경기당 1회 치명 피해 방지'
     amount: 1.0
     threshold: 10
@@ -231,6 +257,7 @@ augments:
     rarity: PRISMATIC
     name: '양손잡이'
     enabled: false
+    implemented: false
     condition: '미구현 · 추첨 제외'
     amount: 1
   earthquake_mage:
@@ -238,20 +265,27 @@ augments:
     rarity: PRISMATIC
     name: '지진술사'
     enabled: false
+    implemented: false
     condition: '미구현 · 추첨 제외'
     amount: 1
   center_of_universe:
     group: CORE
     rarity: PRISMATIC
     name: '우주의 중심'
-    enabled: false
-    condition: '미구현 · 추첨 제외'
-    amount: 1
+    enabled: true
+    implemented: true
+    condition: '주변을 도는 오브가 가까운 적에게 자동 공격'
+    amount: 4
+    threshold: 6
+    duration: 0
+    cooldown: 1
+    cap: 0
   russian_doll:
     group: CORE
     rarity: PRISMATIC
     name: '러시아 인형'
     enabled: true
+    implemented: true
     condition: '치명 피해를 제한적으로 막고 체력 감소와 이동 가속'
     amount: 0.25
     threshold: 3
@@ -263,6 +297,7 @@ augments:
     rarity: PRISMATIC
     name: '미친 과학자'
     enabled: false
+    implemented: false
     condition: '미구현 · 추첨 제외'
     amount: 1
   draw_the_sword:
@@ -270,6 +305,7 @@ augments:
     rarity: PRISMATIC
     name: '검을 뽑아라'
     enabled: false
+    implemented: false
     condition: '미구현 · 추첨 제외'
     amount: 1
   final_judgment:
@@ -277,6 +313,7 @@ augments:
     rarity: PRISMATIC
     name: '최후의 심판'
     enabled: false
+    implemented: false
     condition: '미구현 · 추첨 제외'
     amount: 1
   forbidden_reconstruction:
@@ -284,6 +321,7 @@ augments:
     rarity: PRISMATIC
     name: '금단의 재구성'
     enabled: false
+    implemented: false
     condition: '미구현 · 추첨 제외'
     amount: 1
   muscle_memory:
@@ -291,6 +329,7 @@ augments:
     rarity: SILVER
     name: '근육 기억'
     enabled: true
+    implemented: true
     condition: '자연 적대 몬스터 처치로 근접 피해 증가'
     amount: 0.02
     threshold: 8
@@ -302,6 +341,7 @@ augments:
     rarity: SILVER
     name: '철의 위장'
     enabled: true
+    implemented: true
     condition: '종류가 다른 음식마다 최대 체력 성장과 음식 섭취 시 회복'
     amount: 2
     threshold: 2
@@ -313,6 +353,7 @@ augments:
     rarity: SILVER
     name: '상처의 기록'
     enabled: false
+    implemented: false
     condition: '미구현 · 추첨 제외'
     amount: 1
   vein_overload:
@@ -320,6 +361,7 @@ augments:
     rarity: SILVER
     name: '광맥 과부하'
     enabled: false
+    implemented: false
     condition: '미구현 · 추첨 제외'
     amount: 1
   chain_impact:
@@ -327,6 +369,7 @@ augments:
     rarity: SILVER
     name: '연쇄 충격'
     enabled: true
+    implemented: true
     condition: '근접 누적 타격으로 주변 적에게 감속 충격파'
     amount: 3
     threshold: 3
@@ -338,6 +381,7 @@ augments:
     rarity: SILVER
     name: '혈흔 추적'
     enabled: false
+    implemented: false
     condition: '미구현 · 추첨 제외'
     amount: 1
   frenzy_rhythm:
@@ -345,6 +389,7 @@ augments:
     rarity: SILVER
     name: '광기의 리듬'
     enabled: false
+    implemented: false
     condition: '미구현 · 추첨 제외'
     amount: 1
   survival_instinct:
@@ -352,6 +397,7 @@ augments:
     rarity: SILVER
     name: '생존 본능'
     enabled: false
+    implemented: false
     condition: '미구현 · 추첨 제외'
     amount: 1
   predator:
@@ -359,6 +405,7 @@ augments:
     rarity: SILVER
     name: '포식자'
     enabled: true
+    implemented: true
     condition: '근접 유효 타격 누적으로 회복'
     amount: 3
     threshold: 3
@@ -370,6 +417,7 @@ augments:
     rarity: SILVER
     name: '낙하 충격파'
     enabled: false
+    implemented: false
     condition: '미구현 · 추첨 제외'
     amount: 1
   explosive_arrow:
@@ -377,6 +425,7 @@ augments:
     rarity: SILVER
     name: '폭발 화살'
     enabled: true
+    implemented: true
     condition: '화살 적중 누적으로 주변 적에게 폭발 피해'
     amount: 4
     threshold: 3
@@ -388,6 +437,7 @@ augments:
     rarity: SILVER
     name: '역습의 방패'
     enabled: false
+    implemented: false
     condition: '미구현 · 추첨 제외'
     amount: 1
   heart_harvester:
@@ -395,6 +445,7 @@ augments:
     rarity: GOLD
     name: '심장 수확자'
     enabled: false
+    implemented: false
     condition: '미구현 · 추첨 제외'
     amount: 1
   mineral_devourer:
@@ -402,6 +453,7 @@ augments:
     rarity: GOLD
     name: '광물 포식자'
     enabled: true
+    implemented: true
     condition: '자연 광석 누적으로 근접 피해, 목숨 제한 시작 때 황금사과'
     amount: 0.03
     threshold: 10
@@ -413,6 +465,7 @@ augments:
     rarity: GOLD
     name: '피의 왕관'
     enabled: false
+    implemented: false
     condition: '미구현 · 추첨 제외'
     amount: 1
   storm_blade:
@@ -420,6 +473,7 @@ augments:
     rarity: GOLD
     name: '폭풍의 검'
     enabled: false
+    implemented: false
     condition: '미구현 · 추첨 제외'
     amount: 1
   shadow_dash:
@@ -427,6 +481,7 @@ augments:
     rarity: GOLD
     name: '그림자 도약'
     enabled: false
+    implemented: false
     condition: '미구현 · 추첨 제외'
     amount: 1
   immortal_armor:
@@ -434,6 +489,7 @@ augments:
     rarity: GOLD
     name: '불멸의 갑옷'
     enabled: false
+    implemented: false
     condition: '미구현 · 추첨 제외'
     amount: 1
   venom_swarm:
@@ -441,6 +497,7 @@ augments:
     rarity: GOLD
     name: '맹독 군락'
     enabled: false
+    implemented: false
     condition: '미구현 · 추첨 제외'
     amount: 1
   bounty_hunter:
@@ -448,6 +505,7 @@ augments:
     rarity: GOLD
     name: '현상금 사냥꾼'
     enabled: false
+    implemented: false
     condition: '미구현 · 추첨 제외'
     amount: 1
   split_bow:
@@ -455,6 +513,7 @@ augments:
     rarity: GOLD
     name: '분열의 활'
     enabled: false
+    implemented: false
     condition: '미구현 · 추첨 제외'
     amount: 1
   bomb_alchemy:
@@ -462,6 +521,7 @@ augments:
     rarity: GOLD
     name: '폭탄 연금술'
     enabled: false
+    implemented: false
     condition: '미구현 · 추첨 제외'
     amount: 1
   duel_contract:
@@ -469,6 +529,7 @@ augments:
     rarity: GOLD
     name: '결투의 계약'
     enabled: false
+    implemented: false
     condition: '미구현 · 추첨 제외'
     amount: 1
   time_thief:
@@ -476,6 +537,7 @@ augments:
     rarity: GOLD
     name: '시간 도둑'
     enabled: false
+    implemented: false
     condition: '미구현 · 추첨 제외'
     amount: 1
   endless_evolution:
@@ -483,6 +545,7 @@ augments:
     rarity: PRISMATIC
     name: '끝없는 진화'
     enabled: false
+    implemented: false
     condition: '미구현 · 추첨 제외'
     amount: 1
   phoenix_heart:
@@ -490,6 +553,7 @@ augments:
     rarity: PRISMATIC
     name: '불사조 심장'
     enabled: true
+    implemented: true
     condition: '경기당 한 번 치명 피해 방지 및 회복과 밀쳐내기'
     amount: 0.5
     threshold: 1
@@ -501,6 +565,7 @@ augments:
     rarity: PRISMATIC
     name: '시간 역행'
     enabled: false
+    implemented: false
     condition: '미구현 · 추첨 제외'
     amount: 1
   void_lord:
@@ -508,6 +573,7 @@ augments:
     rarity: PRISMATIC
     name: '공허 군주'
     enabled: false
+    implemented: false
     condition: '미구현 · 추첨 제외'
     amount: 1
   blood_god:
@@ -515,6 +581,7 @@ augments:
     rarity: PRISMATIC
     name: '피의 신'
     enabled: false
+    implemented: false
     condition: '미구현 · 추첨 제외'
     amount: 1
   clone_hand:
@@ -522,6 +589,7 @@ augments:
     rarity: PRISMATIC
     name: '복제의 손'
     enabled: true
+    implemented: true
     condition: '근접 타격 누적으로 원래 공격의 복제 피해'
     amount: 1
     threshold: 3
@@ -533,6 +601,7 @@ augments:
     rarity: PRISMATIC
     name: '거인화'
     enabled: true
+    implemented: true
     condition: '최대 체력·크기·근접 피해 증가 및 이동 속도 감소'
     amount: 20
     threshold: 0
@@ -544,6 +613,7 @@ augments:
     rarity: PRISMATIC
     name: '최후의 악마'
     enabled: false
+    implemented: false
     condition: '미구현 · 추첨 제외'
     amount: 1
   forbidden_deal:
@@ -551,6 +621,7 @@ augments:
     rarity: PRISMATIC
     name: '금단의 거래'
     enabled: false
+    implemented: false
     condition: '미구현 · 추첨 제외'
     amount: 1
   world_erosion:
@@ -558,6 +629,7 @@ augments:
     rarity: PRISMATIC
     name: '세계 침식'
     enabled: false
+    implemented: false
     condition: '미구현 · 추첨 제외'
     amount: 1
 settings:
@@ -611,3 +683,14 @@ settings:
   repeat-third-count: 3
   particles-per-second: 150
   missile-target-range: 12.0
+  burn-evolution-damage: 200.0
+  burn-evolved-add: 2
+  burn-evolved-cap: 10
+  burn-spread-radius: 4.0
+  burn-evolved-spread-radius: 6.0
+  burn-max-targets: 96
+  orb-radius: 2.5
+  orb-hit-radius: 0.85
+  orb-height: 1.2
+  orb-radians-per-tick: 0.15
+  orb-particle-tick-interval: 4

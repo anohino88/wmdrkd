@@ -19,7 +19,7 @@ final class OfficialAugments {
             "berserk_engine", "overgrowth", "steel_heart", "eureka", "giant_slayer",
             "jeweled_gauntlet", "russian_doll", "muscle_memory", "predator", "mineral_devourer",
             "phoenix_heart", "gigantification", "clone_hand", "tank_engine", "storm_chaser",
-            "calamity_giant", "chain_impact", "explosive_arrow", "immortal_berserker", "iron_stomach", "ultimate_hydra", "magic_missile", "infinite_repeat");
+            "calamity_giant", "chain_impact", "explosive_arrow", "immortal_berserker", "iron_stomach", "ultimate_hydra", "magic_missile", "infinite_repeat", "infernal_conductor", "center_of_universe");
 
     record Rule(AugmentDefinition definition, String group, int threshold, int cap) {
         double amount() { return definition.amount(); }
@@ -39,7 +39,7 @@ final class OfficialAugments {
             var rarity = AugmentRarity.valueOf(section.getString(id + ".rarity", ""));
             String group = section.getString(id + ".group", "");
             if (!group.equals("CORE") && !group.equals("ADDITIONAL")) throw new IllegalArgumentException(id);
-            boolean bound = BOUND_EFFECTS.contains(id);
+            boolean bound = BOUND_EFFECTS.contains(id) && section.getBoolean(id + ".implemented");
             var definition = new AugmentDefinition(id, rarity, section.getString(id + ".name", id),
                     section.getString(id + ".condition", "미구현"), " (기본 수치)",
                     AugmentDefinition.Effect.OFFICIAL, section.getDouble(id + ".amount"),
@@ -73,6 +73,13 @@ final class OfficialAugments {
                 || synergies.getInt("infinite_barrage.bounces") > 1
                 || synergies.getDouble("infinite_barrage.bounce-radius") <= 0) {
             throw new IllegalArgumentException("Invalid missile settings");
+        }
+        if (rule("center_of_universe").threshold() < 1 || rule("center_of_universe").threshold() > 12
+                || rule("infernal_conductor").cap() < 1 || rule("infernal_conductor").duration() < 1
+                || count("burn-evolved-cap") < rule("infernal_conductor").cap()
+                || setting("burn-evolution-damage") <= 0 || setting("orb-hit-radius") <= 0
+                || setting("orb-radius") <= 0 || synergies.getInt("hell_lord.orb-burn-stacks") < 1) {
+            throw new IllegalArgumentException("Invalid orb and burn settings");
         }
         double chance = setting("crit-chance");
         if (chance < 0 || chance > 1 || setting("sword-reach") <= 0 || setting("sword-ray-size") < 0

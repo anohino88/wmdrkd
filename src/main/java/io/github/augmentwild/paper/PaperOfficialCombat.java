@@ -40,6 +40,7 @@ import org.bukkit.potion.PotionEffectType;
 import org.bukkit.plugin.java.JavaPlugin;
 
 final class PaperOfficialCombat implements Listener {
+    private static final Set<String> HELL_LORD = Set.of("infernal_conductor", "center_of_universe", "jeweled_gauntlet");
     private static final Set<String> INFINITE_BARRAGE = Set.of("magic_missile", "eureka", "infinite_repeat");
     private static final Set<String> STEEL_KING = Set.of("steel_heart", "stack_dinosaur", "heavy_fist");
     private static final List<Attribute> ATTRIBUTES = List.of(Attribute.MAX_HEALTH, Attribute.MOVEMENT_SPEED, Attribute.SCALE);
@@ -60,6 +61,7 @@ final class PaperOfficialCombat implements Listener {
     private Random random;
     private UUID match;
     private boolean syntheticConfirmed;
+    private double syntheticFinalDamage;
 
     private record MissileShot(PaperMissiles.Missile missile, DamageChain.Root root) { }
 
@@ -74,7 +76,9 @@ final class PaperOfficialCombat implements Listener {
         final List<MissileShot> missiles = new ArrayList<>();
         long particleSecond = -1;
         int particles;
-        boolean barrage;
+        boolean barrage, hellLord;
+        final PaperAugmentBurns burns = new PaperAugmentBurns();
+        double burned;
         int forcedAt;
         boolean hadVelocity, king, train, apple;
     }
@@ -134,6 +138,9 @@ final class PaperOfficialCombat implements Listener {
         boolean barrage = catalog.synergies.getBoolean("infinite_barrage.enabled") && owned.apply(id).containsAll(INFINITE_BARRAGE);
         if (barrage && !state.barrage) announce(id, "시너지 활성화 · 무한 포격", catalog.synergies.getBoolean("infinite_barrage.sound"));
         state.barrage = barrage;
+        boolean hellLord = catalog.synergies.getBoolean("hell_lord.enabled") && owned.apply(id).containsAll(HELL_LORD);
+        if (hellLord && !state.hellLord) announce(id, "시너지 활성화 · 지옥의 군주", catalog.synergies.getBoolean("hell_lord.sound"));
+        state.hellLord = hellLord;
     }
 
     void remove(UUID id, Player player) {
@@ -156,7 +163,10 @@ final class PaperOfficialCombat implements Listener {
 
     void disconnected(Player player) {
         Fighter state = fighters.get(player.getUniqueId());
-        if (state != null) state.missiles.clear();
+        if (state != null) {
+            state.missiles.clear();
+            state.burns.clear();
+        }
         resetAttributes(player);
     }
 
@@ -175,6 +185,8 @@ final class PaperOfficialCombat implements Listener {
         var lines = new ArrayList<String>();
         if (rule.cap() > 0) lines.add("중첩 " + stacks + "/" + rule.cap());
         String progress = switch (augment) {
+            case "infernal_conductor" -> String.format(Locale.ROOT, "지옥의 전도체 진화 %.1f/%.1f",
+                    state == null ? 0 : state.burned, catalog.setting("burn-evolution-damage"));
             case "magic_missile" -> "마법 미사일 진화 " + (state == null ? 0 : state.progress.value("missile_shots"))
                     + "/" + catalog.count("missile-evolution-shots");
             case "tank_engine" -> "탱크 엔진 진화 " + Math.min(stacks, catalog.count("tank-evolution-stacks"))
@@ -191,6 +203,7 @@ final class PaperOfficialCombat implements Listener {
         if (Set.of("tank_engine", "calamity_giant", "berserk_engine").contains(augment)) {
             lines.add("재앙의 기관차 · " + (state != null && state.train ? "활성" : "미활성"));
         }
+        if (HELL_LORD.contains(augment)) lines.add("지옥의 군주 · " + (state != null && state.hellLord ? "활성" : "미활성"));
         if (INFINITE_BARRAGE.contains(augment)) lines.add("무한 포격 · " + (state != null && state.barrage ? "활성" : "미활성"));
         if (STEEL_KING.contains(augment)) lines.add("강철의 왕 · " + (state != null && state.king ? "활성" : "미활성"));
         return lines;
@@ -234,6 +247,7 @@ final class PaperOfficialCombat implements Listener {
             state.lastBerserkHit = -1;
             state.immortalUntil = 0;
             state.missiles.clear();
+            state.burns.clear();
             return;
         }
         long second = now();
@@ -251,7 +265,11 @@ final class PaperOfficialCombat implements Listener {
             }
         }
         applyAttributes(player, state, second);
-        if (valid(player)) advanceMissiles(player, state);
+        if (valid(player)) {
+            advanceMissiles(player, state);
+            tickBurns(player, state, second);
+            if (owns(player, "center_of_universe")) orbit(player, state, second);
+        }
         if (!state.apple && owns(player, "mineral_devourer")
                 && (phase.get() == MatchState.PVP || phase.get() == MatchState.SUDDEN_DEATH)
                 && player.getInventory().firstEmpty() >= 0) {
@@ -330,7 +348,10 @@ final class PaperOfficialCombat implements Listener {
     public void hit(EntityDamageByEntityEvent event) {
         if (synthetic()) {
             var context = chain.current();
-            if (context.victim().equals(event.getEntity().getUniqueId()) && event.getFinalDamage() > 0) syntheticConfirmed = true;
+            if (context.victim().equals(event.getEntity().getUniqueId()) && event.getFinalDamage() > 0) {
+                syntheticConfirmed = true;
+                syntheticFinalDamage = Math.min(((LivingEntity) event.getEntity()).getHealth(), event.getFinalDamage());
+            }
             return;
         }
         if (!(event.getEntity() instanceof LivingEntity target) || event.getFinalDamage() <= 0) return;
@@ -350,6 +371,9 @@ final class PaperOfficialCombat implements Listener {
             boolean upgraded = evolved(state, "berserk_seconds", "berserk-evolution-seconds");
             state.progress.add("berserk_engine", 1, upgraded ? catalog.count("berserk-evolved-cap") : rule("berserk_engine").cap());
             state.lastBerserkHit = now();
+        }
+        if (owns(attacker, "infernal_conductor")) {
+            ignite(state, target, burnEvolved(state) ? catalog.count("burn-evolved-add") : 1);
         }
         if (owns(attacker, "magic_missile") && every(state, "magic_missile")) {
             afterDamage(attacker, () -> launchMissiles(attacker, target, state));
@@ -400,6 +424,66 @@ final class PaperOfficialCombat implements Listener {
                 if (catalog.synergies.getBoolean("steel_king.particles")) {
                     particle(attacker, state, Particle.SWEEP_ATTACK, attacker.getLocation().add(0, 1, 0));
                 }
+            }
+        });
+    }
+
+    private boolean burnEvolved(Fighter state) {
+        return state.burned >= catalog.setting("burn-evolution-damage");
+    }
+
+    private void ignite(Fighter state, LivingEntity target, int gain) {
+        var targets = state.burns.targets();
+        if (targets.size() >= catalog.count("burn-max-targets") && !targets.containsKey(target.getUniqueId())) return;
+        var rule = rule("infernal_conductor");
+        state.burns.ignite(target, gain, burnEvolved(state) ? catalog.count("burn-evolved-cap") : rule.cap(), now(), rule.duration());
+    }
+
+    private void tickBurns(Player player, Fighter state, long second) {
+        var targets = state.burns.targets();
+        for (var burn : List.copyOf(targets.values())) {
+            var target = burn.target();
+            var id = target.getUniqueId();
+            if (burn.expiresAt() < second || !opponent(player, target)) {
+                targets.remove(id);
+            } else if (burn.nextPulse() <= second) {
+                targets.put(id, new PaperAugmentBurns.Burn(target, burn.stacks(), burn.expiresAt(), second + 1));
+                chain.root(() -> {
+                    if (syntheticHit(player, target, "infernal_conductor", burn.stacks() * rule("infernal_conductor").amount())
+                            && !burnEvolved(state)) {
+                        state.burned = Math.min(state.burned + syntheticFinalDamage, catalog.setting("burn-evolution-damage"));
+                        if (burnEvolved(state)) announce(player.getUniqueId(), "증강 진화 · 지옥의 전도체", true);
+                    }
+                });
+            }
+        }
+    }
+
+    private void orbit(Player player, Fighter state, long second) {
+        var orb = rule("center_of_universe");
+        int tick = Bukkit.getCurrentTick();
+        double radius = catalog.setting("orb-radius");
+        double reach = catalog.setting("orb-hit-radius");
+        Location center = player.getLocation().add(0, catalog.setting("orb-height"), 0);
+        boolean display = Math.floorMod(tick, catalog.count("orb-particle-tick-interval")) == 0
+                && (!state.hellLord || catalog.synergies.getBoolean("hell_lord.particles"));
+        boolean attack = state.progress.cooldown("orbit", second, cooldown(player, orb.cooldown()));
+        if (!display && !attack) return;
+        var candidates = attack ? opponents(player, center, radius + reach) : List.<LivingEntity>of();
+        chain.root(() -> {
+            for (int i = 0; i < orb.threshold(); i++) {
+                double theta = tick * catalog.setting("orb-radians-per-tick") + i * Math.TAU / orb.threshold();
+                var location = center.clone().add(radius * Math.cos(theta), 0, radius * Math.sin(theta));
+                if (display) particle(player, state, Particle.END_ROD, location);
+                candidates.stream()
+                        .filter(enemy -> enemy.getLocation().add(0, enemy.getHeight() / 2, 0).distanceSquared(location) <= reach * reach)
+                        .filter(player::hasLineOfSight)
+                        .findFirst()
+                        .ifPresent(enemy -> {
+                            if (syntheticHit(player, enemy, "center_of_universe", orb.amount()) && state.hellLord) {
+                                ignite(state, enemy, catalog.synergies.getInt("hell_lord.orb-burn-stacks"));
+                            }
+                        });
             }
         });
     }
@@ -609,7 +693,9 @@ final class PaperOfficialCombat implements Listener {
 
     private boolean syntheticHit(Player source, LivingEntity victim, String id, double damage) {
         if (!valid(source) || !opponent(source, victim)) return false;
-        boolean crit = owns(source, "jeweled_gauntlet") && random.nextDouble() < catalog.setting("crit-chance");
+        Fighter state = fighters.get(source.getUniqueId());
+        boolean crit = owns(source, "jeweled_gauntlet")
+                && (!id.equals("infernal_conductor") || state.hellLord) && random.nextDouble() < catalog.setting("crit-chance");
         double points = Math.min(catalog.setting("max-extra-damage"), crit ? damage * rule("jeweled_gauntlet").amount() : damage);
         return chain.hit(match, source.getUniqueId(), victim.getUniqueId(), id, points, crit, () -> {
             syntheticConfirmed = false;
@@ -633,6 +719,17 @@ final class PaperOfficialCombat implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void mobDeath(EntityDeathEvent event) {
+        Player killer = event.getEntity().getKiller();
+        if (killer != null && valid(killer)) {
+            Fighter state = fighters.get(killer.getUniqueId());
+            var burn = state == null ? null : state.burns.remove(event.getEntity().getUniqueId());
+            if (burn != null && burn.expiresAt() >= now()) {
+                double range = catalog.setting(burnEvolved(state) ? "burn-evolved-spread-radius" : "burn-spread-radius");
+                for (var target : opponents(killer, event.getEntity().getLocation(), range)) {
+                    if (!event.getEntity().equals(target)) ignite(state, target, burn.stacks());
+                }
+            }
+        }
         if (match == null || synthetic() || !(event.getEntity() instanceof Monster monster)
                 || monster.getEntitySpawnReason() != CreatureSpawnEvent.SpawnReason.NATURAL) return;
         Player player = monster.getKiller();
@@ -715,7 +812,7 @@ final class PaperOfficialCombat implements Listener {
                 || event.getDamageSource().getDamageType() == DamageType.OUTSIDE_BORDER
                 || event.getDamageSource().getDamageType() == DamageType.OUT_OF_WORLD
                 || event.getFinalDamage() < player.getHealth()) return;
-        var options = new ArrayList<ReviveResolver.Option>(2);
+        var options = new ArrayList<ReviveResolver.Option>(3);
         for (String id : List.of("immortal_berserker", "phoenix_heart", "russian_doll")) {
             if (owns(player, id)) options.add(new ReviveResolver.Option(id,
                     id.equals("immortal_berserker") ? rule(id).cap() : rule(id).threshold()));
