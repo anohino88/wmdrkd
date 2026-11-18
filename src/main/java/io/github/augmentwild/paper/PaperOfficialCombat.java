@@ -27,6 +27,7 @@ import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Monster;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
+import org.bukkit.entity.Snowball;
 import org.bukkit.event.*;
 import org.bukkit.event.block.*;
 import org.bukkit.event.entity.*;
@@ -58,6 +59,7 @@ final class PaperOfficialCombat implements Listener {
     private final Function<UUID, Set<String>> owned;
     private final DamageChain chain;
     private final NaturalOreTracker ores;
+    private final PaperErosion erosion;
     private final Map<UUID, Fighter> fighters = new HashMap<>();
     private final Map<EntityDamageEvent, Double> rawDamage = new WeakHashMap<>();
     private final Set<UUID> splitArrows = new HashSet<>();
@@ -95,7 +97,10 @@ final class PaperOfficialCombat implements Listener {
         UUID traceTarget, bountyTarget;
         long bountyUntil;
         boolean counterReady;
-        long shadowUntil, lastZoneSecond = -1;
+        long shadowUntil, lastZoneSecond = -1, duelUntil;
+        UUID duelTarget;
+        Snowball bomb;
+        int bombLaunchTick;
         final Deque<PaperAugmentMovement.History> history = new ArrayDeque<>();
         final List<Zone> zones = new ArrayList<>();
         final Map<UUID, Long> poisoned = new HashMap<>();
@@ -121,6 +126,7 @@ final class PaperOfficialCombat implements Listener {
         this.owned = owned;
         catalog = new OfficialAugments(plugin, registry);
         ores = new NaturalOreTracker(catalog.count("ore-sites"));
+        erosion = new PaperErosion(plugin, catalog.setting("erosion-max-damage"));
         chain = new DamageChain(depth, catalog.count("max-hits-per-target"));
     }
 
@@ -176,7 +182,9 @@ final class PaperOfficialCombat implements Listener {
 
     void remove(UUID id, Player player) {
         if (player != null) resetAttributes(player);
-        fighters.remove(id);
+        var state = fighters.remove(id);
+        if (state != null) removeBomb(state);
+        erosion.remove(id);
     }
 
     void clear() {
@@ -186,6 +194,7 @@ final class PaperOfficialCombat implements Listener {
         }
         fighters.clear();
         ores.clear();
+        erosion.clear();
         deadMobs.clear();
         rawDamage.clear();
         counted.clear();
@@ -202,7 +211,9 @@ final class PaperOfficialCombat implements Listener {
             state.burns.clear();
             state.history.clear();
             state.zones.clear();
+            removeBomb(state);
         }
+        erosion.remove(player.getUniqueId());
         resetAttributes(player);
     }
 
@@ -299,6 +310,7 @@ final class PaperOfficialCombat implements Listener {
             return;
         }
         long second = now();
+        erosion.tick(second);
         if (state.lastBerserkHit >= 0 && second - state.lastBerserkHit >= rule("berserk_engine").duration()) {
             state.progress.reset("berserk_engine");
         }
@@ -324,6 +336,8 @@ final class PaperOfficialCombat implements Listener {
             tickBurns(player, state, second);
             tickZones(player, state, second);
             remember(player, state, second);
+            worldErosion(player, state);
+            if (state.bomb != null && Bukkit.getCurrentTick() - state.bombLaunchTick >= catalog.count("bomb-lifetime-ticks")) removeBomb(state);
             if (state.instinctPending) {
                 state.instinctPending = false;
                 reactAtLowHealth(player, state);
@@ -400,6 +414,10 @@ final class PaperOfficialCombat implements Listener {
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void increaseDamage(EntityDamageByEntityEvent event) {
+        if (event.getDamager() instanceof Snowball bomb && trackedBomb(bomb)) {
+            event.setCancelled(true);
+            return;
+        }
         if (synthetic() || !(event.getEntity() instanceof LivingEntity target)) return;
         Player attacker = attacker(event);
         if (attacker == null || !valid(attacker) || !opponent(attacker, target) || event.getDamage() <= 0) return;
@@ -412,6 +430,7 @@ final class PaperOfficialCombat implements Listener {
         double ratio = ids.contains("immortal_berserker") && state.immortalUntil > now()
                 ? rule("immortal_berserker").amount() : 0;
         if (ids.contains("mineral_addiction")) ratio += state.progress.value("mineral_addiction") * rule("mineral_addiction").amount();
+        if (state.duelUntil > now() && target.getUniqueId().equals(state.duelTarget)) ratio += rule("duel_contract").amount();
         if (ids.contains("shadow_dash") && state.shadowUntil > now()) ratio += rule("shadow_dash").amount();
         if (melee && state.counterReady && ids.contains("counter_shield")) ratio += rule("counter_shield").amount();
         if (ids.contains("bounty_hunter") && state.bountyUntil > now() && target.getUniqueId().equals(state.bountyTarget)) {
@@ -582,7 +601,7 @@ final class PaperOfficialCombat implements Listener {
     }
 
     String cast(Player player, String id) {
-        if (!Set.of("shadow_dash", "earthquake_mage", "time_rewind", "void_lord").contains(id)) return "사용할 수 있는 발동형 증강 ID가 아닙니다.";
+        if (!Set.of("shadow_dash", "earthquake_mage", "time_rewind", "void_lord", "bomb_alchemy", "duel_contract").contains(id)) return "사용할 수 있는 발동형 증강 ID가 아닙니다.";
         if (!valid(player) || !owns(player, id)) return "현재 이 증강을 발동할 수 없습니다.";
         Fighter state = fighter(player.getUniqueId());
         if (!state.progress.ready(id, now())) return "증강 재사용 대기 중입니다.";
@@ -598,6 +617,23 @@ final class PaperOfficialCombat implements Listener {
                 yield true;
             }
             case "time_rewind" -> rewind(player, state);
+            case "duel_contract" -> {
+                var eye = player.getEyeLocation();
+                var rival = ray(player, eye, eye.getDirection(), catalog.setting("duel-range"));
+                if (!(rival instanceof Player)) yield false;
+                state.duelTarget = rival.getUniqueId();
+                state.duelUntil = now() + rule(id).duration();
+                var glow = new PotionEffect(PotionEffectType.GLOWING, rule(id).duration() * 20, 0);
+                player.addPotionEffect(glow);
+                rival.addPotionEffect(glow);
+                yield true;
+            }
+            case "bomb_alchemy" -> {
+                if (state.bomb != null) yield false;
+                state.bomb = player.launchProjectile(Snowball.class);
+                state.bombLaunchTick = Bukkit.getCurrentTick();
+                yield state.bomb.isValid();
+            }
             case "void_lord" -> {
                 state.zones.add(new Zone(id, before, before, now() + rule(id).duration(), rule(id).amount()));
                 yield true;
@@ -637,7 +673,13 @@ final class PaperOfficialCombat implements Listener {
                 iterator.remove();
                 continue;
             }
-            if (zone.augment().equals("void_lord")) {
+            if (zone.augment().equals("bomb_alchemy")) {
+                if (second <= zone.expiresAt()) {
+                    chain.root(() -> area(player, zone.start(), catalog.setting("bomb-area-radius"), zone.augment(),
+                            catalog.setting("bomb-fire-damage"), target -> { }));
+                    particle(player, state, Particle.FLAME, zone.start());
+                }
+            } else if (zone.augment().equals("void_lord")) {
                 if (second <= zone.expiresAt()) chain.root(() -> pulseVoid(player, state, zone));
             } else if (second < zone.expiresAt()) {
                 particle(player, state, Particle.FLAME, zone.start().clone().add(0, .25, 0));
@@ -675,6 +717,44 @@ final class PaperOfficialCombat implements Listener {
             }
         }
         particle(player, state, Particle.EXPLOSION, zone.end());
+    }
+
+    private void worldErosion(Player player, Fighter state) {
+        if (!owns(player, "world_erosion") || !ready(player, state, "world_erosion")) return;
+        var rule = rule("world_erosion");
+        double absorption = 0;
+        for (var target : opponents(player, player.getLocation(), catalog.setting("erosion-radius"))) {
+            absorption += erosion.drain(player.getUniqueId(), target, now(), rule.amount(), rule.duration());
+        }
+        if (absorption > 0) addAbsorption(player, absorption * catalog.setting("erosion-absorption-ratio"),
+                catalog.setting("erosion-absorption-cap"));
+    }
+
+    private boolean trackedBomb(Snowball projectile) {
+        if (!(projectile.getShooter() instanceof Player player)) return false;
+        var state = fighters.get(player.getUniqueId());
+        return state != null && projectile.equals(state.bomb);
+    }
+
+    private void removeBomb(Fighter state) {
+        if (state.bomb == null) return;
+        state.bomb.remove();
+        state.bomb = null;
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void bombHit(ProjectileHitEvent event) {
+        if (!(event.getEntity() instanceof Snowball bomb) || !trackedBomb(bomb)
+                || !(bomb.getShooter() instanceof Player player)) return;
+        var state = fighter(player.getUniqueId());
+        Location point = bomb.getLocation();
+        event.setCancelled(true);
+        removeBomb(state);
+        if (!valid(player) || !safe.test(point)) return;
+        state.zones.add(new Zone("bomb_alchemy", point, point, now() + rule("bomb_alchemy").duration(),
+                rule("bomb_alchemy").amount()));
+        afterDamage(player, () -> area(player, point, catalog.setting("bomb-area-radius"), "bomb_alchemy",
+                rule("bomb_alchemy").amount(), victim -> { }));
     }
 
     private void stealTime(Player player, LivingEntity target) {
@@ -866,8 +946,9 @@ final class PaperOfficialCombat implements Listener {
         int before = state.progress.value("missile_shots");
         int baseCount = catalog.count(before >= threshold ? "missile-evolved-count" : "missile-count");
         int multiplier = state.barrage ? catalog.synergies.getInt("infinite_barrage.missile-multiplier") : 1;
+        int reserved = owns(player, "bomb_alchemy") ? 1 : 0;
         int count = Math.min(baseCount * multiplier * repetitions(player, state),
-                catalog.count("missile-active-cap") - state.missiles.size());
+                catalog.count("missile-active-cap") - reserved - state.missiles.size());
         int bounces = state.barrage ? catalog.synergies.getInt("infinite_barrage.bounces") : 0;
         for (int i = 0; i < count; i++) {
             var start = player.getEyeLocation().add(0, (i % 5 - 2) * .08, 0);
@@ -1245,6 +1326,9 @@ final class PaperOfficialCombat implements Listener {
                 event.setCancelled(true);
                 return;
             }
+        }
+        if (state.duelTarget != null && state.duelUntil > now()) {
+            event.setDamage(event.getDamage() * (1 + catalog.setting("duel-damage-taken")));
         }
         if (owns(player, "immortal_armor") && ready(player, state, "immortal_armor")
                 && event.getDamageSource().getDamageType() != DamageType.OUTSIDE_BORDER

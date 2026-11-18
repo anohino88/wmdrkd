@@ -24,7 +24,7 @@ final class OfficialAugments {
             "heart_harvester", "blood_crown", "storm_blade", "endless_evolution", "blood_god", "mad_scientist", "draw_the_sword", "last_demon",
             "falling_shockwave", "vein_overload", "blood_trace", "counter_shield", "immortal_armor", "venom_swarm",
             "bounty_hunter", "split_bow", "time_thief", "reflex", "earthquake_mage", "final_judgment",
-            "shadow_dash", "time_rewind", "void_lord");
+            "shadow_dash", "time_rewind", "void_lord", "bomb_alchemy", "duel_contract", "world_erosion");
 
     record Rule(AugmentDefinition definition, String group, int threshold, int cap) {
         double amount() { return definition.amount(); }

@@ -612,18 +612,26 @@ augments:
     group: ADDITIONAL
     rarity: GOLD
     name: '폭탄 연금술'
-    enabled: false
-    implemented: false
-    condition: '미구현 · 추첨 제외'
-    amount: 1
+    enabled: true
+    implemented: true
+    condition: '전용 눈덩이 폭탄과 착탄 지점의 3초 불 지대'
+    amount: 6
+    threshold: 0
+    duration: 3
+    cooldown: 18
+    cap: 0
   duel_contract:
     group: ADDITIONAL
     rarity: GOLD
     name: '결투의 계약'
-    enabled: false
-    implemented: false
-    condition: '미구현 · 추첨 제외'
-    amount: 1
+    enabled: true
+    implemented: true
+    condition: '지정 적과 결투하여 공격 피해와 받는 피해를 증가'
+    amount: 0.3
+    threshold: 0
+    duration: 8
+    cooldown: 18
+    cap: 0
   time_thief:
     group: ADDITIONAL
     rarity: GOLD
@@ -744,10 +752,14 @@ augments:
     group: ADDITIONAL
     rarity: PRISMATIC
     name: '세계 침식'
-    enabled: false
-    implemented: false
-    condition: '미구현 · 추첨 제외'
-    amount: 1
+    enabled: true
+    implemented: true
+    condition: '주변 적의 최대 체력을 낮추고 일부를 흡수 체력으로 획득'
+    amount: 2
+    threshold: 0
+    duration: 10
+    cooldown: 3
+    cap: 0
 settings:
   ore-sites: 262144
   max-hits-per-target: 24
@@ -863,3 +875,12 @@ settings:
   shadow-dash-distance: 7.0
   void-radius: 6.0
   void-pull-velocity: 0.55
+  bomb-area-radius: 3.0
+  bomb-fire-damage: 2.0
+  bomb-lifetime-ticks: 60
+  duel-range: 15.0
+  duel-damage-taken: 0.15
+  erosion-radius: 5.0
+  erosion-max-damage: 8.0
+  erosion-absorption-cap: 8.0
+  erosion-absorption-ratio: 1.0
