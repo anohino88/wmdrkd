@@ -6,6 +6,7 @@ import io.github.augmentwild.domain.MatchSimulationClock;
 import io.github.augmentwild.domain.SelectionRound;
 import java.util.*;
 import java.util.function.BiConsumer;
+import java.util.function.BiPredicate;
 import java.util.function.Predicate;
 import io.github.augmentwild.match.MatchState;
 import org.bukkit.Location;
@@ -78,7 +79,8 @@ final class PaperAugments implements Listener {
 
     PaperAugments(JavaPlugin plugin, Supplier<MatchSimulationClock> clock, Predicate<UUID> member,
                   Predicate<Player> active, Predicate<Player> protectedPlayer, Supplier<MatchState> phase,
-                  Predicate<Location> arena, BiConsumer<UUID, Integer> protection, int maxDepth) {
+                  Predicate<Location> arena, Predicate<Location> safe, BiPredicate<Player, Location> teleport,
+                  BiConsumer<UUID, Integer> protection, int maxDepth) {
         this.plugin = plugin;
         this.clock = clock;
         this.member = member;
@@ -91,7 +93,7 @@ final class PaperAugments implements Listener {
         if (!(lowHealth > 0 && lowHealth < 1 && strongHit > 0 && Double.isFinite(strongHit)
                 && rearDot >= -1 && rearDot <= 0)) throw new IllegalArgumentException("Invalid augment trigger settings");
         registry = AugmentCatalog.load(config);
-        official = new PaperOfficialCombat(plugin, registry, clock, phase, member, active, protectedPlayer, arena,
+        official = new PaperOfficialCombat(plugin, registry, clock, phase, member, active, protectedPlayer, arena, safe, teleport,
                 protection, player -> {
                     var profile = profiles.get(player);
                     return profile == null ? Set.of() : profile.owned;
@@ -99,6 +101,8 @@ final class PaperAugments implements Listener {
         roller = new AugmentRoller(registry, new Random());
         guard = new ProcGuard(maxDepth);
     }
+
+    String cast(Player player, String id) { return official.cast(player, id); }
 
     Listener officialListener() { return official; }
 

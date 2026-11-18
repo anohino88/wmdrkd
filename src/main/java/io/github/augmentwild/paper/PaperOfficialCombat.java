@@ -52,7 +52,8 @@ final class PaperOfficialCombat implements Listener {
     private final Supplier<MatchState> phase;
     private final Predicate<Player> active, protectedPlayer;
     private final Predicate<UUID> member;
-    private final Predicate<Location> arena;
+    private final Predicate<Location> arena, safe;
+    private final BiPredicate<Player, Location> teleport;
     private final BiConsumer<UUID, Integer> protection;
     private final Function<UUID, Set<String>> owned;
     private final DamageChain chain;
@@ -69,6 +70,7 @@ final class PaperOfficialCombat implements Listener {
     private boolean syntheticConfirmed;
     private double syntheticFinalDamage;
 
+    private record Zone(String augment, Location start, Location end, long expiresAt, double damage) { }
     private record MissileShot(PaperMissiles.Missile missile, DamageChain.Root root) { }
 
     private static final class Fighter {
@@ -93,6 +95,9 @@ final class PaperOfficialCombat implements Listener {
         UUID traceTarget, bountyTarget;
         long bountyUntil;
         boolean counterReady;
+        long shadowUntil, lastZoneSecond = -1;
+        final Deque<PaperAugmentMovement.History> history = new ArrayDeque<>();
+        final List<Zone> zones = new ArrayList<>();
         final Map<UUID, Long> poisoned = new HashMap<>();
         int forcedAt;
         boolean hadVelocity, king, train, apple;
@@ -100,7 +105,8 @@ final class PaperOfficialCombat implements Listener {
 
     PaperOfficialCombat(JavaPlugin plugin, AugmentRegistry registry, Supplier<MatchSimulationClock> clock,
                         Supplier<MatchState> phase, Predicate<UUID> member, Predicate<Player> active, Predicate<Player> protectedPlayer,
-                        Predicate<Location> arena, BiConsumer<UUID, Integer> protection,
+                        Predicate<Location> arena, Predicate<Location> safe, BiPredicate<Player, Location> teleport,
+                        BiConsumer<UUID, Integer> protection,
                         Function<UUID, Set<String>> owned, int depth) {
         this.plugin = plugin;
         this.clock = clock;
@@ -109,6 +115,8 @@ final class PaperOfficialCombat implements Listener {
         this.active = active;
         this.protectedPlayer = protectedPlayer;
         this.arena = arena;
+        this.safe = safe;
+        this.teleport = teleport;
         this.protection = protection;
         this.owned = owned;
         catalog = new OfficialAugments(plugin, registry);
@@ -192,6 +200,8 @@ final class PaperOfficialCombat implements Listener {
         if (state != null) {
             state.missiles.clear();
             state.burns.clear();
+            state.history.clear();
+            state.zones.clear();
         }
         resetAttributes(player);
     }
@@ -281,6 +291,9 @@ final class PaperOfficialCombat implements Listener {
             state.bountyTarget = null;
             state.poisoned.clear();
             state.counterReady = false;
+            state.shadowUntil = 0;
+            state.history.clear();
+            state.zones.clear();
             state.missiles.clear();
             state.burns.clear();
             return;
@@ -309,6 +322,8 @@ final class PaperOfficialCombat implements Listener {
         if (valid(player)) {
             advanceMissiles(player, state);
             tickBurns(player, state, second);
+            tickZones(player, state, second);
+            remember(player, state, second);
             if (state.instinctPending) {
                 state.instinctPending = false;
                 reactAtLowHealth(player, state);
@@ -397,6 +412,7 @@ final class PaperOfficialCombat implements Listener {
         double ratio = ids.contains("immortal_berserker") && state.immortalUntil > now()
                 ? rule("immortal_berserker").amount() : 0;
         if (ids.contains("mineral_addiction")) ratio += state.progress.value("mineral_addiction") * rule("mineral_addiction").amount();
+        if (ids.contains("shadow_dash") && state.shadowUntil > now()) ratio += rule("shadow_dash").amount();
         if (melee && state.counterReady && ids.contains("counter_shield")) ratio += rule("counter_shield").amount();
         if (ids.contains("bounty_hunter") && state.bountyUntil > now() && target.getUniqueId().equals(state.bountyTarget)) {
             ratio += rule("bounty_hunter").amount();
@@ -454,6 +470,7 @@ final class PaperOfficialCombat implements Listener {
             state.frenzyAt = now();
             state.progress.add("frenzy_rhythm", 1, rule("frenzy_rhythm").cap());
         }
+        if (state.shadowUntil > now()) state.shadowUntil = 0;
         if (owns(attacker, "bounty_hunter") && ready(attacker, state, "bounty_hunter")) {
             state.bountyTarget = target.getUniqueId();
             state.bountyUntil = now() + rule("bounty_hunter").duration();
@@ -562,6 +579,102 @@ final class PaperOfficialCombat implements Listener {
                 }
             }
         });
+    }
+
+    String cast(Player player, String id) {
+        if (!Set.of("shadow_dash", "earthquake_mage", "time_rewind", "void_lord").contains(id)) return "사용할 수 있는 발동형 증강 ID가 아닙니다.";
+        if (!valid(player) || !owns(player, id)) return "현재 이 증강을 발동할 수 없습니다.";
+        Fighter state = fighter(player.getUniqueId());
+        if (!state.progress.ready(id, now())) return "증강 재사용 대기 중입니다.";
+        Location before = player.getLocation();
+        boolean applied = switch (id) {
+            case "shadow_dash", "earthquake_mage" -> {
+                var direction = before.getDirection();
+                Location target = PaperAugmentMovement.toward(player, direction,
+                        catalog.setting(id.equals("shadow_dash") ? "shadow-dash-distance" : "quake-dash-distance"), safe);
+                if (target == null || !teleport.test(player, target)) yield false;
+                if (id.equals("shadow_dash")) state.shadowUntil = now() + rule(id).duration();
+                else state.zones.add(new Zone(id, before, target, now() + rule(id).duration(), rule(id).amount()));
+                yield true;
+            }
+            case "time_rewind" -> rewind(player, state);
+            case "void_lord" -> {
+                state.zones.add(new Zone(id, before, before, now() + rule(id).duration(), rule(id).amount()));
+                yield true;
+            }
+            default -> false;
+        };
+        if (!applied) return "안전한 위치 또는 유효한 기록이 없어 발동하지 못했습니다.";
+        ready(player, state, id);
+        return rule(id).definition().name() + " 발동";
+    }
+
+    private void remember(Player player, Fighter state, long second) {
+        if (!owns(player, "time_rewind") || state.history.peekLast() != null && state.history.peekLast().second() == second) return;
+        state.history.addLast(new PaperAugmentMovement.History(second, player.getLocation(), player.getHealth()));
+        int memory = rule("time_rewind").threshold() + 2;
+        while (state.history.size() > memory) state.history.removeFirst();
+    }
+
+    private boolean rewind(Player player, Fighter state) {
+        long past = now() - rule("time_rewind").threshold();
+        var record = state.history.stream().filter(item -> item.second() == past).findFirst().orElse(null);
+        if (record == null || !safe.test(record.location()) || !SafeArenaSurface.valid(record.location())
+                || !teleport.test(player, record.location())) return false;
+        if (record.health() > player.getHealth()) {
+            player.setHealth(Math.min(maxHealth(player), Math.min(record.health(), player.getHealth() + rule("time_rewind").amount())));
+        }
+        return true;
+    }
+
+    private void tickZones(Player player, Fighter state, long second) {
+        if (state.zones.isEmpty() || state.lastZoneSecond == second) return;
+        state.lastZoneSecond = second;
+        var iterator = state.zones.iterator();
+        while (iterator.hasNext()) {
+            Zone zone = iterator.next();
+            if (!safe.test(zone.start())) {
+                iterator.remove();
+                continue;
+            }
+            if (zone.augment().equals("void_lord")) {
+                if (second <= zone.expiresAt()) chain.root(() -> pulseVoid(player, state, zone));
+            } else if (second < zone.expiresAt()) {
+                particle(player, state, Particle.FLAME, zone.start().clone().add(0, .25, 0));
+            } else if (zone.augment().equals("earthquake_mage")) {
+                chain.root(() -> eruptPath(player, state, zone));
+            } else {
+                chain.root(() -> area(player, zone.start(), catalog.setting("judgment-radius"), zone.augment(),
+                        zone.damage(), target -> { }));
+                particle(player, state, Particle.EXPLOSION, zone.start().clone().add(0, 1, 0));
+            }
+            if (second >= zone.expiresAt()) iterator.remove();
+        }
+    }
+
+    private void pulseVoid(Player player, Fighter state, Zone zone) {
+        double damage = zone.damage() / rule("void_lord").duration();
+        area(player, zone.start(), catalog.setting("void-radius"), zone.augment(), damage, target -> {
+            var direction = zone.start().toVector().subtract(target.getLocation().toVector());
+            if (direction.lengthSquared() > 0) target.setVelocity(direction.normalize().multiply(catalog.setting("void-pull-velocity")));
+        });
+        particle(player, state, Particle.PORTAL, zone.start().clone().add(0, 1, 0));
+    }
+
+    private void eruptPath(Player player, Fighter state, Zone zone) {
+        var start = zone.start().toVector();
+        var delta = zone.end().toVector().subtract(start);
+        double width = catalog.setting("quake-path-radius");
+        double lengthSquared = delta.lengthSquared();
+        if (lengthSquared <= 0) return;
+        for (var target : opponents(player, zone.start(), delta.length() + width)) {
+            var offset = target.getLocation().toVector().subtract(start);
+            double progress = Math.clamp(offset.dot(delta) / lengthSquared, 0, 1);
+            if (offset.distanceSquared(delta.clone().multiply(progress)) <= width * width) {
+                syntheticHit(player, target, zone.augment(), zone.damage());
+            }
+        }
+        particle(player, state, Particle.EXPLOSION, zone.end());
     }
 
     private void stealTime(Player player, LivingEntity target) {
@@ -1114,11 +1227,21 @@ final class PaperOfficialCombat implements Listener {
         if (!(event.getEntity() instanceof Player player) || !valid(player) || event.getFinalDamage() <= 0) return;
         var state = fighters.get(player.getUniqueId());
         if (state == null) return;
-        if (event instanceof EntityDamageByEntityEvent hit && owns(player, "mad_scientist") && small(state, now())) {
+        if (event instanceof EntityDamageByEntityEvent hit) {
             var attacker = attacker(hit);
             boolean threat = attacker != null && valid(attacker) && opponent(attacker, player)
                     || hit.getDamager() instanceof Monster monster && arena.test(monster.getLocation());
-            if (threat && random.nextDouble() < catalog.setting("mad-small-dodge-chance")) {
+            if (threat && owns(player, "reflex") && state.progress.ready("reflex", now())) {
+                Location from = attacker == null ? hit.getDamager().getLocation() : attacker.getLocation();
+                var direction = from.toVector().subtract(player.getLocation().toVector());
+                var target = PaperAugmentMovement.toward(player, direction, catalog.setting("reflex-max-distance"), safe);
+                if ((target != null && teleport.test(player, target)) || catalog.config.getBoolean("settings.reflex-fallback-dodge")) {
+                    ready(player, state, "reflex");
+                    event.setCancelled(true);
+                    return;
+                }
+            }
+            if (threat && owns(player, "mad_scientist") && small(state, now()) && random.nextDouble() < catalog.setting("mad-small-dodge-chance")) {
                 event.setCancelled(true);
                 return;
             }
@@ -1167,6 +1290,15 @@ final class PaperOfficialCombat implements Listener {
 
     private void reactAtLowHealth(Player player, Fighter state) {
         double fraction = player.getHealth() / maxHealth(player);
+        if (owns(player, "final_judgment") && fraction <= catalog.setting("judgment-low-health") && ready(player, state, "final_judgment")) {
+            Location point = player.getLocation();
+            var rule = rule("final_judgment");
+            state.zones.add(new Zone("final_judgment", point, point, now() + rule.duration(), (1 - fraction) * rule.amount()));
+            player.sendMessage("최후의 심판 · " + rule.duration() + "초 후 발동");
+            for (var enemy : opponents(player, point, catalog.setting("judgment-radius"))) {
+                if (enemy instanceof Player nearby) nearby.sendMessage("최후의 심판 예정 지역입니다. " + rule.duration() + "초 후 발동합니다.");
+            }
+        }
         if (owns(player, "wound_record") && fraction <= catalog.setting("wound-low-health") && ready(player, state, "wound_record")) {
             player.addPotionEffect(new PotionEffect(PotionEffectType.RESISTANCE, rule("wound_record").duration() * 20, 0));
         }

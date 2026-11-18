@@ -71,7 +71,7 @@ public final class PaperMatchService implements Listener {
         session = new GameSession(settings.rules());
         augments = new PaperAugments(plugin, () -> clock, this::augmentMember, this::augmentActive,
                 player -> placement.protectedFromDamage(player.getUniqueId(), System.nanoTime()),
-                () -> session.state(), this::insideAugmentArena, placement::protect, settings.rules().procDepth());
+                () -> session.state(), this::insideAugmentArena, this::insideAugmentBorder, this::move, placement::protect, settings.rules().procDepth());
     }
 
     public Listener restrictions() { return restrictions; }
@@ -82,6 +82,12 @@ public final class PaperMatchService implements Listener {
         return arena != null && arena.worldId().equals(location.getWorld().getUID())
                 && arena.area().contains(location.getX(), location.getZ(), 0);
     }
+    private boolean insideAugmentBorder(Location location) {
+        return border != null && clock != null && insideAugmentArena(location)
+                && border.area(clock.elapsedSeconds()).contains(location.getX(), location.getZ(), 0);
+    }
+
+    public String castAugment(Player player, String id) { return augments.cast(player, id); }
     public String openAugments(Player player) { return augments.open(player); }
 
     private boolean augmentMember(UUID id) {

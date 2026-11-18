@@ -23,9 +23,13 @@ public final class AugmentProgress {
         values.remove(key);
     }
 
+    public boolean ready(String key, long now) {
+        return now >= readyAt.getOrDefault(key, Long.MIN_VALUE);
+    }
+
     public boolean cooldown(String key, long now, long duration) {
         if (duration < 0) throw new IllegalArgumentException("Negative cooldown");
-        if (now < readyAt.getOrDefault(key, Long.MIN_VALUE)) return false;
+        if (!ready(key, now)) return false;
         readyAt.put(key, Math.addExact(now, duration));
         return true;
     }

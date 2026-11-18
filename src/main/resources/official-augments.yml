@@ -76,10 +76,14 @@ augments:
     group: CORE
     rarity: SILVER
     name: '반사 신경'
-    enabled: false
-    implemented: false
-    condition: '미구현 · 추첨 제외'
+    enabled: true
+    implemented: true
+    condition: '위협 공격 회피와 공격자 쪽 안전 이동'
     amount: 1
+    threshold: 0
+    duration: 0
+    cooldown: 12
+    cap: 0
   overgrowth:
     group: CORE
     rarity: SILVER
@@ -276,10 +280,14 @@ augments:
     group: CORE
     rarity: PRISMATIC
     name: '지진술사'
-    enabled: false
-    implemented: false
-    condition: '미구현 · 추첨 제외'
-    amount: 1
+    enabled: true
+    implemented: true
+    condition: '돌진한 경로를 1초 뒤 폭발'
+    amount: 10
+    threshold: 0
+    duration: 1
+    cooldown: 12
+    cap: 0
   center_of_universe:
     group: CORE
     rarity: PRISMATIC
@@ -332,10 +340,14 @@ augments:
     group: CORE
     rarity: PRISMATIC
     name: '최후의 심판'
-    enabled: false
-    implemented: false
-    condition: '미구현 · 추첨 제외'
-    amount: 1
+    enabled: true
+    implemented: true
+    condition: '저체력에서 5초 예고 후 잃은 체력에 비례하는 심판'
+    amount: 30
+    threshold: 0
+    duration: 5
+    cooldown: 35
+    cap: 0
   forbidden_reconstruction:
     group: CORE
     rarity: PRISMATIC
@@ -540,10 +552,14 @@ augments:
     group: ADDITIONAL
     rarity: GOLD
     name: '그림자 도약'
-    enabled: false
-    implemented: false
-    condition: '미구현 · 추첨 제외'
-    amount: 1
+    enabled: true
+    implemented: true
+    condition: '바라보는 방향으로 돌진하고 3초 내 첫 타격 증가'
+    amount: 0.5
+    threshold: 0
+    duration: 3
+    cooldown: 15
+    cap: 0
   immortal_armor:
     group: ADDITIONAL
     rarity: GOLD
@@ -648,18 +664,26 @@ augments:
     group: ADDITIONAL
     rarity: PRISMATIC
     name: '시간 역행'
-    enabled: false
-    implemented: false
-    condition: '미구현 · 추첨 제외'
-    amount: 1
+    enabled: true
+    implemented: true
+    condition: '4초 전 안전 위치로 복귀하고 당시 체력까지 제한 회복'
+    amount: 14
+    threshold: 4
+    duration: 0
+    cooldown: 35
+    cap: 0
   void_lord:
     group: ADDITIONAL
     rarity: PRISMATIC
     name: '공허 군주'
-    enabled: false
-    implemented: false
-    condition: '미구현 · 추첨 제외'
-    amount: 1
+    enabled: true
+    implemented: true
+    condition: '주변을 당기고 2초간 공허 피해'
+    amount: 8
+    threshold: 0
+    duration: 2
+    cooldown: 25
+    cap: 0
   blood_god:
     group: ADDITIONAL
     rarity: PRISMATIC
@@ -830,3 +854,12 @@ settings:
   split-bow-reach: 24.0
   time-thief-slow-seconds: 2
   time-thief-reduce-seconds: 2
+  reflex-max-distance: 5.0
+  reflex-fallback-dodge: true
+  quake-dash-distance: 7.0
+  quake-path-radius: 2.0
+  judgment-low-health: 0.3
+  judgment-radius: 12.0
+  shadow-dash-distance: 7.0
+  void-radius: 6.0
+  void-pull-velocity: 0.55

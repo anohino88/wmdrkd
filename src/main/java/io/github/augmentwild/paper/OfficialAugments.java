@@ -23,7 +23,8 @@ final class OfficialAugments {
             "phantom_weapon", "split_attack", "dual_wielder", "wound_record", "frenzy_rhythm", "survival_instinct",
             "heart_harvester", "blood_crown", "storm_blade", "endless_evolution", "blood_god", "mad_scientist", "draw_the_sword", "last_demon",
             "falling_shockwave", "vein_overload", "blood_trace", "counter_shield", "immortal_armor", "venom_swarm",
-            "bounty_hunter", "split_bow", "time_thief");
+            "bounty_hunter", "split_bow", "time_thief", "reflex", "earthquake_mage", "final_judgment",
+            "shadow_dash", "time_rewind", "void_lord");
 
     record Rule(AugmentDefinition definition, String group, int threshold, int cap) {
         double amount() { return definition.amount(); }
@@ -55,7 +56,7 @@ final class OfficialAugments {
             if (Set.of("blood_record", "mineral_addiction", "sword_wind", "overgrowth", "eureka",
                     "russian_doll", "muscle_memory", "predator", "mineral_devourer", "phoenix_heart", "clone_hand", "tank_engine", "storm_chaser", "chain_impact", "explosive_arrow",
                     "immortal_berserker", "iron_stomach", "ultimate_hydra", "magic_missile", "infinite_repeat", "split_attack", "wound_record", "heart_harvester", "storm_blade",
-                    "endless_evolution", "blood_god", "falling_shockwave", "vein_overload", "split_bow")
+                    "endless_evolution", "blood_god", "falling_shockwave", "vein_overload", "split_bow", "time_rewind")
                     .contains(id) && threshold < 1) throw new IllegalArgumentException("Invalid threshold: " + id);
             if (Set.of("blood_record", "mineral_addiction", "berserk_engine", "steel_heart", "eureka",
                     "muscle_memory", "mineral_devourer", "tank_engine", "iron_stomach", "immortal_berserker", "wound_record", "frenzy_rhythm",
@@ -102,6 +103,14 @@ final class OfficialAugments {
                 || !(setting("mad-small-dodge-chance") > 0 && setting("mad-small-dodge-chance") <= 1)
                 || !(setting("last-demon-low-health") > 0 && setting("last-demon-low-health") < 1)) {
             throw new IllegalArgumentException("Invalid transformation effects");
+        }
+        if (!(setting("judgment-low-health") > 0 && setting("judgment-low-health") < 1)
+                || rule("void_lord").duration() < 1 || rule("earthquake_mage").duration() < 1
+                || setting("judgment-radius") <= 0 || setting("void-radius") <= 0
+                || setting("reflex-max-distance") <= 0 || setting("reflex-max-distance") > 20
+                || setting("quake-dash-distance") <= 0 || setting("quake-dash-distance") > 20
+                || setting("shadow-dash-distance") <= 0 || setting("shadow-dash-distance") > 20) {
+            throw new IllegalArgumentException("Invalid active augment settings");
         }
         double chance = setting("crit-chance");
         if (chance < 0 || chance > 1 || setting("sword-reach") <= 0 || setting("sword-ray-size") < 0
