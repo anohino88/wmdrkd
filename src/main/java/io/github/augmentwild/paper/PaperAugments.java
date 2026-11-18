@@ -91,7 +91,7 @@ final class PaperAugments implements Listener {
         if (!(lowHealth > 0 && lowHealth < 1 && strongHit > 0 && Double.isFinite(strongHit)
                 && rearDot >= -1 && rearDot <= 0)) throw new IllegalArgumentException("Invalid augment trigger settings");
         registry = AugmentCatalog.load(config);
-        official = new PaperOfficialCombat(plugin, registry, clock, phase, active, protectedPlayer, arena,
+        official = new PaperOfficialCombat(plugin, registry, clock, phase, member, active, protectedPlayer, arena,
                 protection, player -> {
                     var profile = profiles.get(player);
                     return profile == null ? Set.of() : profile.owned;

@@ -51,6 +51,7 @@ final class PaperOfficialCombat implements Listener {
     private final Supplier<MatchSimulationClock> clock;
     private final Supplier<MatchState> phase;
     private final Predicate<Player> active, protectedPlayer;
+    private final Predicate<UUID> member;
     private final Predicate<Location> arena;
     private final BiConsumer<UUID, Integer> protection;
     private final Function<UUID, Set<String>> owned;
@@ -60,6 +61,7 @@ final class PaperOfficialCombat implements Listener {
     private final Map<EntityDamageEvent, Double> rawDamage = new WeakHashMap<>();
     private final Set<EntityDamageEvent> splitEvents = Collections.newSetFromMap(new WeakHashMap<>());
     private final Set<EntityDamageEvent> counted = Collections.newSetFromMap(new WeakHashMap<>());
+    private final Set<EntityDeathEvent> countedKills = Collections.newSetFromMap(new WeakHashMap<>());
     private final Set<UUID> deadMobs = new HashSet<>();
     private Random random;
     private UUID match;
@@ -81,18 +83,25 @@ final class PaperOfficialCombat implements Listener {
         int particles;
         boolean barrage, hellLord, thousandSwords;
         final PaperAugmentBurns burns = new PaperAugmentBurns();
-        double burned;
+        double burned, woundDamage;
+        UUID frenzyTarget;
+        long frenzyAt;
+        boolean instinctPending, veinGranted, transformedSmall;
+        long acquiredMad, lastDemonUntil;
+        long traceUntil;
+        UUID traceTarget;
         int forcedAt;
         boolean hadVelocity, king, train, apple;
     }
 
     PaperOfficialCombat(JavaPlugin plugin, AugmentRegistry registry, Supplier<MatchSimulationClock> clock,
-                        Supplier<MatchState> phase, Predicate<Player> active, Predicate<Player> protectedPlayer,
+                        Supplier<MatchState> phase, Predicate<UUID> member, Predicate<Player> active, Predicate<Player> protectedPlayer,
                         Predicate<Location> arena, BiConsumer<UUID, Integer> protection,
                         Function<UUID, Set<String>> owned, int depth) {
         this.plugin = plugin;
         this.clock = clock;
         this.phase = phase;
+        this.member = member;
         this.active = active;
         this.protectedPlayer = protectedPlayer;
         this.arena = arena;
@@ -131,6 +140,10 @@ final class PaperOfficialCombat implements Listener {
             state.overgrowthAward = (int) (now() >= catalog.count("overgrowth-late-second")
                     ? catalog.setting("overgrowth-late-health") : rule(augment).amount());
         }
+        if (augment.equals("mad_scientist")) state.acquiredMad = now();
+        if (augment.equals("endless_evolution") && now() >= catalog.count("endless-evolution-late-second")) {
+            state.progress.add(augment, catalog.count("endless-evolution-late-stacks"), rule(augment).cap());
+        }
         boolean king = catalog.synergies.getBoolean("steel_king.enabled") && owned.apply(id).containsAll(STEEL_KING);
         if (king && !state.king) announce(id, "시너지 활성화 · 강철의 왕", catalog.synergies.getBoolean("steel_king.sound"));
         state.king = king;
@@ -165,6 +178,7 @@ final class PaperOfficialCombat implements Listener {
         rawDamage.clear();
         counted.clear();
         splitEvents.clear();
+        countedKills.clear();
         match = null;
     }
 
@@ -254,6 +268,11 @@ final class PaperOfficialCombat implements Listener {
             state.progress.reset("berserk_engine");
             state.lastBerserkHit = -1;
             state.immortalUntil = 0;
+            state.progress.reset("frenzy_rhythm");
+            state.frenzyTarget = null;
+            state.instinctPending = false;
+            state.lastDemonUntil = 0;
+            state.traceTarget = null;
             state.missiles.clear();
             state.burns.clear();
             return;
@@ -272,11 +291,26 @@ final class PaperOfficialCombat implements Listener {
                 }
             }
         }
+        boolean transform = owns(player, "mad_scientist") && small(state, second) != state.transformedSmall;
+        double healthFraction = transform ? player.getHealth() / maxHealth(player) : 0;
         applyAttributes(player, state, second);
+        if (transform) {
+            state.transformedSmall = small(state, second);
+            player.setHealth(Math.clamp(healthFraction * maxHealth(player), .01, maxHealth(player)));
+        }
         if (valid(player)) {
             advanceMissiles(player, state);
             tickBurns(player, state, second);
+            if (state.instinctPending) {
+                state.instinctPending = false;
+                reactAtLowHealth(player, state);
+            }
             if (owns(player, "center_of_universe")) orbit(player, state, second);
+        }
+        if (!state.veinGranted && owns(player, "vein_overload")
+                && (phase.get() == MatchState.PVP || phase.get() == MatchState.SUDDEN_DEATH)) {
+            state.veinGranted = true;
+            grantAbsorption(player, "vein-absorption");
         }
         if (!state.apple && owns(player, "mineral_devourer")
                 && (phase.get() == MatchState.PVP || phase.get() == MatchState.SUDDEN_DEATH)
@@ -285,13 +319,18 @@ final class PaperOfficialCombat implements Listener {
         }
     }
 
+    private boolean small(Fighter state, long second) {
+        return (second - state.acquiredMad) / rule("mad_scientist").duration() % 2 == 1;
+    }
+
     private void applyAttributes(Player player, Fighter state, long second) {
         var ids = owned.apply(player.getUniqueId());
         var progress = state.progress;
         double health = 0, speed = 0, scale = 0;
-        for (String id : List.of("blood_record", "steel_heart", "iron_stomach")) {
+        for (String id : List.of("blood_record", "steel_heart", "iron_stomach", "wound_record", "heart_harvester", "endless_evolution")) {
             if (ids.contains(id)) health += progress.value(id) * rule(id).amount();
         }
+        if (ids.contains("blood_god")) health += progress.value("blood_god_kills") * catalog.setting("blood-god-kill-health");
         if (ids.contains("overgrowth")) {
             health += state.overgrowthAward + (second - state.acquiredGrowth) / rule("overgrowth").threshold()
                     * catalog.setting("overgrowth-growth");
@@ -301,6 +340,16 @@ final class PaperOfficialCombat implements Listener {
             health += rule("gigantification").amount();
             speed += catalog.setting("gigantification-speed");
             scale += catalog.setting("gigantification-scale");
+        }
+        if (ids.contains("vein_overload")) speed += progress.value("vein_overload") * rule("vein_overload").amount();
+        if (ids.contains("mad_scientist")) {
+            if (small(state, second)) {
+                speed += catalog.setting("mad-small-speed");
+                scale += catalog.setting("mad-small-scale");
+            } else {
+                health += rule("mad_scientist").amount();
+                scale += catalog.setting("mad-giant-scale");
+            }
         }
         if (ids.contains("tank_engine")) {
             health += progress.value("tank_engine") * rule("tank_engine").amount();
@@ -322,7 +371,7 @@ final class PaperOfficialCombat implements Listener {
         double dollFactor = ids.contains("russian_doll") ? Math.pow(1 - rule("russian_doll").amount(), dolls) - 1 : 0;
         modifier(player, Attribute.MAX_HEALTH, "official_doll_health", dollFactor, Operation.MULTIPLY_SCALAR_1);
         modifier(player, Attribute.MOVEMENT_SPEED, "official_speed", Math.clamp(speed, -.5, 2), Operation.ADD_SCALAR);
-        modifier(player, Attribute.SCALE, "official_scale", Math.clamp(scale, 0, 3), Operation.MULTIPLY_SCALAR_1);
+        modifier(player, Attribute.SCALE, "official_scale", Math.clamp(scale, -.75, 3), Operation.MULTIPLY_SCALAR_1);
         if (player.getHealth() > maxHealth(player)) player.setHealth(maxHealth(player));
     }
 
@@ -340,6 +389,16 @@ final class PaperOfficialCombat implements Listener {
         double ratio = ids.contains("immortal_berserker") && state.immortalUntil > now()
                 ? rule("immortal_berserker").amount() : 0;
         if (ids.contains("mineral_addiction")) ratio += state.progress.value("mineral_addiction") * rule("mineral_addiction").amount();
+        if (state.lastDemonUntil > now() && ids.contains("last_demon")) ratio += rule("last_demon").amount();
+        if (ids.contains("blood_trace") && state.traceUntil > now() && target.getUniqueId().equals(state.traceTarget)) {
+            ratio += rule("blood_trace").amount();
+        }
+        if (ids.contains("blood_god")) ratio += state.progress.value("blood_god") * catalog.setting("blood-god-bonus-damage");
+        if (ids.contains("endless_evolution")) ratio += state.progress.value("endless_evolution") * catalog.setting("endless-evolution-damage");
+        if (ids.contains("frenzy_rhythm") && target.getUniqueId().equals(state.frenzyTarget)
+                && now() - state.frenzyAt < rule("frenzy_rhythm").duration()) {
+            ratio += state.progress.value("frenzy_rhythm") * rule("frenzy_rhythm").amount();
+        }
         if (ids.contains("giant_slayer")) ratio += Math.clamp((maxHealth(target) / maxHealth(attacker) - 1)
                 * catalog.setting("giant-relative-scaling"), 0, rule("giant_slayer").amount());
         if (melee) {
@@ -372,6 +431,26 @@ final class PaperOfficialCombat implements Listener {
         if (attacker == null || !valid(attacker) || !opponent(attacker, target) || !counted.add(event)) return;
         Fighter state = fighters.get(attacker.getUniqueId());
         if (state == null) return;
+        if (owns(attacker, "frenzy_rhythm")) {
+            if (!target.getUniqueId().equals(state.frenzyTarget) || now() - state.frenzyAt >= rule("frenzy_rhythm").duration()) {
+                state.progress.reset("frenzy_rhythm");
+            }
+            state.frenzyTarget = target.getUniqueId();
+            state.frenzyAt = now();
+            state.progress.add("frenzy_rhythm", 1, rule("frenzy_rhythm").cap());
+        }
+        if (owns(attacker, "blood_trace")) {
+            if (target.getUniqueId().equals(state.traceTarget) && state.traceUntil > now()) {
+                state.traceTarget = null;
+            } else if (ready(attacker, state, "blood_trace")) {
+                state.traceTarget = target.getUniqueId();
+                state.traceUntil = now() + rule("blood_trace").duration();
+                target.addPotionEffect(new PotionEffect(PotionEffectType.GLOWING, rule("blood_trace").duration() * 20, 0));
+            }
+        }
+        if (owns(attacker, "blood_god") && target instanceof Player && every(state, "blood_god")) {
+            state.progress.add("blood_god", gain(attacker), rule("blood_god").cap());
+        }
         if (owns(attacker, "immortal_berserker")) {
             if (state.immortalUntil > now()) {
                 double heal = Math.min(target.getHealth(), event.getFinalDamage()) * catalog.setting("immortal-berserker-lifesteal");
@@ -420,14 +499,32 @@ final class PaperOfficialCombat implements Listener {
             if (event.getDamager() instanceof AbstractArrow) phantom(attacker, target, state);
             return;
         }
+        double lifesteal = owns(attacker, "blood_god") ? rule("blood_god").amount()
+                : owns(attacker, "blood_crown") && ready(attacker, state, "blood_crown") ? rule("blood_crown").amount() : 0;
+        if (owns(attacker, "last_demon") && state.lastDemonUntil > now()) lifesteal = Math.max(lifesteal, catalog.setting("last-demon-lifesteal"));
+        if (lifesteal > 0) {
+            attacker.setHealth(Math.min(maxHealth(attacker), attacker.getHealth()
+                    + Math.min(event.getFinalDamage(), target.getHealth()) * lifesteal));
+        }
+        if (owns(attacker, "storm_blade") && every(state, "storm_blade") && ready(attacker, state, "storm_blade")) {
+            Location center = target.getLocation();
+            afterDamage(attacker, () -> {
+                syntheticHit(attacker, target, "storm_blade", rule("storm_blade").amount());
+                for (var secondary : opponents(attacker, center, catalog.setting("storm-blade-radius"))) {
+                    if (!target.equals(secondary)) syntheticHit(attacker, secondary, "storm_blade", catalog.setting("storm-blade-secondary-damage"));
+                }
+                particle(attacker, state, Particle.ELECTRIC_SPARK, center.add(0, 1, 0));
+            });
+        }
         meleeEffects(attacker, target, state, false);
         if (!state.king && !state.thousandSwords && !owns(attacker, "sword_wind") && !owns(attacker, "clone_hand")
-                && !owns(attacker, "ultimate_hydra") && !owns(attacker, "dual_wielder")) return;
+                && !owns(attacker, "ultimate_hydra") && !owns(attacker, "dual_wielder") && !owns(attacker, "draw_the_sword")) return;
         double base = rawDamage(event);
         afterDamage(attacker, () -> {
             if (owns(attacker, "ultimate_hydra")) hydra(attacker, target, state, base);
             if (owns(attacker, "sword_wind") && every(state, "sword_wind")) sword(attacker, state);
             if (state.thousandSwords) swords(attacker, state);
+            if (owns(attacker, "draw_the_sword")) drawSword(attacker, state);
             if (owns(attacker, "dual_wielder")) offhand(attacker, target);
             if (owns(attacker, "clone_hand") && every(state, "clone_hand") && ready(attacker, state, "clone_hand")) {
                 syntheticHit(attacker, target, "clone_hand", base * rule("clone_hand").amount());
@@ -493,7 +590,7 @@ final class PaperOfficialCombat implements Listener {
 
     @EventHandler(priority = EventPriority.HIGH)
     public void shield(PlayerInteractEvent event) {
-        if (active.test(event.getPlayer()) && owns(event.getPlayer(), "dual_wielder")
+        if (active.test(event.getPlayer()) && (owns(event.getPlayer(), "dual_wielder") || owns(event.getPlayer(), "draw_the_sword"))
                 && event.hasItem() && event.getItem().getType() == Material.SHIELD) {
             event.setUseItemInHand(Event.Result.DENY);
             if (event.getPlayer().getActiveItem().getType() == Material.SHIELD) event.getPlayer().clearActiveItem();
@@ -767,6 +864,19 @@ final class PaperOfficialCombat implements Listener {
         }
     }
 
+    private void drawSword(Player player, Fighter state) {
+        Location start = player.getEyeLocation();
+        var direction = start.getDirection();
+        var victim = ray(player, start, direction, catalog.setting("draw-sword-reach"));
+        double damage = catalog.setting("draw-sword-base-damage") *
+                (1 + state.progress.value("draw_the_sword") * rule("draw_the_sword").amount());
+        if (victim != null && syntheticHit(player, victim, "draw_the_sword", damage)) {
+            state.progress.add("draw_the_sword", gain(player), rule("draw_the_sword").cap());
+            phantom(player, victim, state);
+        }
+        particle(player, state, Particle.SWEEP_ATTACK, start.add(direction));
+    }
+
     private void swords(Player player, Fighter state) {
         var start = player.getEyeLocation();
         var forward = start.getDirection();
@@ -820,12 +930,29 @@ final class PaperOfficialCombat implements Listener {
                 }
             }
         }
+        if (killer != null && event.getEntity() instanceof Player fallen && valid(killer)
+                && !killer.equals(fallen) && member.test(fallen.getUniqueId()) && arena.test(fallen.getLocation()) && countedKills.add(event)) {
+            var state = fighters.get(killer.getUniqueId());
+            if (state != null) {
+                if (owns(killer, "heart_harvester")) {
+                    state.progress.add("heart_harvester", catalog.count("heart-harvester-player-stacks") * gain(killer), rule("heart_harvester").cap());
+                    killer.setHealth(Math.min(maxHealth(killer), killer.getHealth() + catalog.setting("heart-harvester-player-heal")));
+                }
+                if (owns(killer, "endless_evolution")) {
+                    state.progress.add("endless_evolution", catalog.count("endless-evolution-player-stacks") * gain(killer), rule("endless_evolution").cap());
+                }
+                if (owns(killer, "blood_god")) state.progress.add("blood_god_kills", gain(killer), catalog.count("blood-god-kill-cap"));
+                if (owns(killer, "blood_crown")) {
+                    grantAbsorption(killer, "blood-crown-absorption");
+                }
+            }
+        }
         if (match == null || synthetic() || !(event.getEntity() instanceof Monster monster)
                 || monster.getEntitySpawnReason() != CreatureSpawnEvent.SpawnReason.NATURAL) return;
         Player player = monster.getKiller();
         if (player == null || !valid(player) || !arena.test(monster.getLocation()) || deadMobs.size() >= 65_536
                 || !deadMobs.add(monster.getUniqueId())) return;
-        for (String id : List.of("blood_record", "muscle_memory")) {
+        for (String id : List.of("blood_record", "muscle_memory", "heart_harvester", "endless_evolution")) {
             if (owns(player, id)) progress(player, id);
         }
     }
@@ -856,7 +983,7 @@ final class PaperOfficialCombat implements Listener {
         if (match == null || !arena.test(block.getLocation()) || !ore(block) || !ores.consume(site(block))) return;
         Player player = event.getPlayer();
         if (!valid(player) || !event.isDropItems() || player.getGameMode() != org.bukkit.GameMode.SURVIVAL) return;
-        for (String id : List.of("mineral_addiction", "mineral_devourer")) {
+        for (String id : List.of("mineral_addiction", "mineral_devourer", "vein_overload")) {
             if (owns(player, id)) progress(player, id);
         }
     }
@@ -881,6 +1008,70 @@ final class PaperOfficialCombat implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void explode(BlockExplodeEvent event) { event.blockList().forEach(this::invalidate); }
+
+    private void grantAbsorption(Player player, String setting) {
+        player.addPotionEffect(new PotionEffect(PotionEffectType.ABSORPTION, catalog.count("blood-crown-absorption-seconds") * 20, 1));
+        player.setAbsorptionAmount(Math.max(player.getAbsorptionAmount(), catalog.setting(setting)));
+    }
+
+    @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
+    public void evadeOrResist(EntityDamageEvent event) {
+        if (!(event.getEntity() instanceof Player player) || !valid(player) || event.getFinalDamage() <= 0) return;
+        var state = fighters.get(player.getUniqueId());
+        if (state == null) return;
+        if (event instanceof EntityDamageByEntityEvent hit && owns(player, "mad_scientist") && small(state, now())) {
+            var attacker = attacker(hit);
+            boolean threat = attacker != null && valid(attacker) && opponent(attacker, player)
+                    || hit.getDamager() instanceof Monster monster && arena.test(monster.getLocation());
+            if (threat && random.nextDouble() < catalog.setting("mad-small-dodge-chance")) {
+                event.setCancelled(true);
+                return;
+            }
+        }
+        if (event.getCause() == EntityDamageEvent.DamageCause.FALL && owns(player, "falling_shockwave")
+                && player.getFallDistance() >= rule("falling_shockwave").threshold() && ready(player, state, "falling_shockwave")) {
+            event.setDamage(event.getDamage() * (1 - catalog.setting("fall-shock-reduction")));
+            afterDamage(player, () -> area(player, player.getLocation(), catalog.setting("fall-shock-radius"),
+                    "falling_shockwave", rule("falling_shockwave").amount(), other -> {
+                        var direction = other.getLocation().toVector().subtract(player.getLocation().toVector()).setY(0);
+                        if (direction.lengthSquared() > 0) other.setVelocity(direction.normalize().multiply(catalog.setting("fall-shock-knockback")));
+                    }));
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void damageTaken(EntityDamageEvent event) {
+        if (!(event.getEntity() instanceof Player player) || !valid(player) || event.getFinalDamage() <= 0) return;
+        var state = fighters.get(player.getUniqueId());
+        if (state == null) return;
+        if (owns(player, "wound_record")) {
+            var rule = rule("wound_record");
+            state.woundDamage += Math.min(event.getFinalDamage(), player.getHealth());
+            int stacks = (int) (state.woundDamage / rule.threshold());
+            if (stacks > 0) {
+                state.woundDamage %= rule.threshold();
+                state.progress.add("wound_record", stacks * gain(player), rule.cap());
+            }
+        }
+        if (player.getHealth() > event.getFinalDamage()) state.instinctPending = true;
+    }
+
+    private void reactAtLowHealth(Player player, Fighter state) {
+        double fraction = player.getHealth() / maxHealth(player);
+        if (owns(player, "wound_record") && fraction <= catalog.setting("wound-low-health") && ready(player, state, "wound_record")) {
+            player.addPotionEffect(new PotionEffect(PotionEffectType.RESISTANCE, rule("wound_record").duration() * 20, 0));
+        }
+        if (owns(player, "last_demon") && fraction <= catalog.setting("last-demon-low-health") && ready(player, state, "last_demon")) {
+            int seconds = rule("last_demon").duration();
+            state.lastDemonUntil = now() + seconds;
+            player.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, seconds * 20, 1));
+            player.addPotionEffect(new PotionEffect(PotionEffectType.RESISTANCE, seconds * 20, 0));
+        }
+        if (owns(player, "survival_instinct") && fraction <= catalog.setting("instinct-low-health") && ready(player, state, "survival_instinct")) {
+            player.setHealth(Math.min(maxHealth(player), player.getHealth() + rule("survival_instinct").amount()));
+            player.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, rule("survival_instinct").duration() * 20, 1));
+        }
+    }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void eat(PlayerItemConsumeEvent event) {

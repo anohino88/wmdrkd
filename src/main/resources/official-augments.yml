@@ -308,18 +308,26 @@ augments:
     group: CORE
     rarity: PRISMATIC
     name: '미친 과학자'
-    enabled: false
-    implemented: false
-    condition: '미구현 · 추첨 제외'
-    amount: 1
+    enabled: true
+    implemented: true
+    condition: '주기적으로 거대·소형 상태를 오가며 체력 비율 유지'
+    amount: 40
+    threshold: 0
+    duration: 12
+    cooldown: 0
+    cap: 0
   draw_the_sword:
     group: CORE
     rarity: PRISMATIC
     name: '검을 뽑아라'
-    enabled: false
-    implemented: false
-    condition: '미구현 · 추첨 제외'
-    amount: 1
+    enabled: true
+    implemented: true
+    condition: '근접 검기 적중마다 영구 검기 피해 성장과 방패 사용 제한'
+    amount: 0.02
+    threshold: 0
+    duration: 0
+    cooldown: 0
+    cap: 200
   final_judgment:
     group: CORE
     rarity: PRISMATIC
@@ -364,18 +372,26 @@ augments:
     group: ADDITIONAL
     rarity: SILVER
     name: '상처의 기록'
-    enabled: false
-    implemented: false
-    condition: '미구현 · 추첨 제외'
-    amount: 1
+    enabled: true
+    implemented: true
+    condition: '받은 피해 누적으로 체력 성장 및 저체력 진입 시 저항'
+    amount: 2
+    threshold: 20
+    duration: 4
+    cooldown: 22
+    cap: 4
   vein_overload:
     group: ADDITIONAL
     rarity: SILVER
     name: '광맥 과부하'
-    enabled: false
-    implemented: false
-    condition: '미구현 · 추첨 제외'
-    amount: 1
+    enabled: true
+    implemented: true
+    condition: '자연 광석 채굴로 이동 속도 성장, PvP 시작 시 흡수 체력'
+    amount: 0.02
+    threshold: 10
+    duration: 0
+    cooldown: 0
+    cap: 8
   chain_impact:
     group: ADDITIONAL
     rarity: SILVER
@@ -392,26 +408,38 @@ augments:
     group: ADDITIONAL
     rarity: SILVER
     name: '혈흔 추적'
-    enabled: false
-    implemented: false
-    condition: '미구현 · 추첨 제외'
-    amount: 1
+    enabled: true
+    implemented: true
+    condition: '공격한 대상을 발광시킨 뒤 다음 타격 피해 증가'
+    amount: 0.3
+    threshold: 0
+    duration: 6
+    cooldown: 9
+    cap: 0
   frenzy_rhythm:
     group: ADDITIONAL
     rarity: SILVER
     name: '광기의 리듬'
-    enabled: false
-    implemented: false
-    condition: '미구현 · 추첨 제외'
-    amount: 1
+    enabled: true
+    implemented: true
+    condition: '같은 적을 연속 타격할 때 피해 증가'
+    amount: 0.07
+    threshold: 0
+    duration: 4
+    cooldown: 0
+    cap: 4
   survival_instinct:
     group: ADDITIONAL
     rarity: SILVER
     name: '생존 본능'
-    enabled: false
-    implemented: false
-    condition: '미구현 · 추첨 제외'
-    amount: 1
+    enabled: true
+    implemented: true
+    condition: '저체력에서 체력 회복과 신속 II'
+    amount: 6
+    threshold: 0
+    duration: 4
+    cooldown: 22
+    cap: 0
   predator:
     group: ADDITIONAL
     rarity: SILVER
@@ -428,10 +456,14 @@ augments:
     group: ADDITIONAL
     rarity: SILVER
     name: '낙하 충격파'
-    enabled: false
-    implemented: false
-    condition: '미구현 · 추첨 제외'
-    amount: 1
+    enabled: true
+    implemented: true
+    condition: '높은 곳에서 낙하 시 피해 감소 및 주변 적에게 충격파'
+    amount: 5
+    threshold: 4
+    duration: 0
+    cooldown: 12
+    cap: 0
   explosive_arrow:
     group: ADDITIONAL
     rarity: SILVER
@@ -456,10 +488,14 @@ augments:
     group: ADDITIONAL
     rarity: GOLD
     name: '심장 수확자'
-    enabled: false
-    implemented: false
-    condition: '미구현 · 추첨 제외'
-    amount: 1
+    enabled: true
+    implemented: true
+    condition: '적대 몹과 플레이어 처치로 체력 성장, 플레이어 처치 시 회복'
+    amount: 2
+    threshold: 10
+    duration: 0
+    cooldown: 0
+    cap: 8
   mineral_devourer:
     group: ADDITIONAL
     rarity: GOLD
@@ -476,18 +512,26 @@ augments:
     group: ADDITIONAL
     rarity: GOLD
     name: '피의 왕관'
-    enabled: false
-    implemented: false
-    condition: '미구현 · 추첨 제외'
-    amount: 1
+    enabled: true
+    implemented: true
+    condition: '근접 피해 흡혈, 플레이어 처치 시 흡수 체력'
+    amount: 0.25
+    threshold: 0
+    duration: 0
+    cooldown: 2
+    cap: 0
   storm_blade:
     group: ADDITIONAL
     rarity: GOLD
     name: '폭풍의 검'
-    enabled: false
-    implemented: false
-    condition: '미구현 · 추첨 제외'
-    amount: 1
+    enabled: true
+    implemented: true
+    condition: '근접 네 번째 타격으로 대상과 주변에 낙뢰 피해'
+    amount: 6
+    threshold: 4
+    duration: 0
+    cooldown: 8
+    cap: 0
   shadow_dash:
     group: ADDITIONAL
     rarity: GOLD
@@ -556,10 +600,14 @@ augments:
     group: ADDITIONAL
     rarity: PRISMATIC
     name: '끝없는 진화'
-    enabled: false
-    implemented: false
-    condition: '미구현 · 추첨 제외'
-    amount: 1
+    enabled: true
+    implemented: true
+    condition: '적대 몹·플레이어 처치로 최대 체력과 피해 성장'
+    amount: 2
+    threshold: 8
+    duration: 0
+    cooldown: 0
+    cap: 8
   phoenix_heart:
     group: ADDITIONAL
     rarity: PRISMATIC
@@ -592,10 +640,14 @@ augments:
     group: ADDITIONAL
     rarity: PRISMATIC
     name: '피의 신'
-    enabled: false
-    implemented: false
-    condition: '미구현 · 추첨 제외'
-    amount: 1
+    enabled: true
+    implemented: true
+    condition: '근접 흡혈과 플레이어 타격·처치에 따른 영구 성장'
+    amount: 0.35
+    threshold: 3
+    duration: 0
+    cooldown: 0
+    cap: 10
   clone_hand:
     group: ADDITIONAL
     rarity: PRISMATIC
@@ -624,10 +676,14 @@ augments:
     group: ADDITIONAL
     rarity: PRISMATIC
     name: '최후의 악마'
-    enabled: false
-    implemented: false
-    condition: '미구현 · 추첨 제외'
-    amount: 1
+    enabled: true
+    implemented: true
+    condition: '낮은 체력에서 강화 피해·흡혈·신속 II·저항 I'
+    amount: 0.6
+    threshold: 0
+    duration: 7
+    cooldown: 30
+    cap: 0
   forbidden_deal:
     group: ADDITIONAL
     rarity: PRISMATIC
@@ -713,3 +769,30 @@ settings:
   offhand-knockback-velocity: 0.45
   offhand-fire-ticks: 80
   phantom-melee-effects: [steel_heart, predator, chain_impact]
+  wound-low-health: 0.35
+  instinct-low-health: 0.35
+  heart-harvester-player-stacks: 2
+  heart-harvester-player-heal: 10.0
+  blood-crown-absorption: 8.0
+  storm-blade-radius: 4.0
+  storm-blade-secondary-damage: 4.0
+  endless-evolution-player-stacks: 2
+  endless-evolution-damage: 0.03
+  endless-evolution-late-second: 1800
+  endless-evolution-late-stacks: 2
+  blood-god-bonus-damage: 0.02
+  blood-god-kill-health: 4.0
+  blood-god-kill-cap: 3
+  blood-crown-absorption-seconds: 600
+  draw-sword-reach: 10.0
+  draw-sword-base-damage: 8.0
+  mad-small-speed: 0.8
+  mad-small-dodge-chance: 0.35
+  mad-small-scale: -0.25
+  mad-giant-scale: 0.5
+  last-demon-low-health: 0.4
+  last-demon-lifesteal: 0.35
+  fall-shock-reduction: 0.8
+  fall-shock-radius: 4.0
+  fall-shock-knockback: 0.6
+  vein-absorption: 6.0

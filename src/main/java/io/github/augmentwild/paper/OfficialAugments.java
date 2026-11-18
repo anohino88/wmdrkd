@@ -20,7 +20,9 @@ final class OfficialAugments {
             "jeweled_gauntlet", "russian_doll", "muscle_memory", "predator", "mineral_devourer",
             "phoenix_heart", "gigantification", "clone_hand", "tank_engine", "storm_chaser",
             "calamity_giant", "chain_impact", "explosive_arrow", "immortal_berserker", "iron_stomach", "ultimate_hydra", "magic_missile", "infinite_repeat", "infernal_conductor", "center_of_universe",
-            "phantom_weapon", "split_attack", "dual_wielder");
+            "phantom_weapon", "split_attack", "dual_wielder", "wound_record", "frenzy_rhythm", "survival_instinct",
+            "heart_harvester", "blood_crown", "storm_blade", "endless_evolution", "blood_god", "mad_scientist", "draw_the_sword", "last_demon",
+            "falling_shockwave", "vein_overload", "blood_trace");
 
     record Rule(AugmentDefinition definition, String group, int threshold, int cap) {
         double amount() { return definition.amount(); }
@@ -51,10 +53,12 @@ final class OfficialAugments {
             if (threshold < 0 || cap < 0 || cap > 100_000) throw new IllegalArgumentException(id);
             if (Set.of("blood_record", "mineral_addiction", "sword_wind", "overgrowth", "eureka",
                     "russian_doll", "muscle_memory", "predator", "mineral_devourer", "phoenix_heart", "clone_hand", "tank_engine", "storm_chaser", "chain_impact", "explosive_arrow",
-                    "immortal_berserker", "iron_stomach", "ultimate_hydra", "magic_missile", "infinite_repeat", "split_attack")
+                    "immortal_berserker", "iron_stomach", "ultimate_hydra", "magic_missile", "infinite_repeat", "split_attack", "wound_record", "heart_harvester", "storm_blade",
+                    "endless_evolution", "blood_god", "falling_shockwave", "vein_overload")
                     .contains(id) && threshold < 1) throw new IllegalArgumentException("Invalid threshold: " + id);
             if (Set.of("blood_record", "mineral_addiction", "berserk_engine", "steel_heart", "eureka",
-                    "muscle_memory", "mineral_devourer", "tank_engine", "iron_stomach", "immortal_berserker").contains(id) && cap < 1) {
+                    "muscle_memory", "mineral_devourer", "tank_engine", "iron_stomach", "immortal_berserker", "wound_record", "frenzy_rhythm",
+                    "heart_harvester", "endless_evolution", "blood_god", "draw_the_sword", "vein_overload").contains(id) && cap < 1) {
                 throw new IllegalArgumentException("Invalid cap: " + id);
             }
             if ((id.equals("phoenix_heart") || id.equals("russian_doll")) && definition.amount() >= 1) {
@@ -88,6 +92,15 @@ final class OfficialAugments {
                 || synergies.getDouble("thousand_swords.damage") <= 0
                 || synergies.getDouble("thousand_swords.side-angle-radians") <= 0) {
             throw new IllegalArgumentException("Invalid linked melee settings");
+        }
+        if (!(setting("wound-low-health") > 0 && setting("wound-low-health") < 1
+                && setting("instinct-low-health") > 0 && setting("instinct-low-health") < 1)
+                || setting("storm-blade-radius") <= 0 || setting("blood-crown-absorption") <= 0
+                || setting("heart-harvester-player-heal") <= 0) throw new IllegalArgumentException("Invalid reactive effects");
+        if (rule("mad_scientist").duration() < 1 || setting("draw-sword-reach") <= 0
+                || !(setting("mad-small-dodge-chance") > 0 && setting("mad-small-dodge-chance") <= 1)
+                || !(setting("last-demon-low-health") > 0 && setting("last-demon-low-health") < 1)) {
+            throw new IllegalArgumentException("Invalid transformation effects");
         }
         double chance = setting("crit-chance");
         if (chance < 0 || chance > 1 || setting("sword-reach") <= 0 || setting("sword-ray-size") < 0
