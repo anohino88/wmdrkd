@@ -1,0 +1,589 @@
+# Official IDs from sections AG and AH. Unsupported entries never enter the draft.
+augments:
+  stack_dinosaur:
+    group: CORE
+    rarity: SILVER
+    name: '중첩 공룡'
+    enabled: true
+    condition: '다른 영구 스택 획득 배율'
+    amount: 2
+    threshold: 0
+    duration: 0
+    cooldown: 0
+    cap: 0
+  heavy_fist:
+    group: CORE
+    rarity: SILVER
+    name: '육중한 주먹'
+    enabled: true
+    condition: '자신의 최대 체력 비례 근접 추가 피해'
+    amount: 0.08
+    threshold: 0
+    duration: 0
+    cooldown: 0
+    cap: 0
+  blood_record:
+    group: CORE
+    rarity: SILVER
+    name: '피의 기록'
+    enabled: true
+    condition: '자연 적대 몬스터 처치마다 영구 최대 체력 성장'
+    amount: 2
+    threshold: 5
+    duration: 0
+    cooldown: 0
+    cap: 200
+  mineral_addiction:
+    group: CORE
+    rarity: SILVER
+    name: '광물 중독'
+    enabled: true
+    condition: '자연 광석 채굴에 따라 공격 피해 증가'
+    amount: 0.04
+    threshold: 12
+    duration: 0
+    cooldown: 0
+    cap: 200
+  sword_wind:
+    group: CORE
+    rarity: SILVER
+    name: '검풍'
+    enabled: true
+    condition: '근접 타격 누적으로 벽을 관통하지 않는 전방 검기'
+    amount: 8
+    threshold: 3
+    duration: 0
+    cooldown: 0
+    cap: 0
+  berserk_engine:
+    group: CORE
+    rarity: SILVER
+    name: '폭주 기관'
+    enabled: true
+    condition: '유효 타격마다 이동 속도 증가'
+    amount: 0.06
+    threshold: 0
+    duration: 5
+    cooldown: 0
+    cap: 15
+  reflex:
+    group: CORE
+    rarity: SILVER
+    name: '반사 신경'
+    enabled: false
+    condition: '미구현 · 추첨 제외'
+    amount: 1
+  overgrowth:
+    group: CORE
+    rarity: SILVER
+    name: '과잉 성장'
+    enabled: true
+    condition: '획득 및 경기 시간이 지나면 최대 체력 성장'
+    amount: 16
+    threshold: 300
+    duration: 0
+    cooldown: 0
+    cap: 0
+  steel_heart:
+    group: CORE
+    rarity: GOLD
+    name: '강철심장'
+    enabled: true
+    condition: '근접 유효 타격으로 영구 최대 체력 증가'
+    amount: 2
+    threshold: 0
+    duration: 0
+    cooldown: 10
+    cap: 200
+  ultimate_hydra:
+    group: CORE
+    rarity: GOLD
+    name: '궁극의 히드라'
+    enabled: false
+    condition: '미구현 · 추첨 제외'
+    amount: 1
+  infernal_conductor:
+    group: CORE
+    rarity: GOLD
+    name: '지옥의 전도체'
+    enabled: false
+    condition: '미구현 · 추첨 제외'
+    amount: 1
+  eureka:
+    group: CORE
+    rarity: GOLD
+    name: '유레카'
+    enabled: true
+    condition: 'XP 레벨 5당 증강 재사용 대기시간 감소'
+    amount: 0.05
+    threshold: 5
+    duration: 0
+    cooldown: 0
+    cap: 14
+  magic_missile:
+    group: CORE
+    rarity: GOLD
+    name: '마법 미사일'
+    enabled: false
+    condition: '미구현 · 추첨 제외'
+    amount: 1
+  phantom_weapon:
+    group: CORE
+    rarity: GOLD
+    name: '환영 무기'
+    enabled: false
+    condition: '미구현 · 추첨 제외'
+    amount: 1
+  tank_engine:
+    group: CORE
+    rarity: GOLD
+    name: '탱크 엔진'
+    enabled: true
+    condition: '수평 이동 거리마다 크기와 최대 체력 성장'
+    amount: 4
+    threshold: 250
+    duration: 0
+    cooldown: 0
+    cap: 20
+  giant_slayer:
+    group: CORE
+    rarity: GOLD
+    name: '거인 학살자'
+    enabled: true
+    condition: '상대 최대 체력이 높을수록 피해 증가'
+    amount: 1.2
+    threshold: 0
+    duration: 0
+    cooldown: 0
+    cap: 0
+  split_attack:
+    group: CORE
+    rarity: GOLD
+    name: '분열하는 공격'
+    enabled: false
+    condition: '미구현 · 추첨 제외'
+    amount: 1
+  storm_chaser:
+    group: CORE
+    rarity: GOLD
+    name: '폭풍 추적자'
+    enabled: true
+    condition: '유효 이동 후 다음 타격에 낙뢰'
+    amount: 12
+    threshold: 6
+    duration: 0
+    cooldown: 8
+    cap: 0
+  calamity_giant:
+    group: CORE
+    rarity: PRISMATIC
+    name: '재앙의 거인'
+    enabled: true
+    condition: '크기·최대 체력·사거리 증가, 질주 밀치기 및 웅크리고 빈손 우클릭 지진'
+    amount: 50
+    threshold: 0
+    duration: 0
+    cooldown: 8
+    cap: 0
+  infinite_repeat:
+    group: CORE
+    rarity: PRISMATIC
+    name: '무한 반복'
+    enabled: false
+    condition: '미구현 · 추첨 제외'
+    amount: 1
+  jeweled_gauntlet:
+    group: CORE
+    rarity: PRISMATIC
+    name: '보석 건틀릿'
+    enabled: true
+    condition: '합성 증강 피해에 치명타 적용'
+    amount: 2.5
+    threshold: 0
+    duration: 0
+    cooldown: 0
+    cap: 0
+  immortal_berserker:
+    group: CORE
+    rarity: PRISMATIC
+    name: '불멸의 광전사'
+    enabled: true
+    condition: '유효 타격으로 광폭화, 흡혈 및 경기당 1회 치명 피해 방지'
+    amount: 1.0
+    threshold: 10
+    duration: 8
+    cooldown: 0
+    cap: 1
+  dual_wielder:
+    group: CORE
+    rarity: PRISMATIC
+    name: '양손잡이'
+    enabled: false
+    condition: '미구현 · 추첨 제외'
+    amount: 1
+  earthquake_mage:
+    group: CORE
+    rarity: PRISMATIC
+    name: '지진술사'
+    enabled: false
+    condition: '미구현 · 추첨 제외'
+    amount: 1
+  center_of_universe:
+    group: CORE
+    rarity: PRISMATIC
+    name: '우주의 중심'
+    enabled: false
+    condition: '미구현 · 추첨 제외'
+    amount: 1
+  russian_doll:
+    group: CORE
+    rarity: PRISMATIC
+    name: '러시아 인형'
+    enabled: true
+    condition: '치명 피해를 제한적으로 막고 체력 감소와 이동 가속'
+    amount: 0.25
+    threshold: 3
+    duration: 0
+    cooldown: 0
+    cap: 0
+  mad_scientist:
+    group: CORE
+    rarity: PRISMATIC
+    name: '미친 과학자'
+    enabled: false
+    condition: '미구현 · 추첨 제외'
+    amount: 1
+  draw_the_sword:
+    group: CORE
+    rarity: PRISMATIC
+    name: '검을 뽑아라'
+    enabled: false
+    condition: '미구현 · 추첨 제외'
+    amount: 1
+  final_judgment:
+    group: CORE
+    rarity: PRISMATIC
+    name: '최후의 심판'
+    enabled: false
+    condition: '미구현 · 추첨 제외'
+    amount: 1
+  forbidden_reconstruction:
+    group: CORE
+    rarity: PRISMATIC
+    name: '금단의 재구성'
+    enabled: false
+    condition: '미구현 · 추첨 제외'
+    amount: 1
+  muscle_memory:
+    group: ADDITIONAL
+    rarity: SILVER
+    name: '근육 기억'
+    enabled: true
+    condition: '자연 적대 몬스터 처치로 근접 피해 증가'
+    amount: 0.02
+    threshold: 8
+    duration: 0
+    cooldown: 0
+    cap: 10
+  iron_stomach:
+    group: ADDITIONAL
+    rarity: SILVER
+    name: '철의 위장'
+    enabled: true
+    condition: '종류가 다른 음식마다 최대 체력 성장과 음식 섭취 시 회복'
+    amount: 2
+    threshold: 2
+    duration: 0
+    cooldown: 12
+    cap: 4
+  wound_record:
+    group: ADDITIONAL
+    rarity: SILVER
+    name: '상처의 기록'
+    enabled: false
+    condition: '미구현 · 추첨 제외'
+    amount: 1
+  vein_overload:
+    group: ADDITIONAL
+    rarity: SILVER
+    name: '광맥 과부하'
+    enabled: false
+    condition: '미구현 · 추첨 제외'
+    amount: 1
+  chain_impact:
+    group: ADDITIONAL
+    rarity: SILVER
+    name: '연쇄 충격'
+    enabled: true
+    condition: '근접 누적 타격으로 주변 적에게 감속 충격파'
+    amount: 3
+    threshold: 3
+    duration: 2
+    cooldown: 6
+    cap: 0
+  blood_trace:
+    group: ADDITIONAL
+    rarity: SILVER
+    name: '혈흔 추적'
+    enabled: false
+    condition: '미구현 · 추첨 제외'
+    amount: 1
+  frenzy_rhythm:
+    group: ADDITIONAL
+    rarity: SILVER
+    name: '광기의 리듬'
+    enabled: false
+    condition: '미구현 · 추첨 제외'
+    amount: 1
+  survival_instinct:
+    group: ADDITIONAL
+    rarity: SILVER
+    name: '생존 본능'
+    enabled: false
+    condition: '미구현 · 추첨 제외'
+    amount: 1
+  predator:
+    group: ADDITIONAL
+    rarity: SILVER
+    name: '포식자'
+    enabled: true
+    condition: '근접 유효 타격 누적으로 회복'
+    amount: 3
+    threshold: 3
+    duration: 0
+    cooldown: 5
+    cap: 0
+  falling_shockwave:
+    group: ADDITIONAL
+    rarity: SILVER
+    name: '낙하 충격파'
+    enabled: false
+    condition: '미구현 · 추첨 제외'
+    amount: 1
+  explosive_arrow:
+    group: ADDITIONAL
+    rarity: SILVER
+    name: '폭발 화살'
+    enabled: true
+    condition: '화살 적중 누적으로 주변 적에게 폭발 피해'
+    amount: 4
+    threshold: 3
+    duration: 0
+    cooldown: 8
+    cap: 0
+  counter_shield:
+    group: ADDITIONAL
+    rarity: SILVER
+    name: '역습의 방패'
+    enabled: false
+    condition: '미구현 · 추첨 제외'
+    amount: 1
+  heart_harvester:
+    group: ADDITIONAL
+    rarity: GOLD
+    name: '심장 수확자'
+    enabled: false
+    condition: '미구현 · 추첨 제외'
+    amount: 1
+  mineral_devourer:
+    group: ADDITIONAL
+    rarity: GOLD
+    name: '광물 포식자'
+    enabled: true
+    condition: '자연 광석 누적으로 근접 피해, 목숨 제한 시작 때 황금사과'
+    amount: 0.03
+    threshold: 10
+    duration: 0
+    cooldown: 0
+    cap: 8
+  blood_crown:
+    group: ADDITIONAL
+    rarity: GOLD
+    name: '피의 왕관'
+    enabled: false
+    condition: '미구현 · 추첨 제외'
+    amount: 1
+  storm_blade:
+    group: ADDITIONAL
+    rarity: GOLD
+    name: '폭풍의 검'
+    enabled: false
+    condition: '미구현 · 추첨 제외'
+    amount: 1
+  shadow_dash:
+    group: ADDITIONAL
+    rarity: GOLD
+    name: '그림자 도약'
+    enabled: false
+    condition: '미구현 · 추첨 제외'
+    amount: 1
+  immortal_armor:
+    group: ADDITIONAL
+    rarity: GOLD
+    name: '불멸의 갑옷'
+    enabled: false
+    condition: '미구현 · 추첨 제외'
+    amount: 1
+  venom_swarm:
+    group: ADDITIONAL
+    rarity: GOLD
+    name: '맹독 군락'
+    enabled: false
+    condition: '미구현 · 추첨 제외'
+    amount: 1
+  bounty_hunter:
+    group: ADDITIONAL
+    rarity: GOLD
+    name: '현상금 사냥꾼'
+    enabled: false
+    condition: '미구현 · 추첨 제외'
+    amount: 1
+  split_bow:
+    group: ADDITIONAL
+    rarity: GOLD
+    name: '분열의 활'
+    enabled: false
+    condition: '미구현 · 추첨 제외'
+    amount: 1
+  bomb_alchemy:
+    group: ADDITIONAL
+    rarity: GOLD
+    name: '폭탄 연금술'
+    enabled: false
+    condition: '미구현 · 추첨 제외'
+    amount: 1
+  duel_contract:
+    group: ADDITIONAL
+    rarity: GOLD
+    name: '결투의 계약'
+    enabled: false
+    condition: '미구현 · 추첨 제외'
+    amount: 1
+  time_thief:
+    group: ADDITIONAL
+    rarity: GOLD
+    name: '시간 도둑'
+    enabled: false
+    condition: '미구현 · 추첨 제외'
+    amount: 1
+  endless_evolution:
+    group: ADDITIONAL
+    rarity: PRISMATIC
+    name: '끝없는 진화'
+    enabled: false
+    condition: '미구현 · 추첨 제외'
+    amount: 1
+  phoenix_heart:
+    group: ADDITIONAL
+    rarity: PRISMATIC
+    name: '불사조 심장'
+    enabled: true
+    condition: '경기당 한 번 치명 피해 방지 및 회복과 밀쳐내기'
+    amount: 0.5
+    threshold: 1
+    duration: 2
+    cooldown: 0
+    cap: 0
+  time_rewind:
+    group: ADDITIONAL
+    rarity: PRISMATIC
+    name: '시간 역행'
+    enabled: false
+    condition: '미구현 · 추첨 제외'
+    amount: 1
+  void_lord:
+    group: ADDITIONAL
+    rarity: PRISMATIC
+    name: '공허 군주'
+    enabled: false
+    condition: '미구현 · 추첨 제외'
+    amount: 1
+  blood_god:
+    group: ADDITIONAL
+    rarity: PRISMATIC
+    name: '피의 신'
+    enabled: false
+    condition: '미구현 · 추첨 제외'
+    amount: 1
+  clone_hand:
+    group: ADDITIONAL
+    rarity: PRISMATIC
+    name: '복제의 손'
+    enabled: true
+    condition: '근접 타격 누적으로 원래 공격의 복제 피해'
+    amount: 1
+    threshold: 3
+    duration: 0
+    cooldown: 3
+    cap: 0
+  gigantification:
+    group: ADDITIONAL
+    rarity: PRISMATIC
+    name: '거인화'
+    enabled: true
+    condition: '최대 체력·크기·근접 피해 증가 및 이동 속도 감소'
+    amount: 20
+    threshold: 0
+    duration: 0
+    cooldown: 0
+    cap: 0
+  last_demon:
+    group: ADDITIONAL
+    rarity: PRISMATIC
+    name: '최후의 악마'
+    enabled: false
+    condition: '미구현 · 추첨 제외'
+    amount: 1
+  forbidden_deal:
+    group: ADDITIONAL
+    rarity: PRISMATIC
+    name: '금단의 거래'
+    enabled: false
+    condition: '미구현 · 추첨 제외'
+    amount: 1
+  world_erosion:
+    group: ADDITIONAL
+    rarity: PRISMATIC
+    name: '세계 침식'
+    enabled: false
+    condition: '미구현 · 추첨 제외'
+    amount: 1
+settings:
+  ore-sites: 262144
+  max-hits-per-target: 3
+  sword-reach: 7.0
+  sword-ray-size: 0.3
+  overgrowth-growth: 8.0
+  overgrowth-late-second: 1800
+  overgrowth-late-health: 24.0
+  berserk-evolved-cap: 20
+  berserk-evolution-seconds: 30
+  steel-evolution-stacks: 20
+  sword-evolution-hits: 30
+  crit-chance: 0.4
+  giant-relative-scaling: 1.0
+  revive-knockback-range: 4.0
+  revive-knockback-strength: 0.8
+  gigantification-scale: 0.4
+  gigantification-damage: 0.25
+  gigantification-speed: -0.12
+  movement-max-step: 1.25
+  movement-forced-ticks: 12
+  tank-evolution-stacks: 15
+  tank-scale: 0.05
+  tank-contact-damage: 4.0
+  tank-contact-cooldown: 2
+  contact-radius: 1.5
+  calamity-scale: 0.8
+  calamity-reach: 2.0
+  calamity-speed: -0.25
+  calamity-slam-radius: 4.0
+  calamity-slam-damage: 12.0
+  calamity-knockback: 0.7
+  chain-impact-range: 4.0
+  arrow-explosion-range: 2.0
+  max-extra-damage: 400.0
+  immortal-berserker-speed: 0.5
+  immortal-berserker-lifesteal: 0.4
+  immortal-berserker-revive-extension: 8
+  iron-stomach-heal: 2.0

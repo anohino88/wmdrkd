@@ -1,0 +1,103 @@
+package io.github.augmentwild.paper;
+
+import io.github.augmentwild.augment.AugmentDefinition;
+import io.github.augmentwild.augment.AugmentRarity;
+import io.github.augmentwild.augment.AugmentRegistry;
+import java.io.File;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.plugin.java.JavaPlugin;
+
+final class OfficialAugments {
+    private static final Set<String> BOUND_EFFECTS = Set.of(
+            "stack_dinosaur", "heavy_fist", "blood_record", "mineral_addiction", "sword_wind",
+            "berserk_engine", "overgrowth", "steel_heart", "eureka", "giant_slayer",
+            "jeweled_gauntlet", "russian_doll", "muscle_memory", "predator", "mineral_devourer",
+            "phoenix_heart", "gigantification", "clone_hand", "tank_engine", "storm_chaser",
+            "calamity_giant", "chain_impact", "explosive_arrow", "immortal_berserker", "iron_stomach");
+
+    record Rule(AugmentDefinition definition, String group, int threshold, int cap) {
+        double amount() { return definition.amount(); }
+        int duration() { return definition.duration(); }
+        int cooldown() { return definition.cooldown(); }
+    }
+
+    final Map<String, Rule> rules = new LinkedHashMap<>();
+    final YamlConfiguration config;
+    final YamlConfiguration synergies;
+
+    OfficialAugments(JavaPlugin plugin, AugmentRegistry registry) {
+        config = load(plugin, "official-augments.yml");
+        synergies = load(plugin, "synergies.yml");
+        var section = Objects.requireNonNull(config.getConfigurationSection("augments"));
+        for (String id : section.getKeys(false)) {
+            var rarity = AugmentRarity.valueOf(section.getString(id + ".rarity", ""));
+            String group = section.getString(id + ".group", "");
+            if (!group.equals("CORE") && !group.equals("ADDITIONAL")) throw new IllegalArgumentException(id);
+            boolean bound = BOUND_EFFECTS.contains(id);
+            var definition = new AugmentDefinition(id, rarity, section.getString(id + ".name", id),
+                    section.getString(id + ".condition", "미구현"), " (기본 수치)",
+                    AugmentDefinition.Effect.OFFICIAL, section.getDouble(id + ".amount"),
+                    section.getInt(id + ".duration"), section.getInt(id + ".cooldown"),
+                    bound && section.getBoolean(id + ".enabled"), bound);
+            int threshold = section.getInt(id + ".threshold");
+            int cap = section.getInt(id + ".cap");
+            if (threshold < 0 || cap < 0 || cap > 100_000) throw new IllegalArgumentException(id);
+            if (Set.of("blood_record", "mineral_addiction", "sword_wind", "overgrowth", "eureka",
+                    "russian_doll", "muscle_memory", "predator", "mineral_devourer", "phoenix_heart", "clone_hand", "tank_engine", "storm_chaser", "chain_impact", "explosive_arrow",
+                    "immortal_berserker", "iron_stomach")
+                    .contains(id) && threshold < 1) throw new IllegalArgumentException("Invalid threshold: " + id);
+            if (Set.of("blood_record", "mineral_addiction", "berserk_engine", "steel_heart", "eureka",
+                    "muscle_memory", "mineral_devourer", "tank_engine", "iron_stomach", "immortal_berserker").contains(id) && cap < 1) {
+                throw new IllegalArgumentException("Invalid cap: " + id);
+            }
+            if ((id.equals("phoenix_heart") || id.equals("russian_doll")) && definition.amount() >= 1) {
+                throw new IllegalArgumentException("Invalid fraction: " + id);
+            }
+            rules.put(id, new Rule(definition, group, threshold, cap));
+            registry.register(definition);
+        }
+        if (rules.size() != 64 || rules.values().stream().filter(r -> r.group().equals("CORE")).count() != 30
+                || !rules.keySet().containsAll(BOUND_EFFECTS)) throw new IllegalArgumentException("Official catalog incomplete");
+        double chance = setting("crit-chance");
+        if (chance < 0 || chance > 1 || setting("sword-reach") <= 0 || setting("sword-ray-size") < 0
+                || setting("overgrowth-growth") <= 0 || setting("overgrowth-late-health") <= 0
+                || setting("giant-relative-scaling") <= 0 || setting("revive-knockback-range") <= 0
+                || setting("revive-knockback-strength") < 0 || setting("gigantification-scale") <= 0
+                || setting("gigantification-speed") < -.9 || setting("gigantification-speed") > 0
+                || setting("gigantification-damage") <= 0 || count("berserk-evolved-cap") < rule("berserk_engine").cap()
+                || synergies.getDouble("steel_king.minimum-health") <= 0 || synergies.getDouble("steel_king.radius") <= 0
+                || synergies.getDouble("steel_king.damage") <= 0) throw new IllegalArgumentException("Invalid official settings");
+    }
+
+    Rule rule(String id) { return Objects.requireNonNull(rules.get(id), id); }
+    int count(String key) {
+        int value = config.getInt("settings." + key);
+        if (value < 1) throw new IllegalArgumentException(key);
+        return value;
+    }
+    double setting(String key) {
+        double value = config.getDouble("settings." + key);
+        if (!Double.isFinite(value)) throw new IllegalArgumentException(key);
+        return value;
+    }
+
+    private static YamlConfiguration load(JavaPlugin plugin, String name) {
+        File file = new File(plugin.getDataFolder(), name);
+        if (!file.isFile()) plugin.saveResource(name, false);
+        var yaml = new YamlConfiguration();
+        try {
+            yaml.load(file);
+        } catch (java.io.IOException | org.bukkit.configuration.InvalidConfigurationException failure) {
+            throw new IllegalArgumentException("Could not load " + name, failure);
+        }
+        yaml.setDefaults(YamlConfiguration.loadConfiguration(new InputStreamReader(
+                Objects.requireNonNull(plugin.getResource(name)), StandardCharsets.UTF_8)));
+        return yaml;
+    }
+}

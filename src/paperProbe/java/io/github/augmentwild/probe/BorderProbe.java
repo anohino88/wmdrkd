@@ -48,7 +48,9 @@ public final class BorderProbe extends JavaPlugin implements Listener {
             PaperAugmentAttribute.update(speed, key, .08, AttributeModifier.Operation.ADD_SCALAR, true);
             PaperAugmentAttribute.update(speed, key, .08, AttributeModifier.Operation.ADD_SCALAR, true);
             require(Math.abs(speed.getValue() - initialSpeed * 1.08) < .000001, "actual gain with no duplicate");
-            PaperAugmentAttribute.update(speed, key, .08, AttributeModifier.Operation.ADD_SCALAR, false);
+            PaperAugmentAttribute.update(speed, key, .16, AttributeModifier.Operation.ADD_SCALAR, true);
+            require(Math.abs(speed.getValue() - initialSpeed * 1.16) < .000001, "stack growth replaces existing modifier");
+            PaperAugmentAttribute.update(speed, key, .16, AttributeModifier.Operation.ADD_SCALAR, false);
             require(speed.getModifier(key) == null && speed.getValue() == initialSpeed, "modifier restore");
             getLogger().info("AW_AUGMENT_PROBE_PASS: real transient attribute applied once and removed");
         } finally {

@@ -11,7 +11,10 @@ public final class PaperAugmentAttribute {
     public static void update(AttributeInstance attribute, NamespacedKey key, double amount,
                               AttributeModifier.Operation operation, boolean enabled) {
         var current = attribute.getModifier(key);
+        if (current != null && (!enabled || current.getAmount() != amount || current.getOperation() != operation)) {
+            attribute.removeModifier(current);
+            current = null;
+        }
         if (enabled && current == null) attribute.addTransientModifier(new AttributeModifier(key, amount, operation));
-        else if (!enabled && current != null) attribute.removeModifier(current);
     }
 }

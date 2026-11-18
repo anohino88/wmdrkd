@@ -5,7 +5,10 @@ import io.github.augmentwild.augment.AugmentDefinition.Effect;
 import io.github.augmentwild.domain.MatchSimulationClock;
 import io.github.augmentwild.domain.SelectionRound;
 import java.util.*;
+import java.util.function.BiConsumer;
 import java.util.function.Predicate;
+import io.github.augmentwild.match.MatchState;
+import org.bukkit.Location;
 import java.util.function.Supplier;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
@@ -71,8 +74,11 @@ final class PaperAugments implements Listener {
         @Override public Inventory getInventory() { return inventory; }
     }
 
+    private final PaperOfficialCombat official;
+
     PaperAugments(JavaPlugin plugin, Supplier<MatchSimulationClock> clock, Predicate<UUID> member,
-                  Predicate<Player> active, Predicate<Player> protectedPlayer, int maxDepth) {
+                  Predicate<Player> active, Predicate<Player> protectedPlayer, Supplier<MatchState> phase,
+                  Predicate<Location> arena, BiConsumer<UUID, Integer> protection, int maxDepth) {
         this.plugin = plugin;
         this.clock = clock;
         this.member = member;
@@ -85,12 +91,20 @@ final class PaperAugments implements Listener {
         if (!(lowHealth > 0 && lowHealth < 1 && strongHit > 0 && Double.isFinite(strongHit)
                 && rearDot >= -1 && rearDot <= 0)) throw new IllegalArgumentException("Invalid augment trigger settings");
         registry = AugmentCatalog.load(config);
+        official = new PaperOfficialCombat(plugin, registry, clock, phase, active, protectedPlayer, arena,
+                protection, player -> {
+                    var profile = profiles.get(player);
+                    return profile == null ? Set.of() : profile.owned;
+                }, maxDepth);
         roller = new AugmentRoller(registry, new Random());
         guard = new ProcGuard(maxDepth);
     }
 
+    Listener officialListener() { return official; }
+
     void start(UUID id, MatchSimulationClock timer) {
         match = id;
+        official.start(id);
         timer.setOfferProvider(this::offers);
     }
 
@@ -141,6 +155,7 @@ final class PaperAugments implements Listener {
             show(player, round, choice, profile);
         }
         syncEffects(player, profile, timer.elapsedSeconds());
+        official.sync(player);
     }
 
     void collectCompleted() {
@@ -160,6 +175,7 @@ final class PaperAugments implements Listener {
         if (definition == null || !definition.selectable()) return;
         profile.grantedRound = round;
         boolean added = profile.owned.add(definition.id());
+        if (added) official.acquired(id, definition.id());
         plugin.getLogger().info("Augment " + choice.status() + " match=" + match + " player=" + id
                 + " round=" + round + " id=" + definition.id() + " added=" + added);
         var player = plugin.getServer().getPlayer(id);
@@ -198,12 +214,14 @@ final class PaperAugments implements Listener {
                 case PRISMATIC -> Material.AMETHYST_SHARD;
             };
             double shown = a.unit().startsWith("%") ? a.amount() * 100 : a.amount();
-            menu.inventory.setItem(SLOTS[i], item(icon, Component.text(a.name(), color), List.of(
+            var lore = new ArrayList<>(List.of(
                     Component.text(a.rarity().name(), color), Component.text("조건: " + a.condition()),
                     Component.text(String.format(Locale.ROOT, "효과: %.2f%s", shown, a.unit())),
                     Component.text("지속 " + (a.duration() == 0 ? "상시 또는 즉시" : a.duration() + "초")
                             + " · 쿨다운 " + a.cooldown() + "초"),
-                    Component.text("동일 효과 중첩·강화 없음" + (profile.owned.contains(a.id()) ? " · 보유 중" : "")))));
+                    Component.text(profile.owned.contains(a.id()) ? "보유 중" : "획득 가능")));
+            official.details(player.getUniqueId(), a.id()).forEach(line -> lore.add(Component.text(line)));
+            menu.inventory.setItem(SLOTS[i], item(icon, Component.text(a.name(), color), lore));
         }
         var odds = AugmentRarity.odds(profile.level);
         menu.inventory.setItem(18, item(Material.EXPERIENCE_BOTTLE, Component.text("추첨 레벨 " + profile.level),
@@ -278,12 +296,14 @@ final class PaperAugments implements Listener {
         var profile = profiles.computeIfAbsent(player.getUniqueId(), ignored -> new Profile());
         profile.lastKnownLevel = Math.clamp(player.getLevel(), 0, 50);
         profile.shown = 0;
+        official.disconnected(player);
         removeModifiers(player, profile);
     }
 
     void remove(UUID id) {
         var profile = profiles.remove(id);
         Player player = plugin.getServer().getPlayer(id);
+        official.remove(id, player);
         if (player != null && profile != null) {
             if (ownedMenu(player) != null) player.closeInventory();
             removeModifiers(player, profile);
@@ -292,6 +312,7 @@ final class PaperAugments implements Listener {
 
     void clear() {
         List.copyOf(profiles.keySet()).forEach(this::remove);
+        official.clear();
         completed = 0;
         match = null;
     }
@@ -317,10 +338,11 @@ final class PaperAugments implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void combat(EntityDamageByEntityEvent event) {
+        if (official.synthetic()) return;
         if (!(event.getDamager() instanceof Player attacker) || !(event.getEntity() instanceof Player target)
                 || event.getDamage() <= 0 || !active.test(attacker) || !active.test(target)
                 || protectedPlayer.test(attacker) || protectedPlayer.test(target)) return;
-        double base = event.getDamage();
+        double base = official.rawDamage(event);
         var attacking = profiles.get(attacker.getUniqueId());
         var defending = profiles.get(target.getUniqueId());
         if (attacking != null) {
@@ -345,6 +367,7 @@ final class PaperAugments implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void afterCombat(EntityDamageByEntityEvent event) {
+        if (official.synthetic()) return;
         if (!(event.getDamager() instanceof Player attacker) || !(event.getEntity() instanceof Player target)
                 || event.getFinalDamage() <= 0 || !active.test(attacker) || !active.test(target)
                 || protectedPlayer.test(attacker) || protectedPlayer.test(target)) return;
@@ -379,7 +402,7 @@ final class PaperAugments implements Listener {
         strongest(profile, effect).ifPresent(a -> {
             if (!profile.timers.ready(a.id(), now)) return;
             guard.run(event, new ProcKey(player.getUniqueId(), a.id()), () -> {
-                profile.timers.cooldown(a.id(), now, a.cooldown());
+                profile.timers.cooldown(a.id(), now, official.cooldown(player, a.cooldown()));
                 action.accept(player, a);
                 plugin.getLogger().fine("Augment proc match=" + match + " player=" + player.getUniqueId() + " id=" + a.id());
             });

@@ -1,0 +1,25 @@
+steel_king:
+  name: 강철의 왕
+  enabled: true
+  minimum-health: 60.0
+  radius: 4.0
+  damage: 6.0
+  sound: true
+  particles: true
+infinite_barrage:
+  name: 무한 포격
+  enabled: false
+calamity_train:
+  name: 재앙의 기관차
+  enabled: true
+  radius: 2.0
+  damage: 6.0
+  cooldown: 2
+  sound: true
+  particles: true
+hell_lord:
+  name: 지옥의 군주
+  enabled: false
+thousand_swords:
+  name: 천 개의 검
+  enabled: false

@@ -5,7 +5,7 @@ import java.util.Objects;
 public record AugmentDefinition(String id, AugmentRarity rarity, String name, String condition, String unit,
                                 Effect effect, double amount, int duration, int cooldown,
                                 boolean enabled, boolean implemented) {
-    public enum Effect { XP, MINING, SPEED, HEAL, REAR, FALL, ARMOR, BERSERK, DEFENSE, PURSUIT }
+    public enum Effect { XP, MINING, SPEED, HEAL, REAR, FALL, ARMOR, BERSERK, DEFENSE, PURSUIT, OFFICIAL }
 
     public AugmentDefinition {
         Objects.requireNonNull(id);

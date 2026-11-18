@@ -46,6 +46,14 @@ final class ArenaPlacement {
         return deadline != null && deadline - tickTime > 0;
     }
 
+    void protect(UUID id, int seconds) {
+        long now = System.nanoTime();
+        long duration = java.util.concurrent.TimeUnit.SECONDS.toNanos(seconds);
+        if (duration > 0 && protectedUntil.getOrDefault(id, now) - now < duration) {
+            protectedUntil.put(id, now + duration);
+        }
+    }
+
     void forgetAttempt(UUID id) { attempts.remove(id); }
 
     void forget(UUID id) {
