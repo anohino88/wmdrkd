@@ -180,3 +180,4 @@ PHASE 2B의 GitHub Actions #6에서 Java 버전 확인, `./gradlew clean build -
 - Stage A 검증. Java 25 독립 테스트 331개 및 22개 시나리오 통과. 두 단계 경계, 예약 시각, 다른 경기 및 오래된 사망 의도 거부를 포함한다. 커밋 `d15c6ac`의 [Actions 실행](https://github.com/anohino88/wmdrkd/actions/runs/44262339823)은 전체 빌드, 독립 검사 및 JAR 검사를 통과했다.
 - Stage B 부분 구현. `/aw admin arena preview`는 지정 기존 오버월드에서 랜덤 후보, 월드 경계, 기존 기록 AABB, 설정 간격의 표면 바다 바이옴, 안전 스폰 간격을 검사한다. 지정 간격 외 좌표에는 바다 없음이 보장되지 않는다. 생성되지 않은 청크는 후보 실패로 처리하고 동시에 요청하는 청크 수를 제한한다. 기록은 읽기만 하며 경기 시작·배치, 사용 기록 쓰기, 공유 월드 보호와 랜덤 리스폰은 후속 작업이다.
 - 서버 실동작, 8~16인 검증 및 Stage C–J는 미완료다. 다음은 검색 결과를 게임 시작 컨텍스트에 연결하고 안전하게 배치한 뒤, 예약 활성화 전에 경기장·자기장 내부 랜덤 텔레포트 성공을 확인하는 것이다.
+- Stage B 미리보기 커밋 `f68bb5f`의 [Actions 실행](https://github.com/anohino88/wmdrkd/actions/runs/44262787984/job/134659937514)에서 `COMPILED`, `BUILD_VERIFIED`, `JAR_VERIFIED` 확인. `clean build`, 독립 도메인 테스트, 메타데이터·클래스 검사 및 `augmentwild-jar` 업로드 단계가 성공했다. 실제 월드에서 미리보기와 플레이를 실행한 검증은 `NOT_RUN`이다.
