@@ -30,6 +30,9 @@ final class PlayerSnapshots {
     boolean pending(UUID id) { return Files.exists(path(id)); }
 
     void capture(Player player) throws IOException {
+        if (!player.getItemOnCursor().getType().isAir()) {
+            throw new IOException("Participant must empty the inventory cursor: " + player.getUniqueId());
+        }
         Path path = path(player.getUniqueId());
         if (Files.exists(path)) throw new IOException("Previous snapshot needs recovery: " + player.getUniqueId());
         var yaml = new YamlConfiguration();
