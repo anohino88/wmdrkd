@@ -16,6 +16,14 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - run: java --version
       - run: ./gradlew clean build --stacktrace
+      - name: Verify plugin JAR contents
+        run: |
+          mapfile -t plugin_jars < <(find build/libs -maxdepth 1 -type f -name '*.jar')
+          test "${#plugin_jars[@]}" -eq 1
+          jar tf "${plugin_jars[0]}" > "$RUNNER_TEMP/augmentwild-jar-entries"
+          grep -Fx 'plugin.yml' "$RUNNER_TEMP/augmentwild-jar-entries"
+          grep -Fx 'io/github/augmentwild/AugmentWildPlugin.class' "$RUNNER_TEMP/augmentwild-jar-entries"
+          unzip -p "${plugin_jars[0]}" plugin.yml | grep -Fx 'main: io.github.augmentwild.AugmentWildPlugin'
       - uses: actions/upload-artifact@v4
         with:
           name: augmentwild-jar

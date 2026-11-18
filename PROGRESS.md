@@ -162,3 +162,11 @@ Java 25 독립 도메인 회귀 실행은 기존 331개 검사, 시뮬레이션 
 - Java 25 독립 테스트에서 기존 반복 포함 검사 331개, 시뮬레이션 4개, 통합 4개, 완료 검사 5개, A–G 7개가 통과했다. D에 선택 중 사망·중복·목숨 보존 회귀 검사를 포함했다.
 - Java 25로 `./gradlew clean build --stacktrace --no-daemon`을 실행했다. `:compileJava`의 `compileClasspath` 해석에서 Paper Maven 403과 Maven Central PKIX 인증서 오류가 발생했다. `PHASE_2A_COMPILED = false`, `GRADLE_BUILD_VERIFIED = false`, `JUNIT_VERIFIED = false`, `JAR_CREATED = false`, `PAPER_RUNTIME_VERIFIED = false`.
 - 시작 시 로컬은 `301c2d0`, 원격 work는 `81b2a6d`였다. GitHub Actions API가 Forbidden을 반환해 `CI_NOT_VERIFIED` 상태다.
+
+## PHASE 2B Paper 리스폰 (2026-11-18)
+
+기준 커밋 `841bcd1`의 공개 Actions #4에서 clean build 및 `augmentwild-jar` 업로드 성공을 확인했다. CLI Actions API는 Forbidden이며 공식 Paper 다운로드 API 접근은 CONNECT 403으로 로컬 서버 검증이 차단됐다.
+
+Paper 사망 이벤트의 HIGHEST에서 표준 인벤토리·XP 보존과 드롭 제거를 적용하고 MONITOR에서 사망을 기록한다. 예약은 경기 시간 만료, 접속, 네이티브 리스폰이 모두 충족됐을 때 처리한다. 그 전과 탈락 후에는 이동·상호작용·피해·인벤토리 이벤트를 제한한다. 게임 모드, 비행, 체력·효과·인벤토리 값을 수동으로 변경하지 않는다. 종료·탈퇴 시 제한과 예약을 해제한다. 테스트 복귀점은 기본 비활성이고, 활성화하면 같은 월드의 로드된 청크에서 바닥·공간·경계를 확인한 설정 좌표만 사용한다. 설정이 없거나 부적합하면 Paper 기본 위치를 유지한다. 최종 경기장 내부 스폰은 미구현이다.
+
+Java 25 독립 검사 331개와 시나리오 21개가 통과했다. 재접속, 중복 사망, 네이티브 리스폰 완료 조건 및 경기 종료 예약 정리를 검증했다. 실제 Paper 시나리오 A–F는 BUILD_BLOCKED인 로컬 환경에서 실행하지 않았으므로 RUNTIME_VERIFIED는 false다. 표준 사망 보존 API의 실제 XP 진행도 및 다른 플러그인과의 이벤트 상호작용은 서버에서 확인해야 한다.
