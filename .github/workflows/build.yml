@@ -30,3 +30,26 @@ jobs:
           name: augmentwild-jar
           path: build/libs/*.jar
           if-no-files-found: error
+  paper-smoke:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: actions/download-artifact@v4
+        with:
+          name: augmentwild-jar
+          path: build/libs
+      - name: Boot Paper 26.3 and check AugmentWild
+        run: bash scripts/test-paper-smoke.sh
+      - name: Upload Paper smoke log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: paper-smoke-log
+          path: ${{ runner.temp }}/augmentwild-paper-smoke/server.log
+          if-no-files-found: ignore

@@ -6,7 +6,6 @@ import io.github.augmentwild.domain.GameSession;
 import io.github.augmentwild.domain.MatchSimulationClock;
 import io.github.augmentwild.match.LifeState;
 import io.github.augmentwild.match.MatchState;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.LinkedHashMap;
@@ -63,7 +62,7 @@ public final class PaperMatchService implements Listener {
         var config = plugin.getConfig();
         placement = new ArenaPlacement(config.getInt("respawn.border-margin"),
                 config.getInt("respawn.attempts-per-cycle"), config.getInt("respawn.retry-ticks"),
-                config.getInt("respawn.protection-seconds"));
+                config.getInt("respawn.protection-seconds"), config.getInt("respawn.preferred-separation"));
         restrictions = new PaperRespawnRestrictions(this::isRestricted, this::outsideArena,
                 this::consumePermit, player -> placement.protectedFromDamage(player.getUniqueId(), System.nanoTime()));
         session = new GameSession(settings.rules());

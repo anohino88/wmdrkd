@@ -27,15 +27,17 @@ final class ArenaPlacement {
     private final int margin;
     private final int attemptsPerCycle;
     private final int retryTicks;
+    private final int preferredSeparation;
     private final long protectionNanos;
 
-    ArenaPlacement(int margin, int attemptsPerCycle, int retryTicks, int protectionSeconds) {
-        if (margin < 1 || attemptsPerCycle < 1 || retryTicks < 1 || protectionSeconds < 0) {
+    ArenaPlacement(int margin, int attemptsPerCycle, int retryTicks, int protectionSeconds, int preferredSeparation) {
+        if (margin < 1 || attemptsPerCycle < 1 || retryTicks < 1 || protectionSeconds < 0 || preferredSeparation < 0) {
             throw new IllegalArgumentException("Invalid respawn search settings");
         }
         this.margin = margin;
         this.attemptsPerCycle = attemptsPerCycle;
         this.retryTicks = retryTicks;
+        this.preferredSeparation = preferredSeparation;
         protectionNanos = java.util.concurrent.TimeUnit.SECONDS.toNanos(protectionSeconds);
     }
 
@@ -91,7 +93,8 @@ final class ArenaPlacement {
                 && safe.contains(column.x() + 0.5, column.z() + 0.5, margin)) {
             target = SafeArenaSurface.at(world, column.x(), column.z());
         }
-        if (target == null) {
+        if (target == null || (failures.getOrDefault(id, 0) < attemptsPerCycle / 2
+                && nearSurvivor(target, player, session))) {
             defer(id, tick);
             return;
         }
@@ -111,6 +114,15 @@ final class ArenaPlacement {
         retryAt.remove(id);
         protectedUntil.put(id, System.nanoTime() + protectionNanos);
         player.sendMessage("안전한 경기 위치에서 리스폰했습니다.");
+    }
+
+    private boolean nearSurvivor(Location point, Player player, GameSession session) {
+        return point.getWorld().getPlayers().stream().filter(other -> !other.equals(player))
+                .filter(other -> session.participantIds().contains(other.getUniqueId()))
+                .filter(other -> session.player(other.getUniqueId()).life().status()
+                        == io.github.augmentwild.match.LifeState.Status.ACTIVE)
+                .anyMatch(other -> other.getLocation().distanceSquared(point)
+                        < (double) preferredSeparation * preferredSeparation);
     }
 
     private void defer(UUID id, long tick) {

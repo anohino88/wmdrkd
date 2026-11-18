@@ -36,6 +36,7 @@ arena:
 respawn:
   delay-seconds: 20
   protection-seconds: 3
+  preferred-separation: 20
   retry-ticks: 20
   attempts-per-cycle: 12
   border-margin: 3
