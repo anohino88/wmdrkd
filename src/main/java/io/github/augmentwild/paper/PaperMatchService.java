@@ -24,17 +24,22 @@ public final class PaperMatchService implements Listener {
     private final JavaPlugin plugin;
     private final PaperMatchSettings settings;
     private final Set<UUID> deaths = new LinkedHashSet<>();
+    private final Set<UUID> awaitingNativeRespawn = new LinkedHashSet<>();
     private final Set<UUID> departures = new LinkedHashSet<>();
     private GameSession session;
     private MatchSimulationClock clock;
     private BukkitTask task;
     private int loggedEvents;
+    private final PaperRespawnRestrictions restrictions;
 
     public PaperMatchService(JavaPlugin plugin, PaperMatchSettings settings) {
         this.plugin = plugin;
         this.settings = settings;
+        restrictions = new PaperRespawnRestrictions(this::isRestricted);
         session = new GameSession(settings.rules());
     }
+
+    public Listener restrictions() { return restrictions; }
 
     public String status() {
         long elapsed = clock == null ? 0 : clock.elapsedSeconds();
@@ -85,7 +90,7 @@ public final class PaperMatchService implements Listener {
             return "경기 시작에 실패했습니다.";
         }
         plugin.getLogger().info("Match " + session.matchId() + " started in GATHERING");
-        return "경기 수명주기를 시작했습니다. 현재 단계 GATHERING (파밍).";
+        return "개발용 도메인 경기를 시작했습니다. 경기장 배치 없이 현재 월드에서 GATHERING을 진행합니다.";
     }
 
     public String stop() {
@@ -113,6 +118,7 @@ public final class PaperMatchService implements Listener {
         loggedEvents = 0;
         departures.clear();
         deaths.clear();
+        awaitingNativeRespawn.clear();
         session = new GameSession(settings.rules());
     }
 
@@ -124,10 +130,16 @@ public final class PaperMatchService implements Listener {
                 plugin.getLogger().info("Match " + session.matchId() + " timeline event " + events.get(loggedEvents++));
             }
             long now = clock.elapsedNanos();
+            // The native respawn and the match deadline are separate gates.
+            var ready = session.respawnDue(now, id -> !awaitingNativeRespawn.contains(id) && !departures.contains(id));
+            for (UUID id : ready) {
+                Player player = plugin.getServer().getPlayer(id);
+                if (player != null) player.sendMessage("경기 리스폰 대기가 끝났습니다.");
+            }
+            awaitingNativeRespawn.removeAll(departures);
             if (session.state() == MatchState.PVP || session.state() == MatchState.SUDDEN_DEATH) {
-                session.resolveCombatTick(departures, deaths, now);
+                session.resolveTick(departures, deaths, now);
             } else {
-                session.respawnDue(now);
                 departures.forEach(session::leave);
                 deaths.stream().filter(this::contains).forEach(id -> session.death(id, now));
                 if (session.participantIds().isEmpty()) session.cancel();
@@ -147,7 +159,10 @@ public final class PaperMatchService implements Listener {
 
     @EventHandler public void onJoin(PlayerJoinEvent event) {
         UUID id = event.getPlayer().getUniqueId();
-        if (contains(id) && !departures.contains(id)) session.connected(id, true);
+        if (contains(id) && !departures.contains(id)) {
+            session.connected(id, true);
+            if (!event.getPlayer().isDead()) awaitingNativeRespawn.remove(id);
+        }
     }
 
     @EventHandler public void onQuit(PlayerQuitEvent event) {
@@ -157,21 +172,42 @@ public final class PaperMatchService implements Listener {
         else session.connected(id, false);
     }
 
+    private boolean isRestricted(Player player) {
+        UUID id = player.getUniqueId();
+        return task != null && contains(id) && (deaths.contains(id) || departures.contains(id)
+                || awaitingNativeRespawn.contains(id) || session.player(id).life().status() != LifeState.Status.ACTIVE);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void preserveOnDeath(PlayerDeathEvent event) {
+        UUID id = event.getEntity().getUniqueId();
+        if (task == null || !contains(id) || departures.contains(id)) return;
+        event.setKeepInventory(true);
+        event.getDrops().clear();
+        event.setKeepLevel(true);
+        event.setDroppedExp(0);
+    }
+
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onDeath(PlayerDeathEvent event) {
         UUID id = event.getEntity().getUniqueId();
         if (task != null && contains(id) && !departures.contains(id)
-                && session.player(id).life().status() == LifeState.Status.ACTIVE) deaths.add(id);
+                && session.player(id).life().status() == LifeState.Status.ACTIVE && deaths.add(id)) {
+            awaitingNativeRespawn.add(id);
+        }
     }
 
-    @EventHandler public void onRespawn(PlayerRespawnEvent event) {
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onRespawn(PlayerRespawnEvent event) {
         Player player = event.getPlayer();
         UUID id = player.getUniqueId();
-        if (task == null || !contains(id) || departures.contains(id)) return;
-        if (deaths.contains(id) || session.reservation(id).isPresent()) {
-            player.sendMessage("기본 리스폰 위치로 복귀합니다. 경기의 대기 시간은 경기 시계로 별도 처리됩니다.");
-        } else if (session.player(id).life().status() == LifeState.Status.ELIMINATED) {
+        if (task == null || !awaitingNativeRespawn.remove(id) || departures.contains(id)) return;
+        PaperRespawnRestrictions.safeTestSpawn(plugin.getConfig(), event.getRespawnLocation())
+                .ifPresent(event::setRespawnLocation);
+        if (session.player(id).life().status() == LifeState.Status.ELIMINATED) {
             player.sendMessage("현재 경기에서 탈락했습니다.");
+        } else {
+            player.sendMessage("경기 리스폰이 완료될 때까지 이동과 상호작용이 제한됩니다.");
         }
     }
 }

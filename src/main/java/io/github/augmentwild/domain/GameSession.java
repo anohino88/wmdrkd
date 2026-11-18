@@ -2,6 +2,7 @@ package io.github.augmentwild.domain;
 
 import io.github.augmentwild.match.*;
 import java.util.*;
+import java.util.function.Predicate;
 
 /** Single-threaded domain model; all times are monotonic nanoseconds supplied by caller. */
 public final class GameSession {
@@ -82,11 +83,16 @@ public final class GameSession {
     }
     /** Returns due work in deterministic order; disconnected participants remain pending. */
     public List<UUID> respawnDue(long gameTime) {
+        return respawnDue(gameTime, id -> true);
+    }
+
+    /** The platform may defer completion until its native respawn has finished. */
+    public List<UUID> respawnDue(long gameTime, Predicate<UUID> ready) {
         var due = deadlines.values().stream().filter(r -> r.deadline() <= gameTime)
                 .sorted(Comparator.comparingLong(RespawnReservation::deadline).thenComparing(RespawnReservation::playerId))
                 .toList();
         var completed = new ArrayList<UUID>();
-        for (var reservation : due) if (respawn(reservation, gameTime)) completed.add(reservation.playerId());
+        for (var reservation : due) if (ready.test(reservation.playerId()) && respawn(reservation, gameTime)) completed.add(reservation.playerId());
         return List.copyOf(completed);
     }
     /** Caller supplies one atomic position snapshot; session eligibility overrides snapshot status. */

@@ -22,6 +22,12 @@ arena:
     max-search-seconds: 120
 respawn:
   delay-seconds: 20
+  test-return:
+    enabled: false
+    world: world
+    x: 0
+    y: 64
+    z: 0
 combat:
   lives: 2
 border:

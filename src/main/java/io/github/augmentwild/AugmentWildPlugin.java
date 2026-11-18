@@ -19,11 +19,13 @@ public final class AugmentWildPlugin extends JavaPlugin {
         matches = new PaperMatchService(this, PaperMatchSettings.load(getConfig()));
         Objects.requireNonNull(getCommand("aw"), "Missing aw command in plugin.yml").setExecutor(this);
         getServer().getPluginManager().registerEvents(matches, this);
+        getServer().getPluginManager().registerEvents(matches.restrictions(), this);
     }
 
     @Override public void onDisable() {
         if (matches == null) return;
         HandlerList.unregisterAll(matches);
+        HandlerList.unregisterAll(matches.restrictions());
         matches.shutdown();
         matches = null;
     }

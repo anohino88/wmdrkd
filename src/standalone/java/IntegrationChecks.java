@@ -29,6 +29,19 @@ public class IntegrationChecks {
   wall.set(300_000_000_000L); clock.tick(); check(clock.respawnDue().isEmpty(),"paused respawn");
   wall.set(315_000_000_000L); clock.tick(); check(clock.respawnDue().isEmpty(),"after selection");
   wall.set(325_000_000_000L); check(clock.respawnDue().equals(List.of(p)),"match time deadline");
-  System.out.println("4 integration scenarios passed");
+  var reconnect = game(p);
+  check(reconnect.death(p, 0), "one death accepted");
+  var pending = reconnect.reservation(p).orElseThrow();
+  check(!reconnect.death(p, 0) && reconnect.reservation(p).orElseThrow().equals(pending), "duplicate keeps reservation");
+  reconnect.connected(p, false);
+  check(reconnect.respawnDue(20_000_000_000L, id -> true).isEmpty(), "offline remains pending");
+  reconnect.connected(p, true);
+  check(reconnect.respawnDue(20_000_000_000L, id -> false).isEmpty(), "native respawn remains pending");
+  check(reconnect.respawnDue(20_000_000_000L, id -> true).equals(List.of(p)), "both gates clear");
+  check(reconnect.respawnDue(20_000_000_000L).isEmpty(), "completion only once");
+  reconnect.death(p, 21_000_000_000L);
+  reconnect.cancel();
+  check(reconnect.reservation(p).isEmpty(), "stop clears pending reservation");
+  System.out.println("5 integration scenarios passed");
  }
 }
