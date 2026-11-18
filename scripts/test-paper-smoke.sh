@@ -68,6 +68,7 @@ with log.open("wb") as output:
             wait_for('경기 단계 WAITING', 15)
             if os.environ.get("AW_BORDER_PROBE") == "1":
                 wait_for("AW_BORDER_PROBE_PASS", 15)
+                wait_for("AW_AUGMENT_PROBE_PASS", 15)
             if benchmark:
                 commands = runpy.run_path(str(pathlib.Path(sys.argv[1]) / "scripts/paper-arena-benchmark.py"))
                 commands["benchmark_arena"](command, log, wait_for)

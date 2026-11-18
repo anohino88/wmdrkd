@@ -2,6 +2,10 @@ package io.github.augmentwild.probe;
 
 import io.github.augmentwild.domain.Arena;
 import io.github.augmentwild.paper.PaperMatchBorder;
+import io.github.augmentwild.paper.PaperAugmentAttribute;
+import org.bukkit.NamespacedKey;
+import org.bukkit.attribute.Attribute;
+import org.bukkit.attribute.AttributeModifier;
 import org.bukkit.Location;
 import org.bukkit.damage.DamageType;
 import org.bukkit.entity.Pig;
@@ -37,6 +41,16 @@ public final class BorderProbe extends JavaPlugin implements Listener {
             PaperMatchBorder.applyDamage(testPig, 2);
             require(sawOutsideBorderDamage, "Paper outside-border damage event");
             require(testPig.getHealth() == before - 2, "actual health delta");
+            var speed = testPig.getAttribute(Attribute.MOVEMENT_SPEED);
+            require(speed != null, "movement attribute");
+            double initialSpeed = speed.getValue();
+            var key = new NamespacedKey(this, "probe_speed");
+            PaperAugmentAttribute.update(speed, key, .08, AttributeModifier.Operation.ADD_SCALAR, true);
+            PaperAugmentAttribute.update(speed, key, .08, AttributeModifier.Operation.ADD_SCALAR, true);
+            require(Math.abs(speed.getValue() - initialSpeed * 1.08) < .000001, "actual gain with no duplicate");
+            PaperAugmentAttribute.update(speed, key, .08, AttributeModifier.Operation.ADD_SCALAR, false);
+            require(speed.getModifier(key) == null && speed.getValue() == initialSpeed, "modifier restore");
+            getLogger().info("AW_AUGMENT_PROBE_PASS: real transient attribute applied once and removed");
         } finally {
             testPig.remove();
             testPig = null;

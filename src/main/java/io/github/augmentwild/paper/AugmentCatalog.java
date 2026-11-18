@@ -24,8 +24,8 @@ final class AugmentCatalog {
         add(registry, config, "defense", AugmentRarity.PRISMATIC, "최후의 저항", "경기 상대에게 기본 피해 6 이상 피격", "% 피해 감소", Effect.DEFENSE);
         add(registry, config, "pursuit", AugmentRarity.PRISMATIC, "연쇄 추격", "경기 상대에게 근접 명중", "% 이동 속도", Effect.PURSUIT);
         for (var rarity : AugmentRarity.values()) {
-            if (registry.selectable().stream().filter(a -> a.rarity() == rarity).count() < 3) {
-                throw new IllegalArgumentException("At least three implemented augments are required in " + rarity);
+            if (registry.selectable().stream().filter(a -> a.rarity() == rarity).count() < (rarity == AugmentRarity.PRISMATIC ? 4 : 3)) {
+                throw new IllegalArgumentException("Insufficient implemented augments in " + rarity);
             }
         }
         return registry;

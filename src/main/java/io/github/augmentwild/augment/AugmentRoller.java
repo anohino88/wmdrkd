@@ -30,6 +30,10 @@ public final class AugmentRoller {
             if (!fresh.isEmpty()) tier = fresh;
             result.add(tier.get(random.nextInt(tier.size())));
         }
+        if (!previous.isEmpty() && result.stream().allMatch(a -> previous.contains(a.id()))) {
+            var alternatives = pool.stream().filter(a -> !previous.contains(a.id())).toList();
+            if (!alternatives.isEmpty()) result.set(2, alternatives.get(random.nextInt(alternatives.size())));
+        }
         return List.copyOf(result);
     }
 }

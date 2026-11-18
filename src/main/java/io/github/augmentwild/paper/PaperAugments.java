@@ -48,9 +48,7 @@ final class PaperAugments implements Listener {
 
     private static final class Profile {
         final Set<String> owned = new LinkedHashSet<>();
-        final Map<String, Long> cooldowns = new HashMap<>();
-        final Map<String, Long> expires = new HashMap<>();
-        final Map<String, Long> lastHeal = new HashMap<>();
+        final AugmentTimers timers = new AugmentTimers();
         final Set<String> modifiers = new HashSet<>();
         int level, lastKnownLevel, shown, grantedRound;
     }
@@ -299,7 +297,7 @@ final class PaperAugments implements Listener {
         var profile = activeProfile(player);
         if (profile == null || event.getAmount() <= 0) return;
         strongest(profile, Effect.XP).ifPresent(a -> guard.run(event, new ProcKey(player.getUniqueId(), "xp"),
-                () -> event.setAmount((int) Math.min(Integer.MAX_VALUE, Math.round(event.getAmount() * (1 + a.amount()))))));
+                () -> event.setAmount(AugmentMath.experience(event.getAmount(), a.amount()))));
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -322,21 +320,21 @@ final class PaperAugments implements Listener {
         var defending = profiles.get(target.getUniqueId());
         if (attacking != null) {
             strongest(attacking, Effect.BERSERK)
-                    .filter(a -> attacking.expires.getOrDefault(a.id(), 0L) > clock.get().elapsedSeconds())
+                    .filter(a -> attacking.timers.active(a.id(), clock.get().elapsedSeconds()))
                     .ifPresent(a -> guard.run(event, new ProcKey(attacker.getUniqueId(), "berserk_damage"),
-                            () -> event.setDamage(event.getDamage() + base * a.amount())));
+                            () -> event.setDamage(AugmentMath.bonusHit(event.getDamage(), base, a.amount()))));
             var backwards = attacker.getLocation().toVector().subtract(target.getLocation().toVector()).setY(0);
             var facing = target.getLocation().getDirection().setY(0);
             if (backwards.lengthSquared() > 1e-6 && facing.lengthSquared() > 1e-6
                     && backwards.normalize().dot(facing.normalize()) < -.5) {
-                trigger(event, attacker, attacking, Effect.REAR, (p,a) -> event.setDamage(event.getDamage() + base * a.amount()));
+                trigger(event, attacker, attacking, Effect.REAR, (p,a) -> event.setDamage(AugmentMath.bonusHit(event.getDamage(), base, a.amount())));
             }
             if (attacker.getFallDistance() > 0 && !attacker.isOnGround()) {
-                trigger(event, attacker, attacking, Effect.FALL, (p,a) -> event.setDamage(event.getDamage() + base * a.amount()));
+                trigger(event, attacker, attacking, Effect.FALL, (p,a) -> event.setDamage(AugmentMath.bonusHit(event.getDamage(), base, a.amount())));
             }
         }
         if (defending != null && base >= 6) {
-            trigger(event, target, defending, Effect.DEFENSE, (p,a) -> event.setDamage(event.getDamage() * (1 - a.amount())));
+            trigger(event, target, defending, Effect.DEFENSE, (p,a) -> event.setDamage(AugmentMath.mitigate(event.getDamage(), a.amount())));
         }
     }
 
@@ -374,9 +372,9 @@ final class PaperAugments implements Listener {
                          java.util.function.BiConsumer<Player, AugmentDefinition> action) {
         long now = clock.get().elapsedSeconds();
         strongest(profile, effect).ifPresent(a -> {
-            if (profile.cooldowns.getOrDefault(a.id(), 0L) > now) return;
+            if (!profile.timers.ready(a.id(), now)) return;
             guard.run(event, new ProcKey(player.getUniqueId(), a.id()), () -> {
-                profile.cooldowns.put(a.id(), now + a.cooldown());
+                profile.timers.cooldown(a.id(), now, a.cooldown());
                 action.accept(player, a);
                 plugin.getLogger().fine("Augment proc match=" + match + " player=" + player.getUniqueId() + " id=" + a.id());
             });
@@ -386,30 +384,23 @@ final class PaperAugments implements Listener {
     private void activate(Player player, AugmentDefinition definition) {
         var profile = profiles.get(player.getUniqueId());
         long now = clock.get().elapsedSeconds();
-        profile.expires.put(definition.id(), now + definition.duration());
-        profile.lastHeal.put(definition.id(), now);
+        profile.timers.activate(definition.id(), now, definition.duration());
     }
 
     private void syncEffects(Player player, Profile profile, long now) {
         if (!active.test(player)) {
             removeModifiers(player, profile);
             // Acquisition and cooldown persist, but active buffs end on death or elimination.
-            profile.expires.clear();
-            profile.lastHeal.clear();
+            profile.timers.clearActive();
             return;
         }
         for (String id : profile.owned) {
             var a = registry.get(id);
-            long until = profile.expires.getOrDefault(id, -1L);
-            boolean enabled = a.effect() == Effect.SPEED || until > now;
-            if (a.effect() == Effect.HEAL && until >= now && profile.lastHeal.getOrDefault(id, now) < now) {
-                profile.lastHeal.put(id, now);
+            boolean enabled = a.effect() == Effect.SPEED || profile.timers.active(id, now);
+            if (a.effect() == Effect.HEAL && profile.timers.periodic(id, now)) {
                 player.setHealth(Math.min(maxHealth(player), player.getHealth() + a.amount()));
             }
-            if (until <= now) {
-                profile.expires.remove(id);
-                profile.lastHeal.remove(id);
-            }
+            profile.timers.expire(id, now);
             var attribute = attribute(a.effect());
             if (attribute != null && (enabled || profile.modifiers.contains(id))) {
                 setModifier(player, profile, a, attribute, enabled);
@@ -435,18 +426,11 @@ final class PaperAugments implements Listener {
         var instance = player.getAttribute(attribute);
         if (instance == null) return;
         var key = new NamespacedKey(plugin, "augment_" + a.id());
-        var current = instance.getModifier(key);
-        if (enabled) {
-            if (current == null) {
-                var operation = a.effect() == Effect.ARMOR ? AttributeModifier.Operation.ADD_NUMBER
-                        : AttributeModifier.Operation.ADD_SCALAR;
-                instance.addTransientModifier(new AttributeModifier(key, a.amount(), operation));
-            }
-            profile.modifiers.add(a.id());
-        } else {
-            if (current != null) instance.removeModifier(current);
-            profile.modifiers.remove(a.id());
-        }
+        var operation = a.effect() == Effect.ARMOR ? AttributeModifier.Operation.ADD_NUMBER
+                : AttributeModifier.Operation.ADD_SCALAR;
+        PaperAugmentAttribute.update(instance, key, a.amount(), operation, enabled);
+        if (enabled) profile.modifiers.add(a.id());
+        else profile.modifiers.remove(a.id());
     }
 
     private void removeModifiers(Player player, Profile profile) {

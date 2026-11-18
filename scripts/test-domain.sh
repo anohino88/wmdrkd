@@ -11,6 +11,7 @@ java -cp "$tmp" IntegrationChecks
 
 java -cp "$tmp" CompletionChecks
 java -cp "$tmp" BorderChecks
+java -cp "$tmp" AugmentChecks
 for scenario in A B C D E F G; do
     java -cp "$tmp" ScenarioChecks "$scenario"
 done
