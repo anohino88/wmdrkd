@@ -18,11 +18,12 @@ public final class AugmentWildPlugin extends JavaPlugin {
     @Override public void onEnable() {
         if (matches != null) return;
         saveDefaultConfig();
-        matches = new PaperMatchService(this, PaperMatchSettings.load(getConfig()));
         arenaSearch = new ArenaSearchService(this);
+        matches = new PaperMatchService(this, PaperMatchSettings.load(getConfig()), arenaSearch);
         Objects.requireNonNull(getCommand("aw"), "Missing aw command in plugin.yml").setExecutor(this);
         getServer().getPluginManager().registerEvents(matches, this);
         getServer().getPluginManager().registerEvents(matches.restrictions(), this);
+        matches.recoverOnlinePlayers();
     }
 
     @Override public void onDisable() {
@@ -52,7 +53,7 @@ public final class AugmentWildPlugin extends JavaPlugin {
                 return true;
             }
             switch (args[1].toLowerCase(Locale.ROOT)) {
-                case "start" -> sender.sendMessage(matches.start());
+                case "start" -> sender.sendMessage(matches.start(sender));
                 case "stop" -> {
                     arenaSearch.cancel();
                     sender.sendMessage(matches.stop());

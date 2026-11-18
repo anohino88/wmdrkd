@@ -55,6 +55,16 @@ public class IntegrationChecks {
   check(boundary.respawn(p,2_439_000_000_000L), "valid pre-sudden-death reservation");
   check(boundary.death(p,2_440_000_000_000L) && boundary.player(p).life().status()==LifeState.Status.ELIMINATED, "new sudden death eliminates");
   check(!game(p).applyDeath(gatheringDeath), "foreign match death ignored");
-  System.out.println("6 integration scenarios passed");
+  var safe = new Arena(-100, 250, 1000, 1000).shrink(2420, 1820, 600, 60, 60);
+  var random = new Random(42);
+  var sampled = new HashSet<ArenaCoordinates.Column>();
+  for (int i = 0; i < 100; i++) {
+   var column = ArenaCoordinates.sample(safe, 3, random).orElseThrow();
+   check(safe.contains(column.x() + 0.5, column.z() + 0.5, 3), "random respawn within final border margin");
+   sampled.add(column);
+  }
+  check(sampled.size() > 1, "respawn sampler is not fixed");
+  check(ArenaCoordinates.sample(safe, 30, random).isEmpty(), "empty safe zone returns no spawn");
+  System.out.println("7 integration scenarios passed");
  }
 }

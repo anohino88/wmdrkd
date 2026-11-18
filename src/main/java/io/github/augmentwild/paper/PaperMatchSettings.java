@@ -4,7 +4,7 @@ import io.github.augmentwild.domain.MatchRules;
 import org.bukkit.configuration.file.FileConfiguration;
 
 public record PaperMatchSettings(MatchRules rules, int minimumPlayers, int maximumPlayers,
-                                 int selectionSeconds, int normalSupplySecond, int premiumSupplySecond) {
+                                 int selectionSeconds, int normalSupplySecond, int premiumSupplySecond, long placementTimeoutNanos) {
     public static PaperMatchSettings load(FileConfiguration config) {
         if (!config.getBoolean("gathering.pvp-enabled")) {
             throw new IllegalArgumentException("gathering.pvp-enabled must be true");
@@ -31,6 +31,9 @@ public record PaperMatchSettings(MatchRules rules, int minimumPlayers, int maxim
                 config.getInt("augments.choices-per-round"), config.getInt("augments.rarity.silver-weight"),
                 config.getInt("augments.rarity.gold-weight"), config.getInt("augments.rarity.prismatic-weight"),
                 config.getInt("augments.proc.max-depth"));
-        return new PaperMatchSettings(rules, minimum, maximum, selection, normal, premium);
+        int placementSeconds = config.getInt("arena.spawn.placement-timeout-seconds");
+        if (placementSeconds < 1) throw new IllegalArgumentException("placement timeout must be positive");
+        return new PaperMatchSettings(rules, minimum, maximum, selection, normal, premium,
+                java.util.concurrent.TimeUnit.SECONDS.toNanos(placementSeconds));
     }
 }

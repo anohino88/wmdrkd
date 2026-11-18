@@ -1,6 +1,7 @@
 package io.github.augmentwild.paper;
 
 import java.util.function.Predicate;
+import java.util.function.BiPredicate;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -22,13 +23,22 @@ import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerItemConsumeEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
+import org.bukkit.event.player.PlayerPortalEvent;
 import org.bukkit.event.player.PlayerSwapHandItemsEvent;
 
 final class PaperRespawnRestrictions implements Listener {
     private final Predicate<Player> restricted;
 
-    PaperRespawnRestrictions(Predicate<Player> restricted) {
+    private final BiPredicate<Player, Location> outside;
+    private final Predicate<PlayerTeleportEvent> internalTeleport;
+    private final Predicate<Player> protectedPlayer;
+
+    PaperRespawnRestrictions(Predicate<Player> restricted, BiPredicate<Player, Location> outside,
+                             Predicate<PlayerTeleportEvent> internalTeleport, Predicate<Player> protectedPlayer) {
         this.restricted = restricted;
+        this.outside = outside;
+        this.internalTeleport = internalTeleport;
+        this.protectedPlayer = protectedPlayer;
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -46,12 +56,18 @@ final class PaperRespawnRestrictions implements Listener {
         Location to = event.getTo();
         Location from = event.getFrom();
         if (to != null && (from.getX() != to.getX() || from.getY() != to.getY() || from.getZ() != to.getZ())
-                && restricted.test(event.getPlayer())) event.setCancelled(true);
+                && (restricted.test(event.getPlayer()) || outside.test(event.getPlayer(), to))) event.setCancelled(true);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void teleport(PlayerTeleportEvent event) {
-        if (restricted.test(event.getPlayer())) event.setCancelled(true);
+        if (!internalTeleport.test(event) && (restricted.test(event.getPlayer())
+                || outside.test(event.getPlayer(), event.getTo()))) event.setCancelled(true);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void portal(PlayerPortalEvent event) {
+        if (restricted.test(event.getPlayer()) || outside.test(event.getPlayer(), event.getTo())) event.setCancelled(true);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
@@ -66,7 +82,7 @@ final class PaperRespawnRestrictions implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void damage(EntityDamageEvent event) {
-        if ((event.getEntity() instanceof Player victim && restricted.test(victim))
+        if ((event.getEntity() instanceof Player victim && (restricted.test(victim) || protectedPlayer.test(victim)))
                 || (event.getDamageSource().getCausingEntity() instanceof Player attacker && restricted.test(attacker))) {
             event.setCancelled(true);
         }
