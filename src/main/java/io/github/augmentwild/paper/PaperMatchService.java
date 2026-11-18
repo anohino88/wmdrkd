@@ -43,6 +43,10 @@ public final class PaperMatchService implements Listener {
 
     public Listener restrictions() { return restrictions; }
 
+    public int previewPlayerCount() {
+        return Math.max(settings.minimumPlayers(), session.participantIds().size() - departures.size());
+    }
+
     public String status() {
         long elapsed = clock == null ? 0 : clock.elapsedSeconds();
         String remaining = switch (session.state()) {

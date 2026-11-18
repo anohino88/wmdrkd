@@ -1,5 +1,6 @@
 package io.github.augmentwild;
 
+import io.github.augmentwild.paper.ArenaSearchService;
 import io.github.augmentwild.paper.PaperMatchService;
 import io.github.augmentwild.paper.PaperMatchSettings;
 import java.util.Locale;
@@ -12,11 +13,13 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 public final class AugmentWildPlugin extends JavaPlugin {
     private PaperMatchService matches;
+    private ArenaSearchService arenaSearch;
 
     @Override public void onEnable() {
         if (matches != null) return;
         saveDefaultConfig();
         matches = new PaperMatchService(this, PaperMatchSettings.load(getConfig()));
+        arenaSearch = new ArenaSearchService(this);
         Objects.requireNonNull(getCommand("aw"), "Missing aw command in plugin.yml").setExecutor(this);
         getServer().getPluginManager().registerEvents(matches, this);
         getServer().getPluginManager().registerEvents(matches.restrictions(), this);
@@ -26,6 +29,7 @@ public final class AugmentWildPlugin extends JavaPlugin {
         if (matches == null) return;
         HandlerList.unregisterAll(matches);
         HandlerList.unregisterAll(matches.restrictions());
+        arenaSearch.cancel();
         matches.shutdown();
         matches = null;
     }
@@ -35,6 +39,13 @@ public final class AugmentWildPlugin extends JavaPlugin {
             sender.sendMessage("경기 서비스를 사용할 수 없습니다.");
             return true;
         }
+        if (args.length == 3 && args[0].equalsIgnoreCase("admin") && args[1].equalsIgnoreCase("arena")
+                && args[2].equalsIgnoreCase("preview")) {
+            sender.sendMessage(sender.hasPermission("augmentwild.admin")
+                    ? arenaSearch.preview(sender, matches.previewPlayerCount())
+                    : "관리자 권한이 없습니다.");
+            return true;
+        }
         if (args.length == 2 && args[0].equalsIgnoreCase("admin")) {
             if (!sender.hasPermission("augmentwild.admin")) {
                 sender.sendMessage("관리자 권한이 없습니다.");
@@ -42,7 +53,10 @@ public final class AugmentWildPlugin extends JavaPlugin {
             }
             switch (args[1].toLowerCase(Locale.ROOT)) {
                 case "start" -> sender.sendMessage(matches.start());
-                case "stop" -> sender.sendMessage(matches.stop());
+                case "stop" -> {
+                    arenaSearch.cancel();
+                    sender.sendMessage(matches.stop());
+                }
                 default -> { return false; }
             }
             return true;

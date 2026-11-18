@@ -172,3 +172,11 @@ Paper 사망 이벤트의 HIGHEST에서 표준 인벤토리·XP 보존과 드롭
 Java 25 독립 검사 331개와 시나리오 21개가 통과했다. 재접속, 중복 사망, 네이티브 리스폰 완료 조건 및 경기 종료 예약 정리를 검증했다. 실제 Paper 시나리오 A–F는 BUILD_BLOCKED인 로컬 환경에서 실행하지 않았으므로 RUNTIME_VERIFIED는 false다. 표준 사망 보존 API의 실제 XP 진행도 및 다른 플러그인과의 이벤트 상호작용은 서버에서 확인해야 한다.
 
 PHASE 2B의 GitHub Actions #6에서 Java 버전 확인, `./gradlew clean build --stacktrace`(표준 test 태스크 포함), JAR 내부 검사 및 업로드 단계가 성공했다. 검사에서 루트 `plugin.yml`, 선언된 메인 클래스와 대응하는 클래스 파일을 확인했다. `GRADLE_BUILD_VERIFIED = true`, `JAR_CREATED = true`, `PAPER_RUNTIME_VERIFIED = false`. 개별 JUnit 로그는 공개 스텝 로그 URL이 404라 확인하지 못했다. 로컬 `BUILD_BLOCKED`와 Actions 성공은 별도다. [Actions #6](https://github.com/anohino88/wmdrkd/actions/runs/44218680457)
+
+## 최종 통합 명세 진행 (2026-11-18)
+
+- 시작 HEAD `27ec557`, 브랜치 `work`. 최종 통합 명세를 저장하고 기존 세부 명세의 PvP 충돌을 수정했다. 직업 시스템은 제외한다.
+- Stage A 구현. 사망 의도를 경기 ID·플레이어·순번·당시 단계·경기 시각으로 기록한다. 배치에서 원래 단계로 판정하고, 종료가 확정되면 리스폰을 처리하지 않는다. Paper의 후속 리스폰 이벤트를 확인하고 개발용 고정 복귀점은 제거했다. 서버 기본 리스폰 대기는 정식 경기장 랜덤 복귀로 검증되지 않았다.
+- Stage A 검증. Java 25 독립 테스트 331개 및 22개 시나리오 통과. 두 단계 경계, 예약 시각, 다른 경기 및 오래된 사망 의도 거부를 포함한다. 커밋 `d15c6ac`의 [Actions 실행](https://github.com/anohino88/wmdrkd/actions/runs/44262339823)은 전체 빌드, 독립 검사 및 JAR 검사를 통과했다.
+- Stage B 부분 구현. `/aw admin arena preview`는 지정 기존 오버월드에서 랜덤 후보, 월드 경계, 기존 기록 AABB, 설정 간격의 표면 바다 바이옴, 안전 스폰 간격을 검사한다. 지정 간격 외 좌표에는 바다 없음이 보장되지 않는다. 생성되지 않은 청크는 후보 실패로 처리하고 동시에 요청하는 청크 수를 제한한다. 기록은 읽기만 하며 경기 시작·배치, 사용 기록 쓰기, 공유 월드 보호와 랜덤 리스폰은 후속 작업이다.
+- 서버 실동작, 8~16인 검증 및 Stage C–J는 미완료다. 다음은 검색 결과를 게임 시작 컨텍스트에 연결하고 안전하게 배치한 뒤, 예약 활성화 전에 경기장·자기장 내부 랜덤 텔레포트 성공을 확인하는 것이다.

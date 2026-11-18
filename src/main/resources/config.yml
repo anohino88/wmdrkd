@@ -17,9 +17,14 @@ arena:
   maximum-size: 5000
   spawn:
     min-player-distance: 80
+    border-margin: 50
   biome:
     ocean-policy: ZERO
   search:
+    radius: 8192
+    surface-sample-step: 4
+    chunks-per-tick: 4
+    used-region-buffer-blocks: 100
     max-candidate-attempts: 80
     max-search-seconds: 120
 respawn:
