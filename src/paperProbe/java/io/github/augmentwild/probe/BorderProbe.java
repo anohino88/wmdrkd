@@ -1,6 +1,11 @@
 package io.github.augmentwild.probe;
 
 import io.github.augmentwild.domain.Arena;
+import io.github.augmentwild.augment.DamageChain;
+import java.util.UUID;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import org.bukkit.configuration.file.YamlConfiguration;
 import io.github.augmentwild.paper.PaperMatchBorder;
 import io.github.augmentwild.paper.PaperAugmentAttribute;
 import org.bukkit.NamespacedKey;
@@ -52,12 +57,43 @@ public final class BorderProbe extends JavaPlugin implements Listener {
             require(Math.abs(speed.getValue() - initialSpeed * 1.16) < .000001, "stack growth replaces existing modifier");
             PaperAugmentAttribute.update(speed, key, .16, AttributeModifier.Operation.ADD_SCALAR, false);
             require(speed.getModifier(key) == null && speed.getValue() == initialSpeed, "modifier restore");
-            getLogger().info("AW_AUGMENT_PROBE_PASS: real transient attribute applied once and removed");
+            verifyAugmentCatalog();
+            verifySyntheticDamage(testPig);
+            getLogger().info("AW_AUGMENT_PROBE_PASS: real transient modifiers, official catalog and bounded synthetic health delta");
         } finally {
             testPig.remove();
             testPig = null;
         }
         getLogger().info("AW_BORDER_PROBE_PASS: virtual border, unchanged global border, Paper damage event and health delta");
+    }
+
+    private void verifyAugmentCatalog() {
+        var main = getServer().getPluginManager().getPlugin("AugmentWild");
+        require(main != null && main.isEnabled(), "AugmentWild is enabled");
+        var yaml = YamlConfiguration.loadConfiguration(new InputStreamReader(
+                main.getResource("official-augments.yml"), StandardCharsets.UTF_8));
+        var section = yaml.getConfigurationSection("augments");
+        require(section != null && section.getKeys(false).size() == 64, "official config loaded");
+        require(section.getKeys(false).stream().allMatch(id -> section.getBoolean(id + ".implemented")
+                && section.getBoolean(id + ".enabled")), "configured official effects");
+    }
+
+    private void verifySyntheticDamage(Pig pig) {
+        var chain = new DamageChain(2, 1);
+        var match = UUID.randomUUID();
+        var source = UUID.randomUUID();
+        double before = pig.getHealth();
+        chain.root(() -> {
+            require(chain.hit(match, source, pig.getUniqueId(), "probe", 2, false, () -> {
+                pig.setNoDamageTicks(0);
+                pig.damage(2);
+                return pig.getHealth() < before;
+            }), "real synthetic effect damage");
+            require(!chain.hit(match, source, pig.getUniqueId(), "probe", 2, false, () -> {
+                throw new AssertionError("repeated victim cannot be damaged");
+            }), "hit limit across event callbacks");
+        });
+        require(Math.abs(pig.getHealth() - (before - 2)) < .000001, "single real health delta");
     }
 
     @EventHandler

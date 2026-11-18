@@ -24,7 +24,7 @@ import org.bukkit.damage.DamageType;
 import org.bukkit.entity.AbstractArrow;
 import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.LivingEntity;
-import org.bukkit.entity.Monster;
+import org.bukkit.entity.Enemy;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
 import org.bukkit.entity.Snowball;
@@ -69,6 +69,7 @@ final class PaperOfficialCombat implements Listener {
     private final Set<UUID> deadMobs = new HashSet<>();
     private Random random;
     private UUID match;
+    private DamageChain.Root originalHit;
     private boolean syntheticConfirmed;
     private double syntheticFinalDamage;
 
@@ -146,7 +147,7 @@ final class PaperOfficialCombat implements Listener {
     private boolean opponent(Player player, LivingEntity target) {
         if (target.equals(player) || target.isDead() || !target.getWorld().equals(player.getWorld())) return false;
         if (target instanceof Player rival) return valid(rival);
-        return target instanceof Monster && arena.test(target.getLocation());
+        return target instanceof Enemy && arena.test(target.getLocation());
     }
 
     private Fighter fighter(UUID id) { return fighters.computeIfAbsent(id, key -> new Fighter()); }
@@ -327,6 +328,7 @@ final class PaperOfficialCombat implements Listener {
             resetAttributes(player);
             state.progress.reset("berserk_engine");
             state.lastBerserkHit = -1;
+            state.lastSecond = -1;
             state.immortalUntil = 0;
             state.progress.reset("frenzy_rhythm");
             state.frenzyTarget = null;
@@ -345,19 +347,7 @@ final class PaperOfficialCombat implements Listener {
         }
         long second = now();
         erosion.tick(second);
-        if (state.lastBerserkHit >= 0 && second - state.lastBerserkHit >= rule("berserk_engine").duration()) {
-            state.progress.reset("berserk_engine");
-        }
-        if (state.lastSecond != second) {
-            state.lastSecond = second;
-            if (state.progress.value("berserk_engine") >= rule("berserk_engine").cap()) {
-                int limit = catalog.count("berserk-evolution-seconds");
-                int past = state.progress.value("berserk_seconds");
-                if (past < limit && state.progress.add("berserk_seconds", 1, limit) == limit) {
-                    announce(player.getUniqueId(), "증강 진화 · 폭주 기관", true);
-                }
-            }
-        }
+        recordTopSpeed(player, state, second);
         boolean transform = owns(player, "mad_scientist") && small(state, second) != state.transformedSmall;
         double healthFraction = transform ? player.getHealth() / maxHealth(player) : 0;
         applyAttributes(player, state, second);
@@ -387,6 +377,26 @@ final class PaperOfficialCombat implements Listener {
                 && (phase.get() == MatchState.PVP || phase.get() == MatchState.SUDDEN_DEATH)
                 && player.getInventory().firstEmpty() >= 0) {
             state.apple = player.getInventory().addItem(new ItemStack(Material.GOLDEN_APPLE)).isEmpty();
+        }
+    }
+
+    private void recordTopSpeed(Player player, Fighter state, long second) {
+        long previous = state.lastSecond;
+        state.lastSecond = second;
+        if (state.lastBerserkHit < 0) return;
+        var rule = rule("berserk_engine");
+        long expires = state.lastBerserkHit + rule.duration();
+        int limit = catalog.count("berserk-evolution-seconds");
+        if (previous >= 0 && state.progress.value("berserk_engine") >= rule.cap()) {
+            int credited = (int) Math.clamp(Math.min(second, expires) - previous, 0, limit);
+            int past = state.progress.value("berserk_seconds");
+            if (credited > 0 && past < limit && state.progress.add("berserk_seconds", credited, limit) == limit) {
+                announce(player.getUniqueId(), "증강 진화 · 폭주 기관", true);
+            }
+        }
+        if (second >= expires) {
+            state.progress.reset("berserk_engine");
+            state.lastBerserkHit = -1;
         }
     }
 
@@ -517,6 +527,21 @@ final class PaperOfficialCombat implements Listener {
         if (attacker == null || !valid(attacker) || !opponent(attacker, target) || !counted.add(event)) return;
         Fighter state = fighters.get(attacker.getUniqueId());
         if (state == null) return;
+        double base = rawDamage(event);
+        if (!Double.isFinite(base) || !Double.isFinite(event.getDamage()) || !Double.isFinite(event.getFinalDamage())) return;
+        var attack = event.getDamager().equals(attacker) ? DamageChain.Attack.MELEE : DamageChain.Attack.PROJECTILE;
+        var origin = new DamageChain.Origin(attack, base, event.getDamage() - base,
+                Math.max(0, event.getDamage() - event.getFinalDamage()));
+        DamageChain.Root previous = originalHit;
+        originalHit = new DamageChain.Root(origin);
+        try {
+            applyHitEffects(event, attacker, target, state);
+        } finally {
+            originalHit = previous;
+        }
+    }
+
+    private void applyHitEffects(EntityDamageByEntityEvent event, Player attacker, LivingEntity target, Fighter state) {
         if (owns(attacker, "frenzy_rhythm")) {
             if (!target.getUniqueId().equals(state.frenzyTarget) || now() - state.frenzyAt >= rule("frenzy_rhythm").duration()) {
                 state.progress.reset("frenzy_rhythm");
@@ -552,6 +577,7 @@ final class PaperOfficialCombat implements Listener {
             }
         }
         if (owns(attacker, "berserk_engine")) {
+            recordTopSpeed(attacker, state, now());
             boolean upgraded = evolved(state, "berserk_seconds", "berserk-evolution-seconds");
             state.progress.add("berserk_engine", 1, upgraded ? catalog.count("berserk-evolved-cap") : rule("berserk_engine").cap());
             state.lastBerserkHit = now();
@@ -1037,8 +1063,11 @@ final class PaperOfficialCombat implements Listener {
 
     private void afterDamage(Player source, Runnable action) {
         UUID currentMatch = match;
+        DamageChain.Root root = chain.currentRoot() != null ? chain.currentRoot() : originalHit;
+        if (root == null) root = new DamageChain.Root();
+        DamageChain.Root origin = root;
         plugin.getServer().getScheduler().runTask(plugin, () -> {
-            if (currentMatch.equals(match) && valid(source)) chain.root(action);
+            if (currentMatch.equals(match) && valid(source)) chain.root(origin, action);
         });
     }
 
@@ -1248,8 +1277,9 @@ final class PaperOfficialCombat implements Listener {
                 }
             }
         }
-        if (match == null || synthetic() || !(event.getEntity() instanceof Monster monster)
-                || monster.getEntitySpawnReason() != CreatureSpawnEvent.SpawnReason.NATURAL) return;
+        if (match == null || synthetic() || !(event.getEntity() instanceof Enemy)
+                || event.getEntity().getEntitySpawnReason() != CreatureSpawnEvent.SpawnReason.NATURAL) return;
+        LivingEntity monster = event.getEntity();
         Player player = monster.getKiller();
         if (player == null || !valid(player) || !arena.test(monster.getLocation()) || deadMobs.size() >= 65_536
                 || !deadMobs.add(monster.getUniqueId())) return;
@@ -1339,15 +1369,20 @@ final class PaperOfficialCombat implements Listener {
         player.setAbsorptionAmount(total);
     }
 
-    @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
-    public void evadeOrResist(EntityDamageEvent event) {
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void defendAndRevive(EntityDamageEvent event) {
+        evadeOrResist(event);
+        if (!event.isCancelled()) revive(event);
+    }
+
+    private void evadeOrResist(EntityDamageEvent event) {
         if (!(event.getEntity() instanceof Player player) || !valid(player) || event.getFinalDamage() <= 0) return;
         var state = fighters.get(player.getUniqueId());
         if (state == null) return;
         if (event instanceof EntityDamageByEntityEvent hit) {
             var attacker = attacker(hit);
             boolean threat = attacker != null && valid(attacker) && opponent(attacker, player)
-                    || hit.getDamager() instanceof Monster monster && arena.test(monster.getLocation());
+                    || hit.getDamager() instanceof Enemy && arena.test(hit.getDamager().getLocation());
             if (threat && owns(player, "reflex") && state.progress.ready("reflex", now())) {
                 Location from = attacker == null ? hit.getDamager().getLocation() : attacker.getLocation();
                 var direction = from.toVector().subtract(player.getLocation().toVector());
@@ -1457,8 +1492,7 @@ final class PaperOfficialCombat implements Listener {
                     || event.getRegainReason() == EntityRegainHealthEvent.RegainReason.REGEN)) event.setCancelled(true);
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
-    public void revive(EntityDamageEvent event) {
+    private void revive(EntityDamageEvent event) {
         if (!(event.getEntity() instanceof Player player) || !valid(player) || phase.get() == MatchState.SUDDEN_DEATH
                 || event.getDamageSource().getDamageType() == DamageType.OUTSIDE_BORDER
                 || event.getDamageSource().getDamageType() == DamageType.OUT_OF_WORLD
