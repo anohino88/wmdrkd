@@ -12,6 +12,9 @@ arena:
   world: augment_world
   width: 1000
   height: 1000
+  maximum-size: 5000
+  spawn:
+    min-player-distance: 80
   biome:
     ocean-policy: ZERO
   search:
@@ -21,3 +24,23 @@ respawn:
   delay-seconds: 20
 combat:
   lives: 2
+border:
+  start-size: 1000
+  final-size: 60
+  shrink-duration-seconds: 600
+tracker:
+  amount: 1
+  maximum-distance: -1
+augments:
+  choices-per-round: 3
+  rarity:
+    silver-weight: 80
+    gold-weight: 18
+    prismatic-weight: 2
+  proc:
+    max-depth: 2
+supply:
+  normal:
+    time-seconds: 900
+  premium:
+    time-seconds: 1500

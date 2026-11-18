@@ -52,7 +52,7 @@ public final class GameSession {
     public Participant player(UUID id) { return Objects.requireNonNull(players.get(id),"unknown participant"); }
     public boolean death(UUID id, long now) {
         var phase = switch (state()) {
-            case GATHERING -> LifeState.Phase.GATHERING;
+            case GATHERING, AUGMENT_SELECTION -> LifeState.Phase.GATHERING;
             case PVP -> LifeState.Phase.PVP;
             case SUDDEN_DEATH -> LifeState.Phase.SUDDEN_DEATH;
             default -> throw new IllegalStateException();

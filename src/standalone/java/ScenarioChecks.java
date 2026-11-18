@@ -25,7 +25,14 @@ public class ScenarioChecks {
    case "A" -> full(false);
    case "B" -> { var s=game(A,B); s.transition(MatchState.PVP); for(var p:List.of(A,B)){s.death(p,0);s.respawn(p,20_000_000_000L);} check(s.resolveTick(List.of(B,A),21_000_000_000L).outcome()==GameSession.Outcome.DRAW,"draw"); }
    case "C" -> { var s=game(A,B); var n=new AtomicLong(); var c=clock(s,n); sec(n,330); c.tick(); check(c.elapsedSeconds()==300,"late tick"); sec(n,15); c.tick(); sec(n,1); c.tick(); check(c.elapsedSeconds()==301,"resume"); check(c.events().size()==1,"once"); }
-   case "D" -> { var s=game(A,B); var n=new AtomicLong(); var c=clock(s,n); sec(n,290); c.tick(); c.death(A); sec(n,10); c.tick(); sec(n,15); c.tick(); check(c.respawnDue().isEmpty(),"paused"); sec(n,10); check(c.respawnDue().equals(List.of(A)),"due"); }
+   case "D" -> { var s=game(A,B); var n=new AtomicLong(); var c=clock(s,n); sec(n,290); c.tick(); c.death(A); sec(n,10); c.tick();
+    check(c.death(B), "death during selection uses gathering rules");
+    check(!c.death(B), "duplicate selection death is ignored");
+    check(s.player(B).life().lives() == 2, "selection death preserves combat lives");
+    sec(n,15); c.tick();
+    check(c.respawnDue().isEmpty(), "paused");
+    sec(n,10); check(c.respawnDue().equals(List.of(A)), "first due");
+    sec(n,10); check(c.respawnDue().equals(List.of(B)), "selection death due"); }
    case "E" -> { var s=game(A); s.death(A,0); var old=s.reservation(A).orElseThrow(); s.cancel(); var next=game(A); next.death(A,0); check(!next.respawn(old,99_000_000_000L),"stale"); }
    case "F" -> { var s=game(A,B,C); var n=new AtomicLong(); var c=clock(s,n); sec(n,300); c.tick(); c.pause(); sec(n,15); c.tick(); check(c.isPaused(),"manual pause"); c.resume(); s.transition(MatchState.PVP); s.death(B,0); s.respawn(B,20_000_000_000L); check(s.resolveTick(List.of(C),List.of(B),21_000_000_000L).winner().equals(A),"leave"); }
    case "G" -> full(true);

@@ -152,3 +152,13 @@ Java 25에서 `scripts/test-domain.sh` 실행: 기존 331개 반복 포함 검�
 시작 HEAD `81b2a6d`, 기존 work를 강제 없이 origin/work에 푸시하고 원격 SHA `81b2a6d879066765e4041daaf8a86a1058344964` 일치를 확인했다. Actions API는 Forbidden으로 실행·로그 확인 불가: CI_NOT_VERIFIED. Paper Maven 메타데이터 요청은 프록시 CONNECT 403, 원본 HTTP 000이므로 이 환경의 Paper 의존성 해석도 차단 상태다. 버전 미지원이나 CI 실패로 해석하지 않는다.
 
 Java 25 독립 도메인 회귀 실행은 기존 331개 검사, 시뮬레이션 4개, 통합 4개, 완료 검사 5개, A–G 7개 모두 통과했다. JUnit, 전체 Gradle 빌드, plugin JAR, Paper 런타임은 이번에 검증하지 않았다. 빌드 가능한 환경이 확보된 경우 Paper 연동을 시작하라는 이번 지시에 따라 검증 불가능한 Paper API 코드는 추가하지 않았다. `/aw join`, admin start/stop, 서버 스케줄러 연결 및 서버 테스트는 미구현이다. 다음은 CI 로그 접근 또는 Paper Maven 허용과 검증된 Java 신뢰 경로 확보 후 전체 빌드 및 서버 실행이다.
+
+## PHASE 2A Paper 어댑터 (2026-11-18)
+
+- `PHASE_1C_CORE_COMPLETE = true`, `PHASE_2A_IMPLEMENTED = true`.
+- JavaPlugin 설정·명령·리스너 초기화와 종료 정리, status/join/leave/admin start/admin stop, 동기 Paper 스케줄러를 구현했다. GameSession과 MatchSimulationClock을 재사용한다.
+- 참가 중 일시 접속 종료는 경기 자격을 유지한다. 경기 중 자발적 탈퇴와 사망은 다음 스케줄러 틱에서 함께 처리한다. 증강 선택 중 사망은 파밍 규칙을 따른다. 선택지 없는 회차는 기존 선택 제한시간 뒤 재개된다.
+- 20초 대기는 도메인 상태에만 적용된다. 네이티브 리스폰 위치, 경기장, 인벤토리, PvP 제한, 실제 자기장·증강·보급 동작은 후속 단계다.
+- Java 25 독립 테스트에서 기존 반복 포함 검사 331개, 시뮬레이션 4개, 통합 4개, 완료 검사 5개, A–G 7개가 통과했다. D에 선택 중 사망·중복·목숨 보존 회귀 검사를 포함했다.
+- Java 25로 `./gradlew clean build --stacktrace --no-daemon`을 실행했다. `:compileJava`의 `compileClasspath` 해석에서 Paper Maven 403과 Maven Central PKIX 인증서 오류가 발생했다. `PHASE_2A_COMPILED = false`, `GRADLE_BUILD_VERIFIED = false`, `JUNIT_VERIFIED = false`, `JAR_CREATED = false`, `PAPER_RUNTIME_VERIFIED = false`.
+- 시작 시 로컬은 `301c2d0`, 원격 work는 `81b2a6d`였다. GitHub Actions API가 Forbidden을 반환해 `CI_NOT_VERIFIED` 상태다.
