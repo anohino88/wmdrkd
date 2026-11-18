@@ -480,10 +480,14 @@ augments:
     group: ADDITIONAL
     rarity: SILVER
     name: '역습의 방패'
-    enabled: false
-    implemented: false
-    condition: '미구현 · 추첨 제외'
-    amount: 1
+    enabled: true
+    implemented: true
+    condition: '방패로 피해 차단 시 회복하고 다음 근접 타격 강화'
+    amount: 0.4
+    threshold: 0
+    duration: 0
+    cooldown: 10
+    cap: 0
   heart_harvester:
     group: ADDITIONAL
     rarity: GOLD
@@ -544,34 +548,50 @@ augments:
     group: ADDITIONAL
     rarity: GOLD
     name: '불멸의 갑옷'
-    enabled: false
-    implemented: false
-    condition: '미구현 · 추첨 제외'
-    amount: 1
+    enabled: true
+    implemented: true
+    condition: '받는 피해 일부를 흡수 체력으로 전환'
+    amount: 0.35
+    threshold: 0
+    duration: 0
+    cooldown: 12
+    cap: 0
   venom_swarm:
     group: ADDITIONAL
     rarity: GOLD
     name: '맹독 군락'
-    enabled: false
-    implemented: false
-    condition: '미구현 · 추첨 제외'
-    amount: 1
+    enabled: true
+    implemented: true
+    condition: '근접 중독과 중독시킨 적 처치 시 주변 맹독'
+    amount: 4
+    threshold: 0
+    duration: 4
+    cooldown: 10
+    cap: 0
   bounty_hunter:
     group: ADDITIONAL
     rarity: GOLD
     name: '현상금 사냥꾼'
-    enabled: false
-    implemented: false
-    condition: '미구현 · 추첨 제외'
-    amount: 1
+    enabled: true
+    implemented: true
+    condition: '적을 지정하여 피해 증가와 처치 시 회복·신속'
+    amount: 0.25
+    threshold: 0
+    duration: 6
+    cooldown: 12
+    cap: 0
   split_bow:
     group: ADDITIONAL
     rarity: GOLD
     name: '분열의 활'
-    enabled: false
-    implemented: false
-    condition: '미구현 · 추첨 제외'
-    amount: 1
+    enabled: true
+    implemented: true
+    condition: '발사 3회마다 본 화살 피해를 높이고 두 갈래 추가 투사체 발사'
+    amount: 1.25
+    threshold: 3
+    duration: 0
+    cooldown: 6
+    cap: 0
   bomb_alchemy:
     group: ADDITIONAL
     rarity: GOLD
@@ -592,10 +612,14 @@ augments:
     group: ADDITIONAL
     rarity: GOLD
     name: '시간 도둑'
-    enabled: false
-    implemented: false
-    condition: '미구현 · 추첨 제외'
+    enabled: true
+    implemented: true
+    condition: '타격한 적의 이로운 효과를 줄이고 감속과 신속을 부여'
     amount: 1
+    threshold: 0
+    duration: 4
+    cooldown: 12
+    cap: 0
   endless_evolution:
     group: ADDITIONAL
     rarity: PRISMATIC
@@ -796,3 +820,13 @@ settings:
   fall-shock-radius: 4.0
   fall-shock-knockback: 0.6
   vein-absorption: 6.0
+  shield-heal: 2.0
+  immortal-armor-max: 10.0
+  venom-radius: 4.0
+  bounty-heal: 10.0
+  bounty-speed-seconds: 4
+  split-bow-ratio: 0.6
+  split-bow-angle: 0.18
+  split-bow-reach: 24.0
+  time-thief-slow-seconds: 2
+  time-thief-reduce-seconds: 2

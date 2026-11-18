@@ -59,6 +59,7 @@ final class PaperOfficialCombat implements Listener {
     private final NaturalOreTracker ores;
     private final Map<UUID, Fighter> fighters = new HashMap<>();
     private final Map<EntityDamageEvent, Double> rawDamage = new WeakHashMap<>();
+    private final Set<UUID> splitArrows = new HashSet<>();
     private final Set<EntityDamageEvent> splitEvents = Collections.newSetFromMap(new WeakHashMap<>());
     private final Set<EntityDamageEvent> counted = Collections.newSetFromMap(new WeakHashMap<>());
     private final Set<EntityDeathEvent> countedKills = Collections.newSetFromMap(new WeakHashMap<>());
@@ -89,7 +90,10 @@ final class PaperOfficialCombat implements Listener {
         boolean instinctPending, veinGranted, transformedSmall;
         long acquiredMad, lastDemonUntil;
         long traceUntil;
-        UUID traceTarget;
+        UUID traceTarget, bountyTarget;
+        long bountyUntil;
+        boolean counterReady;
+        final Map<UUID, Long> poisoned = new HashMap<>();
         int forcedAt;
         boolean hadVelocity, king, train, apple;
     }
@@ -178,6 +182,7 @@ final class PaperOfficialCombat implements Listener {
         rawDamage.clear();
         counted.clear();
         splitEvents.clear();
+        splitArrows.clear();
         countedKills.clear();
         match = null;
     }
@@ -273,6 +278,9 @@ final class PaperOfficialCombat implements Listener {
             state.instinctPending = false;
             state.lastDemonUntil = 0;
             state.traceTarget = null;
+            state.bountyTarget = null;
+            state.poisoned.clear();
+            state.counterReady = false;
             state.missiles.clear();
             state.burns.clear();
             return;
@@ -389,6 +397,13 @@ final class PaperOfficialCombat implements Listener {
         double ratio = ids.contains("immortal_berserker") && state.immortalUntil > now()
                 ? rule("immortal_berserker").amount() : 0;
         if (ids.contains("mineral_addiction")) ratio += state.progress.value("mineral_addiction") * rule("mineral_addiction").amount();
+        if (melee && state.counterReady && ids.contains("counter_shield")) ratio += rule("counter_shield").amount();
+        if (ids.contains("bounty_hunter") && state.bountyUntil > now() && target.getUniqueId().equals(state.bountyTarget)) {
+            ratio += rule("bounty_hunter").amount();
+        }
+        if (event.getDamager() instanceof AbstractArrow arrow && splitArrows.contains(arrow.getUniqueId())) {
+            ratio += rule("split_bow").amount() - 1;
+        }
         if (state.lastDemonUntil > now() && ids.contains("last_demon")) ratio += rule("last_demon").amount();
         if (ids.contains("blood_trace") && state.traceUntil > now() && target.getUniqueId().equals(state.traceTarget)) {
             ratio += rule("blood_trace").amount();
@@ -439,6 +454,11 @@ final class PaperOfficialCombat implements Listener {
             state.frenzyAt = now();
             state.progress.add("frenzy_rhythm", 1, rule("frenzy_rhythm").cap());
         }
+        if (owns(attacker, "bounty_hunter") && ready(attacker, state, "bounty_hunter")) {
+            state.bountyTarget = target.getUniqueId();
+            state.bountyUntil = now() + rule("bounty_hunter").duration();
+        }
+        if (owns(attacker, "time_thief") && ready(attacker, state, "time_thief")) stealTime(attacker, target);
         if (owns(attacker, "blood_trace")) {
             if (target.getUniqueId().equals(state.traceTarget) && state.traceUntil > now()) {
                 state.traceTarget = null;
@@ -499,6 +519,8 @@ final class PaperOfficialCombat implements Listener {
             if (event.getDamager() instanceof AbstractArrow) phantom(attacker, target, state);
             return;
         }
+        state.counterReady = false;
+        if (owns(attacker, "venom_swarm")) applyVenom(state, target);
         double lifesteal = owns(attacker, "blood_god") ? rule("blood_god").amount()
                 : owns(attacker, "blood_crown") && ready(attacker, state, "blood_crown") ? rule("blood_crown").amount() : 0;
         if (owns(attacker, "last_demon") && state.lastDemonUntil > now()) lifesteal = Math.max(lifesteal, catalog.setting("last-demon-lifesteal"));
@@ -538,6 +560,54 @@ final class PaperOfficialCombat implements Listener {
                 if (catalog.synergies.getBoolean("steel_king.particles")) {
                     particle(attacker, state, Particle.SWEEP_ATTACK, attacker.getLocation().add(0, 1, 0));
                 }
+            }
+        });
+    }
+
+    private void stealTime(Player player, LivingEntity target) {
+        int reduce = catalog.count("time-thief-reduce-seconds") * 20;
+        for (var effect : target.getActivePotionEffects()) {
+            if (effect.isInfinite() || effect.getType().getEffectCategory() != PotionEffectType.Category.BENEFICIAL) continue;
+            target.removePotionEffect(effect.getType());
+            int remaining = effect.getDuration() - reduce;
+            if (remaining > 0) target.addPotionEffect(new PotionEffect(effect.getType(), remaining, effect.getAmplifier(),
+                    effect.isAmbient(), effect.hasParticles(), effect.hasIcon()));
+        }
+        target.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, catalog.count("time-thief-slow-seconds") * 20, 1));
+        player.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, rule("time_thief").duration() * 20, 1));
+    }
+
+    private void applyVenom(Fighter state, LivingEntity target) {
+        long now = now();
+        state.poisoned.values().removeIf(until -> until <= now);
+        if (state.poisoned.size() >= catalog.count("burn-max-targets")) return;
+        int length = rule("venom_swarm").duration();
+        target.addPotionEffect(new PotionEffect(PotionEffectType.POISON, length * 20, 1));
+        state.poisoned.put(target.getUniqueId(), now + length);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void fireBow(EntityShootBowEvent event) {
+        if (!(event.getEntity() instanceof Player player) || !(event.getProjectile() instanceof AbstractArrow original)
+                || !valid(player) || !owns(player, "split_bow")) return;
+        Fighter state = fighter(player.getUniqueId());
+        if (!every(state, "split_bow") || !ready(player, state, "split_bow")) return;
+        splitArrows.add(original.getUniqueId());
+        UUID matchId = match;
+        plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+            if (matchId.equals(match)) splitArrows.remove(original.getUniqueId());
+        }, catalog.count("missile-lifetime-ticks"));
+        double angle = catalog.setting("split-bow-angle");
+        var start = player.getEyeLocation();
+        var direction = original.getVelocity();
+        if (direction.lengthSquared() == 0) return;
+        double damage = original.getDamage() * catalog.setting("split-bow-ratio");
+        afterDamage(player, () -> {
+            for (double yaw : new double[] {-angle, angle}) {
+                var path = direction.clone().normalize().rotateAroundY(yaw);
+                var target = ray(player, start, path, catalog.setting("split-bow-reach"));
+                if (target != null) syntheticHit(player, target, "split_bow", damage);
+                particle(player, state, Particle.CRIT, start.clone().add(path));
             }
         });
     }
@@ -922,6 +992,7 @@ final class PaperOfficialCombat implements Listener {
         Player killer = event.getEntity().getKiller();
         if (killer != null && valid(killer)) {
             Fighter state = fighters.get(killer.getUniqueId());
+            if (state != null) onMarkedKill(killer, event.getEntity(), state);
             var burn = state == null ? null : state.burns.remove(event.getEntity().getUniqueId());
             if (burn != null && burn.expiresAt() >= now()) {
                 double range = catalog.setting(burnEvolved(state) ? "burn-evolved-spread-radius" : "burn-spread-radius");
@@ -954,6 +1025,22 @@ final class PaperOfficialCombat implements Listener {
                 || !deadMobs.add(monster.getUniqueId())) return;
         for (String id : List.of("blood_record", "muscle_memory", "heart_harvester", "endless_evolution")) {
             if (owns(player, id)) progress(player, id);
+        }
+    }
+
+    private void onMarkedKill(Player killer, LivingEntity killed, Fighter state) {
+        UUID id = killed.getUniqueId();
+        if (killed instanceof Player && !member.test(id) || !arena.test(killed.getLocation())) return;
+        if (owns(killer, "bounty_hunter") && id.equals(state.bountyTarget) && state.bountyUntil > now()) {
+            state.bountyTarget = null;
+            killer.setHealth(Math.min(maxHealth(killer), killer.getHealth() + catalog.setting("bounty-heal")));
+            killer.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, catalog.count("bounty-speed-seconds") * 20, 1));
+        }
+        Long poisonedUntil = state.poisoned.remove(id);
+        if (owns(killer, "venom_swarm") && poisonedUntil != null && poisonedUntil > now() && ready(killer, state, "venom_swarm")) {
+            Location center = killed.getLocation();
+            afterDamage(killer, () -> area(killer, center, catalog.setting("venom-radius"), "venom_swarm",
+                    rule("venom_swarm").amount(), victim -> applyVenom(state, victim)));
         }
     }
 
@@ -1010,8 +1097,16 @@ final class PaperOfficialCombat implements Listener {
     public void explode(BlockExplodeEvent event) { event.blockList().forEach(this::invalidate); }
 
     private void grantAbsorption(Player player, String setting) {
-        player.addPotionEffect(new PotionEffect(PotionEffectType.ABSORPTION, catalog.count("blood-crown-absorption-seconds") * 20, 1));
-        player.setAbsorptionAmount(Math.max(player.getAbsorptionAmount(), catalog.setting(setting)));
+        double amount = catalog.setting(setting);
+        addAbsorption(player, amount, amount);
+    }
+
+    private void addAbsorption(Player player, double points, double cap) {
+        double previous = player.getAbsorptionAmount();
+        double total = Math.max(previous, Math.min(cap, previous + points));
+        int amplifier = Math.max(0, (int) Math.ceil(total / 4) - 1);
+        player.addPotionEffect(new PotionEffect(PotionEffectType.ABSORPTION, catalog.count("blood-crown-absorption-seconds") * 20, amplifier));
+        player.setAbsorptionAmount(total);
     }
 
     @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
@@ -1028,6 +1123,14 @@ final class PaperOfficialCombat implements Listener {
                 return;
             }
         }
+        if (owns(player, "immortal_armor") && ready(player, state, "immortal_armor")
+                && event.getDamageSource().getDamageType() != DamageType.OUTSIDE_BORDER
+                && event.getDamageSource().getDamageType() != DamageType.OUT_OF_WORLD) {
+            double absorption = Math.min(event.getFinalDamage() * rule("immortal_armor").amount(),
+                    catalog.setting("immortal-armor-max"));
+            event.setDamage(Math.max(0, event.getDamage() * (1 - absorption / event.getFinalDamage())));
+            afterDamage(player, () -> addAbsorption(player, absorption, catalog.setting("immortal-armor-max")));
+        }
         if (event.getCause() == EntityDamageEvent.DamageCause.FALL && owns(player, "falling_shockwave")
                 && player.getFallDistance() >= rule("falling_shockwave").threshold() && ready(player, state, "falling_shockwave")) {
             event.setDamage(event.getDamage() * (1 - catalog.setting("fall-shock-reduction")));
@@ -1041,9 +1144,15 @@ final class PaperOfficialCombat implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void damageTaken(EntityDamageEvent event) {
-        if (!(event.getEntity() instanceof Player player) || !valid(player) || event.getFinalDamage() <= 0) return;
+        if (!(event.getEntity() instanceof Player player) || !valid(player)) return;
         var state = fighters.get(player.getUniqueId());
         if (state == null) return;
+        if (owns(player, "counter_shield") && event.isApplicable(EntityDamageEvent.DamageModifier.BLOCKING)
+                && event.getDamage(EntityDamageEvent.DamageModifier.BLOCKING) < 0 && ready(player, state, "counter_shield")) {
+            state.counterReady = true;
+            afterDamage(player, () -> player.setHealth(Math.min(maxHealth(player), player.getHealth() + catalog.setting("shield-heal"))));
+        }
+        if (event.getFinalDamage() <= 0) return;
         if (owns(player, "wound_record")) {
             var rule = rule("wound_record");
             state.woundDamage += Math.min(event.getFinalDamage(), player.getHealth());

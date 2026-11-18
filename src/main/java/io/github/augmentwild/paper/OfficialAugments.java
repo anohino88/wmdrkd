@@ -22,7 +22,8 @@ final class OfficialAugments {
             "calamity_giant", "chain_impact", "explosive_arrow", "immortal_berserker", "iron_stomach", "ultimate_hydra", "magic_missile", "infinite_repeat", "infernal_conductor", "center_of_universe",
             "phantom_weapon", "split_attack", "dual_wielder", "wound_record", "frenzy_rhythm", "survival_instinct",
             "heart_harvester", "blood_crown", "storm_blade", "endless_evolution", "blood_god", "mad_scientist", "draw_the_sword", "last_demon",
-            "falling_shockwave", "vein_overload", "blood_trace");
+            "falling_shockwave", "vein_overload", "blood_trace", "counter_shield", "immortal_armor", "venom_swarm",
+            "bounty_hunter", "split_bow", "time_thief");
 
     record Rule(AugmentDefinition definition, String group, int threshold, int cap) {
         double amount() { return definition.amount(); }
@@ -54,7 +55,7 @@ final class OfficialAugments {
             if (Set.of("blood_record", "mineral_addiction", "sword_wind", "overgrowth", "eureka",
                     "russian_doll", "muscle_memory", "predator", "mineral_devourer", "phoenix_heart", "clone_hand", "tank_engine", "storm_chaser", "chain_impact", "explosive_arrow",
                     "immortal_berserker", "iron_stomach", "ultimate_hydra", "magic_missile", "infinite_repeat", "split_attack", "wound_record", "heart_harvester", "storm_blade",
-                    "endless_evolution", "blood_god", "falling_shockwave", "vein_overload")
+                    "endless_evolution", "blood_god", "falling_shockwave", "vein_overload", "split_bow")
                     .contains(id) && threshold < 1) throw new IllegalArgumentException("Invalid threshold: " + id);
             if (Set.of("blood_record", "mineral_addiction", "berserk_engine", "steel_heart", "eureka",
                     "muscle_memory", "mineral_devourer", "tank_engine", "iron_stomach", "immortal_berserker", "wound_record", "frenzy_rhythm",
