@@ -16,6 +16,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - run: java --version
       - name: Gradle build and JUnit
+        shell: bash
         run: ./gradlew clean build paperProbeJar --stacktrace 2>&1 | tee "$RUNNER_TEMP/augmentwild-build.log"
       - name: Summarize build diagnostics
         if: failure()
