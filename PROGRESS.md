@@ -230,3 +230,4 @@ PHASE 2B의 GitHub Actions #6에서 Java 버전 확인, `./gradlew clean build -
 - Java 25 독립 검사 통과. 331개 기존 검사, 시나리오 23개, 자기장 검사 21개, PHASE 5 증강 검사 127개, 신규 엔진 검사 49개와 `git diff --check`를 실행했다. 신규 검사는 64개 ID 대조, 연쇄 한도, 쿨다운·중첩, 광석·이동 기록, 부활 우선순위 및 교환의 원자적 완료를 포함한다.
 - 로컬 Gradle은 Paper Maven 메타데이터 GET 403 및 Maven Central Java PKIX로 의존성 해석에서 차단됐다. [전체 카탈로그가 포함된 2f0cd0b CI](https://github.com/anohino88/wmdrkd/actions/runs/44306582864)에서 Gradle 빌드·JUnit, JAR 구조 검사와 업로드, Paper 26.3 기동·속성·자기장 프로브 및 경기장 벤치마크가 통과했다.
 - 모든 증강의 실제 2인 FFA 효과 검증은 `NOT_RUN`이다. 현재 가동 중인 서버에 실제 26.3 클라이언트를 연결해 본 기록이 없으므로 실전 완료 상태는 미확정이다. 경기 이전에 설치된 광석의 자연 생성 여부는 판별할 수 없다.
+- 최신 코드 `d9d1fab`의 [GitHub Actions](https://github.com/anohino88/wmdrkd/actions/runs/44307911766)에서 전체 빌드, JUnit, 독립 검사, JAR 구조 확인, Paper 26.3 기동·종료, 카탈로그 및 테스트 엔티티의 피해 한도·속성 원복 프로브와 경기장 벤치마크가 모두 통과했다. [서버 JAR 아티팩트](https://github.com/anohino88/wmdrkd/actions/runs/44307911766/artifacts/14429575691).
