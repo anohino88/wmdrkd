@@ -16,6 +16,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - run: java --version
       - run: ./gradlew clean build --stacktrace
+      - run: bash scripts/test-domain.sh
       - name: Verify plugin JAR contents
         run: |
           mapfile -t plugin_jars < <(find build/libs -maxdepth 1 -type f -name '*.jar')

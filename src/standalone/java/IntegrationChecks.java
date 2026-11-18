@@ -42,6 +42,19 @@ public class IntegrationChecks {
   reconnect.death(p, 21_000_000_000L);
   reconnect.cancel();
   check(reconnect.reservation(p).isEmpty(), "stop clears pending reservation");
-  System.out.println("5 integration scenarios passed");
+  var boundary = game(p);
+  var gatheringDeath = boundary.deathIntent(p, 1_819_000_000_000L);
+  boundary.transition(MatchState.PVP);
+  check(boundary.applyDeath(gatheringDeath) && boundary.player(p).life().lives()==2, "gathering death across PvP boundary");
+  check(boundary.deadline(p).orElseThrow()==1_839_000_000_000L, "deadline uses event time");
+  check(boundary.respawn(p,1_839_000_000_000L), "gathering respawn");
+  check(!boundary.applyDeath(gatheringDeath), "old death rejected after respawn");
+  var combatDeath = boundary.deathIntent(p,2_419_000_000_000L);
+  boundary.transition(MatchState.SUDDEN_DEATH);
+  check(boundary.applyDeath(combatDeath) && boundary.player(p).life().lives()==1, "combat death across sudden death boundary");
+  check(boundary.respawn(p,2_439_000_000_000L), "valid pre-sudden-death reservation");
+  check(boundary.death(p,2_440_000_000_000L) && boundary.player(p).life().status()==LifeState.Status.ELIMINATED, "new sudden death eliminates");
+  check(!game(p).applyDeath(gatheringDeath), "foreign match death ignored");
+  System.out.println("6 integration scenarios passed");
  }
 }

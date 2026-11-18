@@ -7,6 +7,8 @@ game:
   selection-duration-seconds: 15
   pause-match-clock-during-selection: true
   pvp-grace-seconds: 20
+gathering:
+  pvp-enabled: true
 arena:
   mode: DEDICATED_WORLD
   world: augment_world
@@ -22,12 +24,6 @@ arena:
     max-search-seconds: 120
 respawn:
   delay-seconds: 20
-  test-return:
-    enabled: false
-    world: world
-    x: 0
-    y: 64
-    z: 0
 combat:
   lives: 2
 border:

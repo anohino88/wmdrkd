@@ -1,3 +1,5 @@
+> 최신 규칙과 개발 순서는 [최종 통합 명세](final-specification-ko.md)가 우선합니다. 이 문서는 증강 64종을 포함한 세부 명세를 보존합니다.
+
 # AUGMENTWILD — 최종 통합 개발 명세서
 
 당신은 숙련된 Minecraft Paper 플러그인 엔지니어, 게임 서버 아키텍트, 테스트 엔지니어다.
@@ -178,7 +180,7 @@ FFA 개인전
 - 5분마다 강력한 증강을 하나 선택한다.
 - 증강은 누적되고 서로 시너지를 만든다.
 - 30분 마지막 증강은 프리즘 확정이다.
-- 30분 20초부터 PvP가 열린다.
+- 파밍 시작부터 PvP가 가능하며 30분 20초부터 목숨이 제한된다.
 - 자기장이 1000×1000에서 60×60까지 줄어든다.
 - 최후 생존자가 승리한다.
 
@@ -195,7 +197,7 @@ D. 경기 타임라인
 - 경기 시작
 - 플레이어 무작위 안전 좌표 배치
 - 파밍 시작
-- PvP OFF
+- PvP 허용, 사망 시 목숨 무제한
 
 05:00
 - 증강 선택 1
@@ -231,7 +233,7 @@ D. 경기 타임라인
 - 프리즘 3개 중 1개 확정 선택
 
 30:20
-- PvP ON
+- 목숨 제한 시작
 - 자기장 축소 시작
 
 40:20
@@ -265,7 +267,7 @@ E. 게임 시간 설계
 즉:
 - 증강 GUI 선택 중 경기 시간 정지
 - 월드 자체 서버 tick은 계속 진행될 수 있음
-- PvP 활성화 시각
+- 목숨 제한 시작 시각
 - 보급 등장
 - 자기장 시작
 - 다음 증강 선택
@@ -638,7 +640,7 @@ O. 파밍 단계
 기본 30분.
 
 PvP:
-OFF
+허용
 
 목숨:
 무제한
@@ -690,7 +692,7 @@ PLAYER_RESPAWNING 상태.
 P. PvP 단계 목숨
 ==================================================
 
-30:20부터 PvP ON.
+30:20부터 목숨 제한 시작.
 
 기본 PvP lives:
 2
@@ -1521,7 +1523,7 @@ vein_overload
 광맥 과부하
 - 자연 광석 10개당 이동속도 +2%
 - 최대 +16%
-- PvP 시작 시 흡수 체력 +3하트
+- 목숨 제한 시작 시 흡수 체력 +3하트
 
 chain_impact
 연쇄 충격
@@ -1592,7 +1594,7 @@ mineral_devourer
 광물 포식자
 - 자연 광석 10개마다 근접 피해 +3%
 - 최대 +24%
-- PvP 시작 시 황금사과 1개
+- 목숨 제한 시작 시 황금사과 1개
 
 blood_crown
 피의 왕관
@@ -2134,7 +2136,7 @@ lobby:
   pitch: 0
 
 gathering:
-  pvp-enabled: false
+  pvp-enabled: true
   infinite-lives: true
   respawn-delay-seconds: 20
   keep-inventory: true
@@ -2452,7 +2454,7 @@ AU. UI
 - cooldown
 - match timer
 - next event
-- PvP countdown
+- 목숨 제한 시작 카운트다운
 - border bossbar
 - respawn countdown
 - remaining lives
@@ -2607,7 +2609,7 @@ AZ. 필수 시나리오 테스트
 8. used region overlap reject
 9. search timeout
 10. 8 player safe spawn
-11. gathering PvP cancel
+11. gathering PvP allowed without life loss
 12. gathering infinite death
 13. inventory retained
 14. XP retained
@@ -2622,7 +2624,7 @@ AZ. 필수 시나리오 테스트
 23. reroll
 24. duplicate prevention
 25. 30min prismatic guaranteed
-26. PvP starts after final selection
+26. limited lives start after final selection
 27. PvP life decrement once
 28. double lethal event does not remove 2 lives
 29. first PvP death respawn
@@ -2878,7 +2880,7 @@ BC. 완료 정의
 - supply drops
 - six augment rounds
 - final prismatic choice
-- PvP at 30:20
+- limited lives at 30:20
 - 2 combat lives
 - 1000 -> 60 border
 - sudden death

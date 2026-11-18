@@ -6,6 +6,9 @@ import org.bukkit.configuration.file.FileConfiguration;
 public record PaperMatchSettings(MatchRules rules, int minimumPlayers, int maximumPlayers,
                                  int selectionSeconds, int normalSupplySecond, int premiumSupplySecond) {
     public static PaperMatchSettings load(FileConfiguration config) {
+        if (!config.getBoolean("gathering.pvp-enabled")) {
+            throw new IllegalArgumentException("gathering.pvp-enabled must be true");
+        }
         int minimum = config.getInt("game.min-players");
         int maximum = config.getInt("game.max-players");
         int gathering = config.getInt("game.gathering-seconds");

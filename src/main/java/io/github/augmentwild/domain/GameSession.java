@@ -51,20 +51,34 @@ public final class GameSession {
     }
     public void connected(UUID id, boolean connected) { var p=player(id); players.put(id,new Participant(id,p.life(),connected)); }
     public Participant player(UUID id) { return Objects.requireNonNull(players.get(id),"unknown participant"); }
+    public record DeathIntent(UUID matchId, UUID playerId, long sequence, long gameNanos, MatchState phase) { }
+
+    public DeathIntent deathIntent(UUID id, long now) {
+        player(id);
+        return new DeathIntent(matchId, id, Math.incrementExact(sequences.getOrDefault(id, 0L)), now, state());
+    }
+
     public boolean death(UUID id, long now) {
-        var phase = switch (state()) {
+        return applyDeath(deathIntent(id, now));
+    }
+
+    public boolean applyDeath(DeathIntent intent) {
+        if (!matchId.equals(intent.matchId()) || !players.containsKey(intent.playerId())
+                || state()==MatchState.ENDING || state()==MatchState.CLEANUP
+                || intent.sequence()!=Math.incrementExact(sequences.getOrDefault(intent.playerId(), 0L))) return false;
+        var phase = switch (intent.phase()) {
             case GATHERING, AUGMENT_SELECTION -> LifeState.Phase.GATHERING;
             case PVP -> LifeState.Phase.PVP;
             case SUDDEN_DEATH -> LifeState.Phase.SUDDEN_DEATH;
-            default -> throw new IllegalStateException();
+            default -> throw new IllegalStateException("Invalid death phase " + intent.phase());
         };
-        var life=player(id).life();
-        // Compute before mutation so overflow cannot leave a half-applied death.
-        long deadline=Math.addExact(now,Math.multiplyExact(rules.respawnSeconds(),1_000_000_000L));
+        var life = player(intent.playerId()).life();
+        long deadline = Math.addExact(intent.gameNanos(), Math.multiplyExact(rules.respawnSeconds(), 1_000_000_000L));
         if (!life.resolveDeath(phase)) return false;
+        sequences.put(intent.playerId(), intent.sequence());
         if (life.status()==LifeState.Status.RESPAWNING) {
-            long sequence = sequences.merge(id, 1L, Math::addExact);
-            deadlines.put(id,new RespawnReservation(matchId,id,sequence,UUID.randomUUID(),now,deadline));
+            deadlines.put(intent.playerId(), new RespawnReservation(matchId, intent.playerId(),
+                    intent.sequence(), UUID.randomUUID(), intent.gameNanos(), deadline));
         }
         return true;
     }
@@ -92,7 +106,7 @@ public final class GameSession {
                 .sorted(Comparator.comparingLong(RespawnReservation::deadline).thenComparing(RespawnReservation::playerId))
                 .toList();
         var completed = new ArrayList<UUID>();
-        for (var reservation : due) if (ready.test(reservation.playerId()) && respawn(reservation, gameTime)) completed.add(reservation.playerId());
+        for (var reservation : due) if (player(reservation.playerId()).connected() && ready.test(reservation.playerId()) && respawn(reservation, gameTime)) completed.add(reservation.playerId());
         return List.copyOf(completed);
     }
     /** Caller supplies one atomic position snapshot; session eligibility overrides snapshot status. */

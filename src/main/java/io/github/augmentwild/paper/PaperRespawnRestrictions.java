@@ -1,10 +1,7 @@
 package io.github.augmentwild.paper;
 
-import java.util.Optional;
 import java.util.function.Predicate;
 import org.bukkit.Location;
-import org.bukkit.World;
-import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -32,31 +29,6 @@ final class PaperRespawnRestrictions implements Listener {
 
     PaperRespawnRestrictions(Predicate<Player> restricted) {
         this.restricted = restricted;
-    }
-
-    /** An opt-in same-world test point, checked without loading chunks. */
-    static Optional<Location> safeTestSpawn(FileConfiguration config, Location vanilla) {
-        if (!config.getBoolean("respawn.test-return.enabled")) return Optional.empty();
-        World world = vanilla.getWorld();
-        if (world == null || !world.getName().equals(config.getString("respawn.test-return.world"))) return Optional.empty();
-        int x = config.getInt("respawn.test-return.x");
-        int y = config.getInt("respawn.test-return.y");
-        int z = config.getInt("respawn.test-return.z");
-        if (y <= world.getMinHeight() || y >= world.getMaxHeight() - 1 || !world.isChunkLoaded(x >> 4, z >> 4)) {
-            return Optional.empty();
-        }
-        var floor = world.getBlockAt(x, y - 1, z);
-        if (!safeFloor(floor.getType()) || !world.getBlockAt(x, y, z).getType().isAir()
-                || !world.getBlockAt(x, y + 1, z).getType().isAir()) return Optional.empty();
-        var point = new Location(world, x + 0.5, y, z + 0.5, vanilla.getYaw(), vanilla.getPitch());
-        return world.getWorldBorder().isInside(point) ? Optional.of(point) : Optional.empty();
-    }
-
-    private static boolean safeFloor(org.bukkit.Material material) {
-        return switch (material) {
-            case GRASS_BLOCK, DIRT, STONE, COBBLESTONE, SMOOTH_STONE, STONE_BRICKS -> true;
-            default -> false;
-        };
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
