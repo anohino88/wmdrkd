@@ -170,3 +170,5 @@ Java 25 독립 도메인 회귀 실행은 기존 331개 검사, 시뮬레이션 
 Paper 사망 이벤트의 HIGHEST에서 표준 인벤토리·XP 보존과 드롭 제거를 적용하고 MONITOR에서 사망을 기록한다. 예약은 경기 시간 만료, 접속, 네이티브 리스폰이 모두 충족됐을 때 처리한다. 그 전과 탈락 후에는 이동·상호작용·피해·인벤토리 이벤트를 제한한다. 게임 모드, 비행, 체력·효과·인벤토리 값을 수동으로 변경하지 않는다. 종료·탈퇴 시 제한과 예약을 해제한다. 테스트 복귀점은 기본 비활성이고, 활성화하면 같은 월드의 로드된 청크에서 바닥·공간·경계를 확인한 설정 좌표만 사용한다. 설정이 없거나 부적합하면 Paper 기본 위치를 유지한다. 최종 경기장 내부 스폰은 미구현이다.
 
 Java 25 독립 검사 331개와 시나리오 21개가 통과했다. 재접속, 중복 사망, 네이티브 리스폰 완료 조건 및 경기 종료 예약 정리를 검증했다. 실제 Paper 시나리오 A–F는 BUILD_BLOCKED인 로컬 환경에서 실행하지 않았으므로 RUNTIME_VERIFIED는 false다. 표준 사망 보존 API의 실제 XP 진행도 및 다른 플러그인과의 이벤트 상호작용은 서버에서 확인해야 한다.
+
+PHASE 2B의 GitHub Actions #6에서 Java 버전 확인, `./gradlew clean build --stacktrace`(표준 test 태스크 포함), JAR 내부 검사 및 업로드 단계가 성공했다. 검사에서 루트 `plugin.yml`, 선언된 메인 클래스와 대응하는 클래스 파일을 확인했다. `GRADLE_BUILD_VERIFIED = true`, `JAR_CREATED = true`, `PAPER_RUNTIME_VERIFIED = false`. 개별 JUnit 로그는 공개 스텝 로그 URL이 404라 확인하지 못했다. 로컬 `BUILD_BLOCKED`와 Actions 성공은 별도다. [Actions #6](https://github.com/anohino88/wmdrkd/actions/runs/44218680457)
