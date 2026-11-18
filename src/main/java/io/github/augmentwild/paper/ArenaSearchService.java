@@ -28,9 +28,10 @@ import org.bukkit.scheduler.BukkitTask;
 /** Read-only ZERO-policy preview of existing terrain. All block access runs on the server thread. */
 public final class ArenaSearchService implements Listener {
     private record Cell(int x, int z) { }
+    private enum Inspection { CLEAR, OCEAN, UNAVAILABLE }
     private final JavaPlugin plugin;
     private final Random random = new Random();
-    private List<CompletableFuture<Chunk>> abandoned = List.of();
+    private List<CompletableFuture<Inspection>> abandoned = List.of();
     private Scan scan;
     private BukkitTask task;
 
@@ -133,7 +134,7 @@ public final class ArenaSearchService implements Listener {
         private final int width, height, radius, attempts, stride, pipeline, spacing, margin;
         private final double historyBuffer;
         private final List<Arena> occupied = new ArrayList<>();
-        private final Map<Cell, CompletableFuture<Chunk>> pending = new LinkedHashMap<>();
+        private final Map<Cell, CompletableFuture<Inspection>> pending = new LinkedHashMap<>();
         private final List<Location> spawns = new ArrayList<>();
         private final Map<String,Integer> rejected = new LinkedHashMap<>();
         private final long started = System.nanoTime();
@@ -220,14 +221,10 @@ public final class ArenaSearchService implements Listener {
                     reject("청크 요청 실패");
                     return false;
                 }
-                Chunk chunk = request.getValue().join();
+                Inspection inspection = request.getValue().join();
                 iterator.remove();
-                if (chunk == null || !world.isChunkLoaded(chunk.getX(), chunk.getZ())) {
-                    reject("생성 또는 로드되지 않은 청크");
-                    return false;
-                }
-                if (!inspect(chunk)) {
-                    reject("바다 바이옴");
+                if (inspection != Inspection.CLEAR) {
+                    reject(inspection == Inspection.OCEAN ? "바다 바이옴" : "생성 또는 로드되지 않은 청크");
                     return false;
                 }
             }
@@ -248,7 +245,12 @@ public final class ArenaSearchService implements Listener {
             }
             for (int issued = 0; issued < pipeline && next < cells.size() && pending.size() < pipeline; issued++) {
                 var cell = cells.get(next++);
-                pending.put(cell, world.getChunkAtAsync(cell.x(), cell.z(), generate));
+                pending.put(cell, world.getChunkAtAsync(cell.x(), cell.z(), generate).thenApply(chunk -> {
+                    // Paper completes this future on the main thread while the requested chunk is loaded.
+                    if (scan != this || cells.isEmpty() || chunk == null
+                            || !world.isChunkLoaded(chunk.getX(), chunk.getZ())) return Inspection.UNAVAILABLE;
+                    return inspect(chunk) ? Inspection.CLEAR : Inspection.OCEAN;
+                }));
                 chunkRequests++;
                 peakPending = Math.max(peakPending, pending.size());
             }

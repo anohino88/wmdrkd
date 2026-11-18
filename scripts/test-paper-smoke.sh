@@ -78,8 +78,8 @@ with log.open("wb") as output:
             print(f"::error::{message}", flush=True)
             if summary := os.environ.get("GITHUB_STEP_SUMMARY"):
                 with open(summary, "a", encoding="utf-8") as report:
-                    report.write(f"\nPaper check failed: {error}\n\n" + "\`\`\`text\n"
-                                 + "\n".join(lines[-25:]) + "\n\`\`\`\n")
+                    report.write(f"\nPaper check failed: {error}\n\n" + "```text\n"
+                                 + "\n".join(lines[-25:]) + "\n```\n")
             raise
         finally:
             if server.poll() is None:

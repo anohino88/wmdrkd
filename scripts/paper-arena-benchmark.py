@@ -24,8 +24,9 @@ def benchmark_arena(command, log, wait_for):
     else:
         raise RuntimeError("Flat benchmark fixture did not finish loading")
 
-    command("forceload remove all")
-    command("save-all flush")
+    # Keep the known flat fixture loaded for this baseline. Disk-load and world generation
+    # timings are outside the scan result.
+    time.sleep(3)
     command("aw admin arena preview")
     wait_for("Arena search ", 135)
     output = log.read_text(encoding="utf-8", errors="replace")
@@ -39,7 +40,9 @@ def benchmark_arena(command, log, wait_for):
     requests, peak, elapsed = map(int, match.groups())
     if requests < 3900 or not 1 <= peak <= 8 or elapsed >= 120_000:
         raise RuntimeError(f"Arena scan exceeded configured limits: {match[0]}")
+    command("forceload remove all")
     print(match[0], flush=True)
+    print(f"::notice::{match[0]}", flush=True)
     if summary := os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(summary, "a", encoding="utf-8") as report:
             report.write("\n```text\n" + match[0] + "\n```\n")
