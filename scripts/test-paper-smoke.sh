@@ -70,6 +70,17 @@ with log.open("wb") as output:
             if server.wait(timeout=30) != 0:
                 raise RuntimeError("Paper exited with an error")
             wait_for('Disabling AugmentWild', 1)
+        except Exception as error:
+            lines = log.read_text(encoding="utf-8", errors="replace").splitlines()
+            diagnostic = next((line for line in reversed(lines)
+                               if "Arena search" in line or "Exception" in line or "Error" in line), "")
+            message = f"{error}. {diagnostic}".replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+            print(f"::error::{message}", flush=True)
+            if summary := os.environ.get("GITHUB_STEP_SUMMARY"):
+                with open(summary, "a", encoding="utf-8") as report:
+                    report.write(f"\nPaper check failed: {error}\n\n" + "\`\`\`text\n"
+                                 + "\n".join(lines[-25:]) + "\n\`\`\`\n")
+            raise
         finally:
             if server.poll() is None:
                 server.kill()
