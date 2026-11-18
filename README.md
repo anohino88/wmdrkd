@@ -14,3 +14,7 @@ Java 25 환경에서 `./gradlew clean build --stacktrace`로 빌드합니다. �
 리스폰은 경기 시간 기준 대기와 Paper의 기본 리스폰이 모두 완료된 뒤, 현재 안전 영역의 무작위 지표면으로 이동하는 방식입니다. 이동이 거부되거나 안전 지점을 찾지 못하면 예약을 유지합니다. 경기 전 인벤토리와 상태는 `plugins/AugmentWild/recovery/`에 저장하며 경기 종료 또는 다음 접속 시 복구합니다. 사용 확정 지역은 `used-regions.yml`에 기록합니다.
 
 Java 25에서 `scripts/test-domain.sh`로 Paper 없이 도메인 회귀 검사를 실행할 수 있습니다. [진행 및 검증 기록](PROGRESS.md)
+
+기본 자기장은 경기 시간 30:20부터 600초 동안 1000×1000에서 60×60까지 줄어듭니다. `border.damage-hearts`와 `border.damage-interval-seconds`로 영역 밖 피해를 설정하며, `/aw status`로 현재 폭과 진행 상태를 확인합니다. 가상 보더의 모양은 정사각형이므로 `arena.width`, `arena.height`, `border.start-size`는 같은 값으로 설정합니다.
+
+[Paper 및 2인 플레이 검증 절차](docs/phase4-playtest-ko.md) · [후속 희귀도와 보급 규칙](docs/post-phase4-design-ko.md)

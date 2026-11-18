@@ -323,17 +323,20 @@ public final class PaperMatchService implements Listener {
             }
             var world = plugin.getServer().getWorld(arena.worldId());
             if (world == null) throw new IllegalStateException("Arena world unloaded");
+            var activeSession = session;
             var frame = border.update(now, clock.isPaused());
             borderDisplay.update(frame.area());
             tickNumber++;
-            for (UUID id : session.participantIds()) {
+            for (UUID id : activeSession.participantIds()) {
+                if (session != activeSession || task == null) return;
                 Player player = available(id);
                 if (player != null && !awaitingNativeRespawn.contains(id)) {
-                    placement.respawn(player, world, frame.area(), session, now, tickNumber, this::move);
+                    placement.respawn(player, world, frame.area(), activeSession, now, tickNumber, this::move);
+                    if (session != activeSession || task == null) return;
                     for (var notice : frame.notices()) player.sendMessage(notice.message());
                     if (frame.damagePulse() && settings.borderDamagePoints() > 0) {
                         var location = player.getLocation();
-                        if (frame.damages(!isRestricted(player), world.equals(location.getWorld()),
+                        if (frame.damages(contains(id) && !isRestricted(player), world.equals(location.getWorld()),
                                 placement.protectedFromDamage(id, System.nanoTime()), location.getX(), location.getZ())) {
                             PaperMatchBorder.applyDamage(player, settings.borderDamagePoints());
                         }
