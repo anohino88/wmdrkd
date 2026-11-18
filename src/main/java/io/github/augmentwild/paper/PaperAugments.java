@@ -43,6 +43,7 @@ final class PaperAugments implements Listener {
     private final AugmentRoller roller;
     private final Map<UUID, Profile> profiles = new HashMap<>();
     private final ProcGuard guard;
+    private final double lowHealth, strongHit, rearDot;
     private int completed;
     private UUID match;
 
@@ -77,7 +78,13 @@ final class PaperAugments implements Listener {
         this.member = member;
         this.active = active;
         this.protectedPlayer = protectedPlayer;
-        registry = AugmentCatalog.load(plugin.getConfig());
+        var config = plugin.getConfig();
+        lowHealth = config.getDouble("augments.conditions.low-health-fraction");
+        strongHit = config.getDouble("augments.conditions.strong-hit-points");
+        rearDot = config.getDouble("augments.conditions.rear-facing-dot");
+        if (!(lowHealth > 0 && lowHealth < 1 && strongHit > 0 && Double.isFinite(strongHit)
+                && rearDot >= -1 && rearDot <= 0)) throw new IllegalArgumentException("Invalid augment trigger settings");
+        registry = AugmentCatalog.load(config);
         roller = new AugmentRoller(registry, new Random());
         guard = new ProcGuard(maxDepth);
     }
@@ -269,11 +276,9 @@ final class PaperAugments implements Listener {
         var player = event.getPlayer();
         if (!member.test(player.getUniqueId())) return;
         var profile = profiles.computeIfAbsent(player.getUniqueId(), ignored -> new Profile());
-        if (profile != null) {
-            profile.lastKnownLevel = Math.clamp(player.getLevel(), 0, 50);
-            profile.shown = 0;
-            removeModifiers(player, profile);
-        }
+        profile.lastKnownLevel = Math.clamp(player.getLevel(), 0, 50);
+        profile.shown = 0;
+        removeModifiers(player, profile);
     }
 
     void remove(UUID id) {
@@ -326,14 +331,14 @@ final class PaperAugments implements Listener {
             var backwards = attacker.getLocation().toVector().subtract(target.getLocation().toVector()).setY(0);
             var facing = target.getLocation().getDirection().setY(0);
             if (backwards.lengthSquared() > 1e-6 && facing.lengthSquared() > 1e-6
-                    && backwards.normalize().dot(facing.normalize()) < -.5) {
+                    && backwards.normalize().dot(facing.normalize()) < rearDot) {
                 trigger(event, attacker, attacking, Effect.REAR, (p,a) -> event.setDamage(AugmentMath.bonusHit(event.getDamage(), base, a.amount())));
             }
             if (attacker.getFallDistance() > 0 && !attacker.isOnGround()) {
                 trigger(event, attacker, attacking, Effect.FALL, (p,a) -> event.setDamage(AugmentMath.bonusHit(event.getDamage(), base, a.amount())));
             }
         }
-        if (defending != null && base >= 6) {
+        if (defending != null && base >= strongHit) {
             trigger(event, target, defending, Effect.DEFENSE, (p,a) -> event.setDamage(AugmentMath.mitigate(event.getDamage(), a.amount())));
         }
     }
@@ -347,13 +352,13 @@ final class PaperAugments implements Listener {
         var defending = profiles.get(target.getUniqueId());
         if (attacking != null) {
             trigger(event, attacker, attacking, Effect.PURSUIT, this::activate);
-            if (attacker.getHealth() <= maxHealth(attacker) * .35) {
+            if (attacker.getHealth() <= maxHealth(attacker) * lowHealth) {
                 trigger(event, attacker, attacking, Effect.BERSERK, this::activate);
             }
         }
         if (defending != null && target.getHealth() > event.getFinalDamage()) {
             trigger(event, target, defending, Effect.ARMOR, this::activate);
-            if (target.getHealth() - event.getFinalDamage() <= maxHealth(target) * .35) {
+            if (target.getHealth() - event.getFinalDamage() <= maxHealth(target) * lowHealth) {
                 trigger(event, target, defending, Effect.HEAL, this::activate);
             }
         }

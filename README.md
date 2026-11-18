@@ -18,3 +18,5 @@ Java 25에서 `scripts/test-domain.sh`로 Paper 없이 도메인 회귀 검사�
 기본 자기장은 경기 시간 30:20부터 600초 동안 1000×1000에서 60×60까지 줄어듭니다. `border.damage-hearts`와 `border.damage-interval-seconds`로 영역 밖 피해를 설정하며, `/aw status`로 현재 폭과 진행 상태를 확인합니다. 가상 보더의 모양은 정사각형이므로 `arena.width`, `arena.height`, `border.start-size`는 같은 값으로 설정합니다.
 
 [Paper 및 2인 플레이 검증 절차](docs/phase4-playtest-ko.md) · [후속 희귀도와 보급 규칙](docs/post-phase4-design-ko.md)
+
+증강 선택은 기본 5분 간격으로 열리며 `/aw augment`로 다시 열 수 있습니다. 경험치 레벨로 희귀도를 정하며 경험치는 소비하지 않습니다. [초기 증강 12종·수치·검증 절차](docs/phase5-augments-ko.md)

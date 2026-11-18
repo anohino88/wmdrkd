@@ -59,6 +59,10 @@ augments:
     prismatic-weight: 2
   proc:
     max-depth: 2
+  conditions:
+    low-health-fraction: 0.35
+    strong-hit-points: 6.0
+    rear-facing-dot: -0.5
   effects:
     xp_silver: {enabled: true, amount: 0.5, duration: 0, cooldown: 0}
     miner: {enabled: true, amount: 0.35, duration: 6, cooldown: 12}
