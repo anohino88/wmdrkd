@@ -18,6 +18,7 @@
 - `/aw cast shadow_dash`, `/aw cast earthquake_mage`, `/aw cast time_rewind`는 로드된 안전 지표면과 현재 자기장 경계를 확인한다. 이동이나 기록 확인에 실패하면 쿨다운을 소비하지 않는다.
 - `/aw cast calamity_giant`, `/aw cast void_lord`, `/aw cast bomb_alchemy`, `/aw cast duel_contract`로 직접 발동한다. 결투는 바라보고 있는 유효한 상대 플레이어를 지정한다.
 - 금단의 재구성은 보유한 첫 두 실버를 교환 대상으로 삼는다. 실버 두 개와 미보유 프리즘 보상 두 개를 준비할 수 있을 때 후보가 된다. 금단의 거래는 미보유 골드 보상 두 개를 준비할 수 있을 때 후보가 된다.
+- 정규 선택 또는 교환이 없을 때는 `/aw augment`로 보유 증강의 중첩, 진화 및 시너지 상태를 확인한다.
 - 두 교환 모두 두 번째 보상을 확정할 때 교환·체력 비용을 적용한다. 교환 GUI는 `/aw augment`로 다시 열 수 있다. 경기 종료나 탈퇴 시 미완료 선택을 폐기한다.
 
 ## 검증 범위

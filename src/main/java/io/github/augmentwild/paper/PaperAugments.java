@@ -63,6 +63,11 @@ final class PaperAugments implements Listener {
         boolean exchangeShown;
     }
 
+    private static final class SummaryMenu implements InventoryHolder {
+        Inventory inventory;
+        @Override public Inventory getInventory() { return inventory; }
+    }
+
     private static final class ExchangeMenu implements InventoryHolder {
         final UUID match, owner;
         final AugmentExchange exchange;
@@ -256,6 +261,11 @@ final class PaperAugments implements Listener {
             showExchange(player, profile);
             return "교환 보상 선택지를 열었습니다.";
         }
+        if (member.test(id) && profile != null && !profile.owned.isEmpty()
+                && (choice == null || choice.status() != SelectionRound.Status.PENDING)) {
+            showSummary(player, profile);
+            return "보유 증강을 열었습니다.";
+        }
         if (!active.test(player) || choice == null || choice.status() != SelectionRound.Status.PENDING) {
             return "현재 선택할 증강이 없습니다.";
         }
@@ -267,26 +277,8 @@ final class PaperAugments implements Listener {
         var menu = new Menu(round.matchId(), player.getUniqueId(), round.round(), choice.offers());
         menu.inventory = plugin.getServer().createInventory(menu, 27, Component.text("증강 선택 · " + round.round() + "회차"));
         for (int i = 0; i < choice.offers().size(); i++) {
-            var a = registry.get(choice.offers().get(i).id());
-            var color = switch (a.rarity()) {
-                case SILVER -> NamedTextColor.GRAY;
-                case GOLD -> NamedTextColor.GOLD;
-                case PRISMATIC -> NamedTextColor.LIGHT_PURPLE;
-            };
-            var icon = switch (a.rarity()) {
-                case SILVER -> Material.IRON_INGOT;
-                case GOLD -> Material.GOLD_INGOT;
-                case PRISMATIC -> Material.AMETHYST_SHARD;
-            };
-            double shown = a.unit().startsWith("%") ? a.amount() * 100 : a.amount();
-            List<Component> lore = new ArrayList<>(List.of(
-                    Component.text(a.rarity().name(), color), Component.text("조건: " + a.condition()),
-                    Component.text(String.format(Locale.ROOT, "효과: %.2f%s", shown, a.unit())),
-                    Component.text("지속 " + (a.duration() == 0 ? "상시 또는 즉시" : a.duration() + "초")
-                            + " · 쿨다운 " + a.cooldown() + "초"),
-                    Component.text(profile.owned.contains(a.id()) ? "보유 중" : "획득 가능")));
-            official.details(player.getUniqueId(), a.id()).forEach(line -> lore.add(Component.text(line)));
-            menu.inventory.setItem(SLOTS[i], item(icon, Component.text(a.name(), color), lore));
+            var augment = registry.get(choice.offers().get(i).id());
+            menu.inventory.setItem(SLOTS[i], augmentItem(player, profile, augment));
         }
         var odds = AugmentRarity.odds(profile.level);
         menu.inventory.setItem(18, item(Material.EXPERIENCE_BOTTLE, Component.text("추첨 레벨 " + profile.level),
@@ -300,6 +292,39 @@ final class PaperAugments implements Listener {
         profile.shown = round.round();
         player.openInventory(menu.inventory);
         player.sendActionBar(Component.text("증강을 선택하세요. 경험치는 소모되지 않습니다.", NamedTextColor.GOLD));
+    }
+
+    private void showSummary(Player player, Profile profile) {
+        var menu = new SummaryMenu();
+        menu.inventory = plugin.getServer().createInventory(menu, 27, Component.text("보유 증강"));
+        int slot = 0;
+        for (String id : profile.owned) {
+            if (slot >= menu.inventory.getSize()) break;
+            menu.inventory.setItem(slot++, augmentItem(player, profile, registry.get(id)));
+        }
+        player.openInventory(menu.inventory);
+    }
+
+    private ItemStack augmentItem(Player player, Profile profile, AugmentDefinition augment) {
+        var color = switch (augment.rarity()) {
+            case SILVER -> NamedTextColor.GRAY;
+            case GOLD -> NamedTextColor.GOLD;
+            case PRISMATIC -> NamedTextColor.LIGHT_PURPLE;
+        };
+        var icon = switch (augment.rarity()) {
+            case SILVER -> Material.IRON_INGOT;
+            case GOLD -> Material.GOLD_INGOT;
+            case PRISMATIC -> Material.AMETHYST_SHARD;
+        };
+        double shown = augment.unit().startsWith("%") ? augment.amount() * 100 : augment.amount();
+        List<Component> lore = new ArrayList<>(List.of(
+                Component.text(augment.rarity().name(), color), Component.text("조건: " + augment.condition()),
+                Component.text(String.format(Locale.ROOT, "효과: %.2f%s", shown, augment.unit())),
+                Component.text("지속 " + (augment.duration() == 0 ? "상시 또는 즉시" : augment.duration() + "초")
+                        + " · 쿨다운 " + augment.cooldown() + "초"),
+                Component.text(profile.owned.contains(augment.id()) ? "보유 중" : "획득 가능")));
+        official.details(player.getUniqueId(), augment.id()).forEach(line -> lore.add(Component.text(line)));
+        return item(icon, Component.text(augment.name(), color), lore);
     }
 
     private void showExchange(Player player, Profile profile) {
@@ -374,6 +399,10 @@ final class PaperAugments implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST)
     public void click(InventoryClickEvent event) {
+        if (event.getView().getTopInventory().getHolder() instanceof SummaryMenu) {
+            event.setCancelled(true);
+            return;
+        }
         if (event.getView().getTopInventory().getHolder() instanceof ExchangeMenu exchange) {
             boolean alreadyCancelled = event.isCancelled();
             event.setCancelled(true);
@@ -413,7 +442,8 @@ final class PaperAugments implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST)
     public void drag(InventoryDragEvent event) {
         if (event.getView().getTopInventory().getHolder() instanceof Menu
-                || event.getView().getTopInventory().getHolder() instanceof ExchangeMenu) event.setCancelled(true);
+                || event.getView().getTopInventory().getHolder() instanceof ExchangeMenu
+                || event.getView().getTopInventory().getHolder() instanceof SummaryMenu) event.setCancelled(true);
     }
 
     private Menu ownedMenu(Player player) {
@@ -437,7 +467,8 @@ final class PaperAugments implements Listener {
         Player player = plugin.getServer().getPlayer(id);
         official.remove(id, player);
         if (player != null && profile != null) {
-            if (ownedMenu(player) != null || player.getOpenInventory().getTopInventory().getHolder() instanceof ExchangeMenu) {
+            var holder = player.getOpenInventory().getTopInventory().getHolder();
+            if (holder instanceof Menu || holder instanceof ExchangeMenu || holder instanceof SummaryMenu) {
                 player.closeInventory();
             }
             removeModifiers(player, profile);

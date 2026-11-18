@@ -86,7 +86,7 @@ final class PaperOfficialCombat implements Listener {
 
     private static final class Fighter {
         final AugmentProgress progress = new AugmentProgress();
-        int overgrowthAward;
+        double overgrowthAward;
         long acquiredGrowth, lastBerserkHit = -1, lastSecond = -1;
         final MovementProgress movement = new MovementProgress();
         double stormDistance;
@@ -167,8 +167,8 @@ final class PaperOfficialCombat implements Listener {
         var state = fighter(id);
         if (augment.equals("overgrowth")) {
             state.acquiredGrowth = now();
-            state.overgrowthAward = (int) (now() >= catalog.count("overgrowth-late-second")
-                    ? catalog.setting("overgrowth-late-health") : rule(augment).amount());
+            state.overgrowthAward = now() >= catalog.count("overgrowth-late-second")
+                    ? catalog.setting("overgrowth-late-health") : rule(augment).amount();
         }
         if (augment.equals("mad_scientist")) state.acquiredMad = now();
         if (augment.equals("endless_evolution") && now() >= catalog.count("endless-evolution-late-second")) {
@@ -282,7 +282,15 @@ final class PaperOfficialCombat implements Listener {
         var rule = rule(augment);
         int stacks = state == null ? 0 : state.progress.value(augment);
         var lines = new ArrayList<String>();
-        if (rule.cap() > 0) lines.add("중첩 " + stacks + "/" + rule.cap());
+        int cap = augment.equals("berserk_engine") && state != null
+                && evolved(state, "berserk_seconds", "berserk-evolution-seconds")
+                ? catalog.count("berserk-evolved-cap") : rule.cap();
+        if (cap > 0) lines.add("중첩 " + stacks + "/" + cap);
+        if (Set.of("immortal_berserker", "phoenix_heart", "russian_doll").contains(augment)) {
+            int limit = augment.equals("immortal_berserker") ? rule.cap() : rule.threshold();
+            int used = state == null ? 0 : state.progress.value("revive:" + augment);
+            lines.add("치명 피해 방지 잔여 " + (limit - used) + "/" + limit);
+        }
         String progress = switch (augment) {
             case "infernal_conductor" -> String.format(Locale.ROOT, "지옥의 전도체 진화 %.1f/%.1f",
                     state == null ? 0 : state.burned, catalog.setting("burn-evolution-damage"));
