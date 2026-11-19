@@ -231,3 +231,12 @@ PHASE 2B의 GitHub Actions #6에서 Java 버전 확인, `./gradlew clean build -
 - 로컬 Gradle은 Paper Maven 메타데이터 GET 403 및 Maven Central Java PKIX로 의존성 해석에서 차단됐다. [전체 카탈로그가 포함된 2f0cd0b CI](https://github.com/anohino88/wmdrkd/actions/runs/44306582864)에서 Gradle 빌드·JUnit, JAR 구조 검사와 업로드, Paper 26.3 기동·속성·자기장 프로브 및 경기장 벤치마크가 통과했다.
 - 모든 증강의 실제 2인 FFA 효과 검증은 `NOT_RUN`이다. 현재 가동 중인 서버에 실제 26.3 클라이언트를 연결해 본 기록이 없으므로 실전 완료 상태는 미확정이다. 경기 이전에 설치된 광석의 자연 생성 여부는 판별할 수 없다.
 - 최신 코드 `d9d1fab`의 [GitHub Actions](https://github.com/anohino88/wmdrkd/actions/runs/44307911766)에서 전체 빌드, JUnit, 독립 검사, JAR 구조 확인, Paper 26.3 기동·종료, 카탈로그 및 테스트 엔티티의 피해 한도·속성 원복 프로브와 경기장 벤치마크가 모두 통과했다. [서버 JAR 아티팩트](https://github.com/anohino88/wmdrkd/actions/runs/44307911766/artifacts/14429575691).
+
+## PHASE 6.2 계열 공명 및 전투 안정화 (2026-11-19)
+
+- 기준 `aec1e1944cd018b27736fd046e7b11bc0ca1048f`에서 작업했다. 누적의 공명 13종, 생명의 잔향 3종을 별도 설정으로 추가했다. 공식 증강 64종, 확장 12종, 기존 진화 6종 및 고유 시너지 5종의 등록을 유지했다.
+- 누적의 공명은 신규 영구 보상의 소수 잔량을 합산한다. 생명의 잔향은 치명 피해 방지 성공 때만 별도 보호막을 생성하고 바닐라 흡수 체력과 분리한다. 강철심장 체력 환산, PvP 육중한 주먹 상한, 같은 희귀도 안에서의 상호 시너지 가중치, 연쇄 피해 계측을 적용했다. 피해 예산 강제 제한과 신규 후반 성장 보정은 기본 비활성화다.
+- 로컬 Java 25 독립 회귀 및 신규 공명·밸런스 58개 검사 PASS. 고정 시드에서 가중치 적용 전후를 비교했고, 실제 PvP 결과와 분리하여 [PHASE 6.2 문서](docs/phase62-resonance-ko.md)에 기록했다. `git diff --check` PASS.
+- 로컬 `./gradlew clean build --stacktrace` BLOCKED. Paper Maven 메타데이터 GET 403 및 Maven Central Java PKIX에서 중단됐다. [선행 코드 검증](https://github.com/anohino88/wmdrkd/actions/runs/44432253916)에서는 Java 25 빌드·JUnit, Paper 기동·종료, 실제 엔티티에서 별도 보호막과 기존 흡수 체력의 피해 처리 및 정리가 통과했다.
+- `REAL_CLIENT_VERIFIED = NOT_RUN`. 실제 클라이언트 2·8·16인 경기, 강철의 왕과 누적의 공명의 실전 합산 피해, 참가자 단위 리스폰·재접속·정리 및 실제 전투 성능은 확인이 필요하다.
+- 최종 코드 `637b0a1`의 [GitHub Actions](https://github.com/anohino88/wmdrkd/actions/runs/44432667326) PASS. Java 25 전체 빌드, JUnit, JAR 구성 검사, Paper 26.3 기동·종료, 속성·자기장·보호막 프로브 및 경기장 벤치마크가 완료됐다. [서버 JAR](https://github.com/anohino88/wmdrkd/actions/runs/44432667326/artifacts/14485949938).
