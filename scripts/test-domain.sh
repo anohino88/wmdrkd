@@ -17,6 +17,7 @@ java -Xmx256m -cp "$tmp" ResonanceChecks "$root"
 java -cp "$tmp" Phase63Checks "$root"
 java -cp "$tmp" Phase64Checks "$root"
 java -cp "$tmp" Phase65Checks "$root"
+java -cp "$tmp" Phase66Checks
 for scenario in A B C D E F G; do
     java -cp "$tmp" ScenarioChecks "$scenario"
 done

@@ -1,9 +1,11 @@
 package io.github.augmentwild.paper;
 
 import com.destroystokyo.paper.event.player.PlayerPostRespawnEvent;
+import com.destroystokyo.paper.event.server.ServerTickEndEvent;
 import io.github.augmentwild.domain.GameSession;
 import io.github.augmentwild.domain.MatchSimulationClock;
 import io.github.augmentwild.domain.MatchBorder;
+import io.github.augmentwild.domain.MatchTelemetry;
 import io.github.augmentwild.match.LifeState;
 import io.github.augmentwild.match.MatchState;
 import java.util.List;
@@ -50,6 +52,8 @@ public final class PaperMatchService implements Listener {
     private MatchBorder border;
     private PaperMatchBorder borderDisplay;
     private boolean regionCommitted;
+    private long matchStarted;
+    private long lastSurvivorSample;
 
     private record TeleportPermit(UUID matchId, Location target) { }
     private int loggedEvents;
@@ -57,7 +61,7 @@ public final class PaperMatchService implements Listener {
     private final PaperAugments augments;
     private final PaperIntel intel;
     private final PaperSupply supply;
-    private final io.github.augmentwild.domain.MatchTelemetry telemetry = new io.github.augmentwild.domain.MatchTelemetry();
+    private final MatchTelemetry telemetry = new MatchTelemetry();
 
     public PaperMatchService(JavaPlugin plugin, PaperMatchSettings settings, ArenaSearchService search) {
         this.plugin = plugin;
@@ -75,7 +79,7 @@ public final class PaperMatchService implements Listener {
                 player -> session.state() == MatchState.AUGMENT_SELECTION && augmentMember(player.getUniqueId()));
         augments = new PaperAugments(plugin, () -> clock, this::augmentMember, this::augmentActive,
                 player -> placement.protectedFromDamage(player.getUniqueId(), System.nanoTime()),
-                () -> session.state(), this::insideAugmentArena, this::insideAugmentBorder, this::move, placement::protect, settings.rules().procDepth());
+                () -> session.state(), this::insideAugmentArena, this::insideAugmentBorder, this::move, placement::protect, settings.rules().procDepth(), telemetry);
         supply = new PaperSupply(plugin, SupplySettings.load(config, settings.rules().gatheringSeconds()),
                 this::augmentActive, this::insideAugmentBorder, this::notice, telemetry);
         intel = new PaperIntel(plugin, () -> clock, () -> session.participantIds(), this::augmentActive,
@@ -267,10 +271,12 @@ public final class PaperMatchService implements Listener {
         session.transition(MatchState.GATHERING);
         // Start timing only after the placement and history write have succeeded.
         long started = System.nanoTime();
+        matchStarted = started;
+        lastSurvivorSample = Long.MIN_VALUE;
         clock = new MatchSimulationClock(session, settings.rules(), () -> System.nanoTime() - started,
                 settings.selectionSeconds(), supply.start(session.matchId(), context.spawns()));
         augments.start(session.matchId(), clock);
-        telemetry.start();
+        telemetry.start(players);
         intel.start(session.matchId());
         sender.sendMessage("경기가 시작됐습니다. 파밍 중 PvP 허용, 목숨 무제한.");
         for (UUID id : players) {
@@ -331,6 +337,8 @@ public final class PaperMatchService implements Listener {
         borderDisplay = null;
         border = null;
         supply.clear();
+        if (clock != null) plugin.getLogger().info("Match tempo match=" + session.matchId() + " "
+                + telemetry.tempo(clock.elapsedSeconds(), (System.nanoTime() - matchStarted) / 1_000_000_000L));
         var stats = telemetry.finish();
         if (!stats.isEmpty()) plugin.getLogger().info("Match feature totals match=" + session.matchId() + " " + new java.util.TreeMap<>(stats));
         intel.clear();
@@ -378,6 +386,20 @@ public final class PaperMatchService implements Listener {
             departures.clear();
             deaths.clear();
             augments.collectCompleted();
+            long elapsed = clock.elapsedSeconds();
+            long shrinkStart = settings.rules().pvpStartSeconds();
+            long intoShrink = Math.min(elapsed - shrinkStart, settings.rules().shrinkSeconds());
+            if (intoShrink >= 0) {
+                long interval = intoShrink == settings.rules().shrinkSeconds() ? intoShrink : intoShrink / 60 * 60;
+                if (interval > lastSurvivorSample) {
+                    lastSurvivorSample = interval;
+                    int alive = 0;
+                    for (UUID id : session.participantIds()) {
+                        if (session.player(id).life().status() != LifeState.Status.ELIMINATED) alive++;
+                    }
+                    telemetry.survivors(elapsed, alive);
+                }
+            }
             if (session.state() == MatchState.PVP || session.state() == MatchState.SUDDEN_DEATH) {
                 session.resolveTick(Set.of(), now);
             } else if (session.participantIds().isEmpty()) {
@@ -467,6 +489,10 @@ public final class PaperMatchService implements Listener {
         return session.participantIds().contains(id);
     }
 
+    @EventHandler public void tickEnded(ServerTickEndEvent event) {
+        telemetry.tick(event.getTickDuration());
+    }
+
     @EventHandler public void onJoin(PlayerJoinEvent event) {
         UUID id = event.getPlayer().getUniqueId();
         if (!contains(id)) recover(event.getPlayer());
@@ -522,6 +548,9 @@ public final class PaperMatchService implements Listener {
         if (task != null && contains(id) && !departures.contains(id)
                 && session.player(id).life().status() == LifeState.Status.ACTIVE && !deaths.containsKey(id)) {
             deaths.put(id, session.deathIntent(id, clock.elapsedNanos()));
+            Player killer = event.getEntity().getKiller();
+            telemetry.death(id, killer != null && contains(killer.getUniqueId()) && !departures.contains(killer.getUniqueId())
+                    ? killer.getUniqueId() : null);
             awaitingNativeRespawn.add(id);
             supply.disconnect(id);
             intel.death(event.getEntity(), event.getDamageSource());

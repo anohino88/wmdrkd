@@ -50,6 +50,8 @@ for phase in ("seed", "restart", "repeat"):
                 else:
                     server.stdin.write(b"stop\n")
                     server.stdin.flush()
+                    if "AW_PAYOUT_SAVE_BOUNDARIES_PASS " + phase not in contents:
+                        raise RuntimeError(f"{phase}: detached payout save check missing")
                     if server.wait(45) != 0:
                         raise RuntimeError(f"{phase}: Paper stop failed")
             except Exception:
@@ -64,3 +66,4 @@ for phase in ("seed", "restart", "repeat"):
                     server.kill()
                     server.wait()
 print("::notice::AW_SUPPLY_CRASH_REAL_PASS", flush=True)
+print("::notice::AW_PAYOUT_SAVE_BOUNDARIES_PASS detached Paper inventories; durable=1, volatile=0; actual clients=0", flush=True)

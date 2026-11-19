@@ -13,6 +13,7 @@ import io.github.augmentwild.augment.LinkedDamageBudget;
 import io.github.augmentwild.augment.NaturalOreTracker;
 import io.github.augmentwild.augment.MovementProgress;
 import io.github.augmentwild.augment.ReviveResolver;
+import io.github.augmentwild.domain.MatchTelemetry;
 import io.github.augmentwild.domain.MatchSimulationClock;
 import io.github.augmentwild.match.MatchState;
 import java.util.*;
@@ -145,12 +146,15 @@ final class PaperOfficialCombat implements Listener {
         boolean hadVelocity, king, train, apple;
     }
 
+    private final MatchTelemetry telemetry;
+
     PaperOfficialCombat(JavaPlugin plugin, AugmentRegistry registry, Supplier<MatchSimulationClock> clock,
                         Supplier<MatchState> phase, Predicate<UUID> member, Predicate<Player> active, Predicate<Player> protectedPlayer,
                         Predicate<Location> arena, Predicate<Location> safe, BiPredicate<Player, Location> teleport,
                         BiConsumer<UUID, Integer> protection,
-                        Function<UUID, Set<String>> owned, int depth) {
+                        Function<UUID, Set<String>> owned, int depth, MatchTelemetry telemetry) {
         this.plugin = plugin;
+        this.telemetry = telemetry;
         this.clock = clock;
         this.phase = phase;
         this.member = member;
@@ -1584,6 +1588,7 @@ final class PaperOfficialCombat implements Listener {
 
     private void announceSynergy(UUID id, String synergy) {
         audit.add(synergy, Metric.SYNERGY, 1);
+        telemetry.synergy(id, synergy);
         Player player = plugin.getServer().getPlayer(id);
         if (player == null) return;
         String message = "시너지 활성화 · " + catalog.synergies.getString(synergy + ".name", synergy);
@@ -1596,6 +1601,7 @@ final class PaperOfficialCombat implements Listener {
     }
 
     private void evolution(Player player, Fighter state, String id) {
+        telemetry.evolution(player.getUniqueId(), id, clock.get().elapsedSeconds());
         announce(player.getUniqueId(), "증강 진화 · " + rule(id).definition().name(),
                 catalog.config.getBoolean("settings.evolution-sound"));
         if (catalog.config.getBoolean("settings.evolution-particles")) {

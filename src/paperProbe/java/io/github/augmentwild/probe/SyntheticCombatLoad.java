@@ -127,15 +127,15 @@ final class SyntheticCombatLoad implements Listener {
                     + " expected=" + oldSize * TICKS + " remaining=" + remaining);
         }
         plugin.getLogger().info(String.format(Locale.ROOT,
-                "SYNTHETIC_LOAD_TEST entities=%d ticks=%d attempts=%d events=%d landed=%d health_damage=%.1f callback_p95_ms=%.3f server_tick_p95_ms=%.3f server_tick_max_ms=%.3f entities_remaining=%d",
+                "SYNTHETIC_LOAD_TEST entities=%d ticks=%d attempts=%d events=%d landed=%d health_damage=%.1f callback_p95_ms=%.3f server_tick_p95_ms=%.3f server_tick_max_ms=%.3f server_ticks_over_50=%d/%d entities_remaining=%d",
                 oldSize, TICKS, attempted, events, landed, healthDamage, percentile(steps), percentile(serverTicks),
-                Collections.max(serverTicks), remaining));
+                Collections.max(serverTicks), serverTicks.stream().filter(ms -> ms > 50).count(), serverTicks.size(), remaining));
         if (oldSize == 16) {
             HandlerList.unregisterAll(this);
             plugin.getLogger().info("AW_COMBAT_LOAD_PASS");
             return;
         }
-        size = oldSize == 2 ? 8 : 16;
+        size *= 2;
         rounds = attempted = events = landed = 0;
         healthDamage = 0;
         steps.clear();

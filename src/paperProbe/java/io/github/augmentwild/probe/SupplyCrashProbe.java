@@ -1,8 +1,11 @@
 package io.github.augmentwild.probe;
 
+import io.github.augmentwild.domain.SupplyPlan;
+import io.github.augmentwild.paper.MatchInventory;
 import io.github.augmentwild.paper.SupplyBlock;
 import io.github.augmentwild.paper.SupplyRecovery;
 import java.nio.file.Files;
+import java.util.List;
 import java.util.UUID;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
@@ -48,6 +51,10 @@ final class SupplyCrashProbe {
             removedMarker.remove(); // Simulates removal after grant before the modified chunk is flushed.
             var volatileEntry = recovery.plan(match, site(world, 7));
             require(recovery.place(volatileEntry, site(world, 7)) != null, "placement immediately before shutdown");
+            // Detached Paper inventories model separate player save files without logging in fake players.
+            // Save one copy after the write and leave the other at its pre-claim snapshot.
+            payout(probe, "durable-payout", true);
+            payout(probe, "volatile-payout", false);
             probe.getLogger().info("AW_SUPPLY_CRASH_SEEDED");
         } else if (stage.equals("restart") || stage.equals("repeat")) {
             for (int index : new int[]{0, 1, 2, 3, 6, 7}) {
@@ -61,8 +68,36 @@ final class SupplyCrashProbe {
                 require(files.filter(path -> path.toString().endsWith(".yml")).count() == 2, "only unresolved entries retained");
             }
             require(!recovery.recover(), "unresolved journal blocks match start and retry is idempotent");
+            var durable = savedItem(probe, "durable-payout");
+            require(durable.getType() == Material.DIAMOND && durable.getAmount() == 1, "saved reward survives once");
+            require(savedItem(probe, "volatile-payout").getType() == Material.COBBLESTONE, "unsaved reward lost, not replayed");
+            probe.getLogger().info("AW_PAYOUT_SAVE_BOUNDARIES_PASS " + stage + " durable=1 volatile=0 clients=0");
             probe.getLogger().info("AW_SUPPLY_CRASH_PASS " + stage);
         } else throw new IllegalArgumentException("Unknown recovery fixture phase");
+    }
+
+    private static void payout(JavaPlugin probe, String key, boolean saveAfter) throws Exception {
+        var inventory = probe.getServer().createInventory(null, 9);
+        inventory.setItem(0, new ItemStack(Material.COBBLESTONE, 64));
+        var file = probe.getDataFolder().toPath().resolve(key);
+        Files.createDirectories(file.getParent());
+        Files.write(file, inventory.getItem(0).serializeAsBytes());
+        var before = inventory.getStorageContents();
+        var reward = new ItemStack(Material.DIAMOND);
+        var after = MatchInventory.fit(before, inventory.getMaxStackSize(), List.of(reward));
+        UUID a = UUID.randomUUID(), b = UUID.randomUUID();
+        var claim = new SupplyPlan.Claim();
+        require(after != null && claim.reserve(a) && !claim.reserve(b), "detached payout preflight and contention");
+        require(MatchInventory.apply(before, after, inventory::setStorageContents, failure -> {
+            throw failure;
+        }) == MatchInventory.Write.DELIVERED, "payout reached memory");
+        claim.finish(a, true);
+        require(!claim.reserve(b) && inventory.contains(Material.DIAMOND, 1), "only one in-memory payout");
+        if (saveAfter) Files.write(file, inventory.getItem(1).serializeAsBytes());
+    }
+
+    private static ItemStack savedItem(JavaPlugin probe, String key) throws Exception {
+        return ItemStack.deserializeBytes(Files.readAllBytes(probe.getDataFolder().toPath().resolve(key)));
     }
 
     private static Block site(World world, int index) {

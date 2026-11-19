@@ -2,6 +2,8 @@ package io.github.augmentwild.paper;
 
 import io.github.augmentwild.augment.*;
 import io.github.augmentwild.augment.AugmentDefinition.Effect;
+import io.github.augmentwild.domain.MatchTelemetry;
+import io.github.augmentwild.domain.MatchTelemetry.Counter;
 import io.github.augmentwild.domain.MatchSimulationClock;
 import io.github.augmentwild.domain.SelectionRound;
 import java.util.*;
@@ -100,12 +102,14 @@ final class PaperAugments implements Listener {
     }
 
     private final PaperOfficialCombat official;
+    private final MatchTelemetry telemetry;
 
     PaperAugments(JavaPlugin plugin, Supplier<MatchSimulationClock> clock, Predicate<UUID> member,
                   Predicate<Player> active, Predicate<Player> protectedPlayer, Supplier<MatchState> phase,
                   Predicate<Location> arena, Predicate<Location> safe, BiPredicate<Player, Location> teleport,
-                  BiConsumer<UUID, Integer> protection, int maxDepth) {
+                  BiConsumer<UUID, Integer> protection, int maxDepth, MatchTelemetry telemetry) {
         this.plugin = plugin;
+        this.telemetry = telemetry;
         this.clock = clock;
         this.member = member;
         this.active = active;
@@ -121,7 +125,7 @@ final class PaperAugments implements Listener {
                 protection, player -> {
                     var profile = profiles.get(player);
                     return profile == null ? Set.of() : profile.owned;
-                }, maxDepth);
+                }, maxDepth, telemetry);
         roller = new AugmentRoller(registry, random, official.draftWeights());
         guard = new ProcGuard(maxDepth);
     }
@@ -180,7 +184,9 @@ final class PaperAugments implements Listener {
             Player player = plugin.getServer().getPlayer(playerId);
             if (player != null) profile.lastKnownLevel = Math.clamp(player.getLevel(), 0, 50);
             profile.level = profile.lastKnownLevel;
-            result.put(playerId, roll(profile, last, List.of()));
+            var offers = roll(profile, last, List.of());
+            if (!offers.isEmpty()) telemetry.count(Counter.DRAFTS);
+            result.put(playerId, offers);
         }
         return result;
     }
@@ -266,6 +272,7 @@ final class PaperAugments implements Listener {
         var definition = registry.get(choice.selected());
         if (definition == null || !definition.selectable()) return;
         profile.grantedRound = round;
+        telemetry.count(choice.status() == SelectionRound.Status.AUTOMATIC ? Counter.AUTO_PICKS : Counter.MANUAL_PICKS);
         if (EXCHANGES.contains(definition.id())) {
             startExchange(profile, definition.id());
             official.selected(id, definition.id(), "exchange_offer");
@@ -466,7 +473,9 @@ final class PaperAugments implements Listener {
         int slot = event.getRawSlot();
         var profile = profiles.get(menu.owner);
         if (slot == REROLL) {
-            if (!timer.hasRerolled(menu.owner)) timer.reroll(menu.owner, menu.round, roll(profile, round.prismaticOnly(), menu.offers));
+            if (!timer.hasRerolled(menu.owner) && timer.reroll(menu.owner, menu.round, roll(profile, round.prismaticOnly(), menu.offers))) {
+                telemetry.count(Counter.REROLLS);
+            }
             return;
         }
         for (int i = 0; i < SLOTS.length && i < menu.offers.size(); i++) {
