@@ -44,7 +44,14 @@ public final class SupplyRecovery {
             throw new IllegalArgumentException("Supply marker no longer matches its plan");
         }
         SupplyBlock marker = SupplyBlock.place(block, key, entry.token().toString());
-        if (marker != null) save(entry.in(State.PLACED));
+        if (marker != null) {
+            try {
+                save(entry.in(State.PLACED));
+            } catch (IOException failure) {
+                marker.remove();
+                throw failure;
+            }
+        }
         return marker;
     }
 

@@ -128,7 +128,7 @@ final class PaperSupply implements Listener {
         if (second != lastMarkerCheck) {
             lastMarkerCheck = second;
             for (var delivery : List.copyOf(spawned.values())) {
-                if (delivery.block.claimable()) continue;
+                if (claimable(delivery)) continue;
                 stats.count(Counter.CANCELLED_AFTER_PUBLICATION);
                 remove(delivery);
                 notice.accept(label(delivery) + " · 상자 소유권 또는 내용물이 달라 보급을 중단했습니다.");
@@ -223,9 +223,16 @@ final class PaperSupply implements Listener {
         location.getWorld().spawnParticle(Particle.END_ROD, location.clone().add(0, 1, 0), 15, .4, .3, .4, .02);
     }
 
+    private boolean claimable(Delivery delivery) {
+        var world = delivery.position.getWorld();
+        return plugin.getServer().getWorld(world.getUID()) == world
+                && world.isChunkLoaded(delivery.position.getBlockX() >> 4, delivery.position.getBlockZ() >> 4)
+                && delivery.block.claimable();
+    }
+
     private boolean eligible(Player player, Delivery delivery) {
         if (player == null || !player.isOnline() || player.isDead() || player.getGameMode() == GameMode.SPECTATOR
-                || !active.test(player) || spawned.get(Site.at(delivery.position)) != delivery || !delivery.block.claimable()) return false;
+                || !active.test(player) || spawned.get(Site.at(delivery.position)) != delivery || !claimable(delivery)) return false;
         Location target = delivery.position.clone().add(0, .5, 0);
         return player.getWorld().equals(target.getWorld()) && safe.test(target)
                 && player.getEyeLocation().distanceSquared(target) <= square(settings.range())
@@ -292,7 +299,8 @@ final class PaperSupply implements Listener {
         if (refs > 1) tickets.put(key, refs - 1);
         else {
             tickets.remove(key);
-            location.getWorld().removePluginChunkTicket(key.x(), key.z(), plugin);
+            var world = plugin.getServer().getWorld(key.world());
+            if (world != null) world.removePluginChunkTicket(key.x(), key.z(), plugin);
         }
     }
 
