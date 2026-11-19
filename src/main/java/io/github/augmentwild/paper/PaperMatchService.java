@@ -299,7 +299,9 @@ public final class PaperMatchService implements Listener {
             // Capture every player before moving anyone.
             for (UUID id : players) {
                 Player player = available(id);
-                if (player == null) throw new IllegalStateException("Participant unavailable: " + id);
+                if (player == null || labWorld != null && !labWorld.equals(player.getWorld().getUID())) {
+                    throw new IllegalStateException("Participant unavailable at arena preparation: " + id);
+                }
                 snapshots.capture(player);
                 captured.add(id);
             }
@@ -349,8 +351,10 @@ public final class PaperMatchService implements Listener {
         border = new MatchBorder(context.area(), settings.rules(), settings.borderDamageInterval());
         borderDisplay = new PaperMatchBorder(plugin.getServer(), border.area(0));
         task = plugin.getServer().getScheduler().runTaskTimer(plugin, this::tick, 1L, 1L);
-        usedRegions.start(context);
-        regionCommitted = true;
+        if (labWorld == null) {
+            usedRegions.start(context);
+            regionCommitted = true;
+        }
         arena = context;
         preparation.cancel();
         preparation = null;
@@ -427,10 +431,12 @@ public final class PaperMatchService implements Listener {
         borderDisplay = null;
         border = null;
         supply.clear();
-        if (clock != null) plugin.getLogger().info("Match tempo match=" + session.matchId() + " "
+        String mode = labWorld == null ? "normal" : "lab";
+        if (clock != null) plugin.getLogger().info("Match tempo match=" + session.matchId() + " mode=" + mode + " "
                 + telemetry.tempo(clock.elapsedSeconds(), (System.nanoTime() - matchStarted) / 1_000_000_000L));
         var stats = telemetry.finish();
-        if (!stats.isEmpty()) plugin.getLogger().info("Match feature totals match=" + session.matchId() + " " + new java.util.TreeMap<>(stats));
+        if (!stats.isEmpty()) plugin.getLogger().info("Match feature totals match=" + session.matchId()
+                + " mode=" + mode + " " + new java.util.TreeMap<>(stats));
         intel.clear();
         augments.clear();
         regionCommitted = false;

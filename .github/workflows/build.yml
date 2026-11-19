@@ -32,7 +32,16 @@ jobs:
             diagnostic=${diagnostic//$'\n'/%0A}
             printf '::error title=Gradle failure::%s\n' "$diagnostic"
           fi
-      - run: bash scripts/test-domain.sh
+      - name: Standalone regression and seeded draft comparison
+        shell: bash
+        run: |
+          bash scripts/test-domain.sh | tee "$RUNNER_TEMP/augmentwild-domain.log"
+          grep -E '^PHASE67_(DRAFT|AUGMENT) ' "$RUNNER_TEMP/augmentwild-domain.log" > "$RUNNER_TEMP/phase67-draft.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phase67-draft-study
+          path: ${{ runner.temp }}/phase67-draft.txt
+          if-no-files-found: error
       - name: Verify plugin JAR contents
         run: |
           mapfile -t plugin_jars < <(find build/libs -maxdepth 1 -type f -name '*.jar')
