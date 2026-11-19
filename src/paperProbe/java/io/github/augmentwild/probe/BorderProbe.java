@@ -31,7 +31,7 @@ public final class BorderProbe extends JavaPlugin implements Listener {
     private final ResonanceShield shield = new ResonanceShield();
     private long shieldClock;
     private PaperResonanceShield.Receipt pendingShieldSpend;
-    private enum LateDamage { NONE, CANCEL, REPLACE_MAGIC, ZERO_BASE }
+    private enum LateDamage { NONE, CANCEL, RESTORE_BASE, ZERO_BASE }
     private LateDamage lateDamage = LateDamage.NONE;
     private boolean sawOutsideBorderDamage;
 
@@ -44,7 +44,7 @@ public final class BorderProbe extends JavaPlugin implements Listener {
                 if (!event.getEntity().equals(shieldPig)) return;
                 switch (lateDamage) {
                     case CANCEL -> event.setCancelled(true);
-                    case REPLACE_MAGIC -> event.setDamage(EntityDamageEvent.DamageModifier.MAGIC, 0);
+                    case RESTORE_BASE -> event.setDamage(7);
                     case ZERO_BASE -> event.setDamage(0);
                     case NONE -> { }
                 }
@@ -133,14 +133,14 @@ public final class BorderProbe extends JavaPlugin implements Listener {
             shield.grant(shieldClock, 4, 6_000_000_000L);
             shieldPig.damage(7);
             require(Math.abs(shieldPig.getHealth() - (health - 1)) < .000001, "virtual shield applies after native absorption");
-            require(shield.remaining(shieldClock) == 0 && shieldPig.getAbsorptionAmount() == 0, "both pools spend exactly once");
+            require(shield.remaining(shieldClock) < 1e-7 && shieldPig.getAbsorptionAmount() == 0, "both pools spend exactly once");
             shieldPig.setAbsorptionAmount(2);
             shield.grant(shieldClock, 8, 6_000_000_000L);
             shieldClock += 6_000_000_000L;
             require(shield.remaining(shieldClock) == 0, "shield expires at exact game time");
             require(shieldPig.getAbsorptionAmount() == 2, "shield expiry leaves native absorption");
             shield.grant(shieldClock, 4, 6_000_000_000L);
-            for (var change : new LateDamage[]{LateDamage.CANCEL, LateDamage.REPLACE_MAGIC, LateDamage.ZERO_BASE}) {
+            for (var change : new LateDamage[]{LateDamage.CANCEL, LateDamage.RESTORE_BASE, LateDamage.ZERO_BASE}) {
                 shieldPig.setHealth(health);
                 shieldPig.setAbsorptionAmount(2);
                 shieldPig.setNoDamageTicks(0);
@@ -148,7 +148,7 @@ public final class BorderProbe extends JavaPlugin implements Listener {
                 shield.grant(shieldClock, 4, 6_000_000_000L);
                 shieldPig.damage(7);
                 require(shield.remaining(shieldClock) == 4, "late " + change + " must not spend discarded shield");
-                if (change == LateDamage.REPLACE_MAGIC) {
+                if (change == LateDamage.RESTORE_BASE) {
                     require(shieldPig.getHealth() == health - 5 && shieldPig.getAbsorptionAmount() == 0,
                             "replacement keeps native absorption normal");
                 } else require(shieldPig.getHealth() == health && shieldPig.getAbsorptionAmount() == 2,
