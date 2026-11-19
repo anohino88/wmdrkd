@@ -18,6 +18,7 @@ import org.bukkit.FluidCollisionMode;
 import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import io.github.augmentwild.domain.HudMessages.Layer;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
 import org.bukkit.event.EventHandler;
@@ -25,9 +26,7 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
-import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.inventory.Inventory;
-import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -44,10 +43,8 @@ final class PaperIntel implements Listener {
     private final Predicate<Location> safe;
     private final PaperAugments augments;
     private final MatchTelemetry stats;
-    private final Predicate<UUID> openingSupply;
+    private final PaperHud hud;
     private final Consumer<Location> nearbyPvp;
-    private enum Hud { TRACK, SCOUT }
-    private final Map<UUID, Hud> displayed = new HashMap<>();
     private final Map<UUID, Integer> shownProgress = new HashMap<>();
     private final Tracker targetFinder = new Tracker();
     private final Map<UUID, CombatIntel.Tracking> tracks = new HashMap<>();
@@ -72,7 +69,7 @@ final class PaperIntel implements Listener {
         List<Card> cards() { return data.values(); }
         long deadline() { return data.deadline(); }
     }
-    private static final class Menu implements InventoryHolder {
+    private static final class Menu implements PaperMenu {
         final UUID owner;
         final Report report;
         int page;
@@ -82,12 +79,13 @@ final class PaperIntel implements Listener {
             this.owner = owner;
             this.report = report;
         }
+        @Override public boolean availableWhileRestricted() { return true; }
         @Override public Inventory getInventory() { return inventory; }
     }
 
     PaperIntel(JavaPlugin plugin, Supplier<MatchSimulationClock> clock, Supplier<Set<UUID>> participants,
                Predicate<Player> active, Predicate<Location> safe, PaperAugments augments, MatchTelemetry stats,
-               Predicate<UUID> openingSupply, Consumer<Location> nearbyPvp) {
+               PaperHud hud, Consumer<Location> nearbyPvp) {
         this.plugin = plugin;
         this.clock = clock;
         this.participants = participants;
@@ -95,7 +93,7 @@ final class PaperIntel implements Listener {
         this.safe = safe;
         this.augments = augments;
         this.stats = stats;
-        this.openingSupply = openingSupply;
+        this.hud = hud;
         this.nearbyPvp = nearbyPvp;
         settings = IntelSettings.load(plugin.getConfig());
     }
@@ -170,13 +168,11 @@ final class PaperIntel implements Listener {
             endTrack(id);
             return;
         }
-        if (hudOccupied(id) || dwell.containsKey(id)) return;
-        if (displayed.get(id) != Hud.TRACK || now >= trackUpdates.getOrDefault(id, 0L)) {
+        if (now >= trackUpdates.getOrDefault(id, 0L)) {
             String label = settings.revealName() ? " · " + target.getName() : "";
             long seconds = (running.remaining(now) + 999_999_999) / 1_000_000_000L;
-            player.sendActionBar(Component.text("적 추적 · " + direction(player.getLocation(), target.getLocation())
+            hud.set(id, Layer.TRACK, Component.text("적 추적 · " + direction(player.getLocation(), target.getLocation())
                     + label + " · 남은 시간 " + seconds + "초", NamedTextColor.AQUA));
-            displayed.put(id, Hud.TRACK);
             trackUpdates.put(id, now + settings.trackUpdate());
         }
     }
@@ -200,31 +196,19 @@ final class PaperIntel implements Listener {
         if (tracking == null || tracking.assigned() == null) return;
         tracking.stop();
         trackUpdates.remove(id);
-        clearHud(id, Hud.TRACK);
-    }
-
-    private boolean hudOccupied(UUID id) {
-        return clock.get() == null || clock.get().isPaused() || openingSupply.test(id) || augments.showsShield(id);
-    }
-
-    private void clearHud(UUID id, Hud layer) {
-        if (!displayed.remove(id, layer) || hudOccupied(id)) return;
-        Player player = plugin.getServer().getPlayer(id);
-        if (player != null) player.sendActionBar(Component.empty());
+        hud.remove(id, Layer.TRACK);
     }
 
     private void clearAim(UUID id) {
         dwell.remove(id);
         shownProgress.remove(id);
-        clearHud(id, Hud.SCOUT);
+        hud.remove(id, Layer.SCOUT);
     }
 
     void tick() {
         if (match == null) return;
         if (clock.get().isPaused()) {
-            dwell.clear();
-            displayed.clear();
-            shownProgress.clear();
+            for (UUID id : List.copyOf(dwell.keySet())) clearAim(id);
             return;
         }
         long now = clock.get().elapsedNanos();
@@ -234,10 +218,6 @@ final class PaperIntel implements Listener {
                 clearAim(id);
                 endTrack(id);
                 continue;
-            }
-            if (hudOccupied(id)) {
-                displayed.remove(id);
-                shownProgress.remove(id);
             }
             observe(player, now);
             updateTrack(player, now);
@@ -271,10 +251,9 @@ final class PaperIntel implements Listener {
         }
         if (!observation.observe(target.getUniqueId(), now, settings.aim())) {
             int progress = observation.progress(now, settings.aim()) / 5 * 5;
-            if (!hudOccupied(id) && shownProgress.getOrDefault(id, -1) != progress) {
-                player.sendActionBar(Component.text("증강 분석 중 · " + progress + "%", NamedTextColor.AQUA));
+            if (shownProgress.getOrDefault(id, -1) != progress) {
+                hud.set(id, Layer.SCOUT, Component.text("증강 분석 중 · " + progress + "%", NamedTextColor.AQUA));
                 shownProgress.put(id, progress);
-                displayed.put(id, Hud.SCOUT);
             }
             return;
         }
@@ -416,7 +395,6 @@ final class PaperIntel implements Listener {
                     && menu.report == scouts.get(id)) player.closeInventory();
         }
         for (UUID id : List.copyOf(dwell.keySet())) clearAim(id);
-        displayed.clear();
         shownProgress.clear();
         tracks.clear();
         trackUpdates.clear();
@@ -499,25 +477,19 @@ final class PaperIntel implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST)
     public void click(InventoryClickEvent event) {
         if (!(event.getView().getTopInventory().getHolder() instanceof Menu menu)) return;
-        event.setCancelled(true);
+        int slot = PaperMenu.lock(event, false);
         if (!menu.owner.equals(event.getWhoClicked().getUniqueId()) || !menu.report.valid()) return;
-        if (event.getClick() != org.bukkit.event.inventory.ClickType.LEFT) return;
-        if (event.getRawSlot() == 36 && menu.page > 0) menu.page--;
-        else if (event.getRawSlot() == 44 && (menu.page + 1) * PAGE_SIZE < menu.report.cards().size()) menu.page++;
+        if (slot == 36 && menu.page > 0) menu.page--;
+        else if (slot == 44 && (menu.page + 1) * PAGE_SIZE < menu.report.cards().size()) menu.page++;
         else return;
         render(menu);
-    }
-
-    @EventHandler(priority = EventPriority.HIGHEST)
-    public void drag(InventoryDragEvent event) {
-        if (isReadOnly(event.getView().getTopInventory())) event.setCancelled(true);
     }
 
     static Card card(Material icon, String name, String... lore) {
         return new Card(icon, Component.text(name), Arrays.stream(lore).<Component>map(Component::text).toList());
     }
 
-    private static ItemStack item(Card card) {
+    static ItemStack item(Card card) {
         var result = new ItemStack(card.icon());
         var meta = result.getItemMeta();
         meta.displayName(card.name());

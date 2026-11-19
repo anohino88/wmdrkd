@@ -27,11 +27,9 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
-import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.player.PlayerExpChangeEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.Inventory;
-import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -65,12 +63,19 @@ final class PaperAugments implements Listener {
         boolean exchangeShown;
     }
 
-    private static final class SummaryMenu implements InventoryHolder {
+    private static final int CODEX_CARDS = 45;
+
+    private static final class SummaryMenu implements PaperMenu {
+        final UUID owner, match;
+        int page;
+        long updated = -1;
         Inventory inventory;
+        SummaryMenu(UUID owner, UUID match) { this.owner = owner; this.match = match; }
+        @Override public boolean availableWhileRestricted() { return true; }
         @Override public Inventory getInventory() { return inventory; }
     }
 
-    private static final class ExchangeMenu implements InventoryHolder {
+    private static final class ExchangeMenu implements PaperMenu {
         final UUID match, owner;
         final AugmentExchange exchange;
         Inventory inventory;
@@ -84,7 +89,7 @@ final class PaperAugments implements Listener {
         @Override public Inventory getInventory() { return inventory; }
     }
 
-    private static final class Menu implements InventoryHolder {
+    private static final class Menu implements PaperMenu {
         final UUID match, owner;
         final int round;
         final List<SelectionRound.Offer> offers;
@@ -103,13 +108,16 @@ final class PaperAugments implements Listener {
 
     private final PaperOfficialCombat official;
     private final MatchTelemetry telemetry;
+    private final PaperHud hud;
+    private final Map<EntityDamageByEntityEvent, Map<Player, String>> observedProcs = new WeakHashMap<>();
 
     PaperAugments(JavaPlugin plugin, Supplier<MatchSimulationClock> clock, Predicate<UUID> member,
                   Predicate<Player> active, Predicate<Player> protectedPlayer, Supplier<MatchState> phase,
                   Predicate<Location> arena, Predicate<Location> safe, BiPredicate<Player, Location> teleport,
-                  BiConsumer<UUID, Integer> protection, int maxDepth, MatchTelemetry telemetry) {
+                  BiConsumer<UUID, Integer> protection, int maxDepth, MatchTelemetry telemetry, PaperHud hud) {
         this.plugin = plugin;
         this.telemetry = telemetry;
+        this.hud = hud;
         this.clock = clock;
         this.member = member;
         this.active = active;
@@ -125,7 +133,7 @@ final class PaperAugments implements Listener {
                 protection, player -> {
                     var profile = profiles.get(player);
                     return profile == null ? Set.of() : profile.owned;
-                }, maxDepth, telemetry);
+                }, maxDepth, telemetry, hud);
         registry.all().stream().filter(a -> AugmentRole.of(a.id()) == AugmentRole.UNKNOWN).forEach(a ->
                 plugin.getLogger().warning("Unclassified augment draft role: " + a.id()));
         roller = new AugmentRoller(registry, random, official.draftWeights(), new AugmentRoller.Quality(
@@ -134,8 +142,6 @@ final class PaperAugments implements Listener {
                 config.getBoolean("augments.draft.exclude-final-xp", true)));
         guard = new ProcGuard(maxDepth);
     }
-
-    boolean showsShield(UUID player) { return official.showsShield(player); }
 
     String augmentName(String id) {
         var definition = registry.get(id);
@@ -238,7 +244,12 @@ final class PaperAugments implements Listener {
         UUID id = player.getUniqueId();
         var profile = profiles.get(id);
         var timer = clock.get();
-        if (timer == null || profile == null) return;
+        if (timer == null) return;
+        if (player.getOpenInventory().getTopInventory().getHolder() instanceof SummaryMenu codex) {
+            if (!Objects.equals(codex.match, match)) player.closeInventory();
+            else if (codex.updated != timer.elapsedSeconds()) renderCodex(player, codex);
+        }
+        if (profile == null) return;
         if (!member.test(id)) {
             remove(id);
             return;
@@ -318,6 +329,24 @@ final class PaperAugments implements Listener {
         return player.getName() + " 부여 " + id;
     }
 
+    String labPreset(Player player, String id) {
+        var members = AugmentCombinations.PRESETS.get(id);
+        if (members == null) return "실험 프리셋 " + AugmentCombinations.PRESETS.keySet();
+        if (members.stream().map(registry::get).anyMatch(a -> a == null || !a.selectable())) {
+            return "사용할 수 없는 증강이 있어 프리셋을 적용하지 않았습니다.";
+        }
+        UUID owner = player.getUniqueId();
+        var profile = profiles.computeIfAbsent(owner, ignored -> new Profile());
+        if (profile.exchange != null) return "진행 중인 증강 교환을 먼저 마치세요.";
+        var added = new ArrayList<String>();
+        for (String member : new TreeSet<>(members)) {
+            if (acquire(profile, owner, registry.get(member), "LAB_PRESET")) added.add(member);
+        }
+        official.refreshAttributes(player);
+        refreshLabMenu(player, profile);
+        return player.getName() + " 프리셋 " + id + (added.isEmpty() ? " · 모두 보유 중" : " · 추가 " + added);
+    }
+
     String labRemove(Player player, String id) {
         var profile = profiles.get(player.getUniqueId());
         if (profile == null || !profile.owned.remove(id)) return "보유한 증강이 아닙니다.";
@@ -387,7 +416,7 @@ final class PaperAugments implements Listener {
 
     private void refreshLabMenu(Player player, Profile profile) {
         var holder = player.getOpenInventory().getTopInventory().getHolder();
-        if (holder instanceof SummaryMenu) showSummary(player, profile);
+        if (holder instanceof SummaryMenu menu) renderCodex(player, menu);
         else if (holder instanceof ExchangeMenu && profile.exchange == null) player.closeInventory();
     }
 
@@ -404,7 +433,7 @@ final class PaperAugments implements Listener {
         }
         if (member.test(id) && profile != null && !profile.owned.isEmpty()
                 && (choice == null || choice.status() != SelectionRound.Status.PENDING)) {
-            showSummary(player, profile);
+            openCodex(player);
             return "보유 증강을 열었습니다.";
         }
         if (!active.test(player) || choice == null || choice.status() != SelectionRound.Status.PENDING) {
@@ -432,22 +461,49 @@ final class PaperAugments implements Listener {
         setCountdown(menu, clock.get().selectionRemainingSeconds());
         profile.shown = round.round();
         player.openInventory(menu.inventory);
-        player.sendActionBar(Component.text("증강을 선택하세요. 경험치는 소모되지 않습니다.", NamedTextColor.GOLD));
     }
 
-    private void showSummary(Player player, Profile profile) {
-        var menu = new SummaryMenu();
-        menu.inventory = plugin.getServer().createInventory(menu, Math.clamp((profile.owned.size() + 8) / 9 * 9, 27, 54),
-                Component.text("보유 증강"));
-        int slot = 0;
-        for (String id : profile.owned) {
-            if (slot >= menu.inventory.getSize()) break;
-            menu.inventory.setItem(slot++, augmentItem(player, profile, registry.get(id)));
+    String openCodex(Player player) {
+        var choice = clock.get() == null ? null : clock.get().selection().map(round -> round.choices().get(player.getUniqueId())).orElse(null);
+        if (choice != null && choice.status() == SelectionRound.Status.PENDING && active.test(player)) {
+            return "선택을 먼저 마치세요. /aw augment로 선택을 열 수 있습니다.";
         }
+        var menu = new SummaryMenu(player.getUniqueId(), match);
+        menu.inventory = plugin.getServer().createInventory(menu, 54, Component.text("나의 증강 도감"));
+        renderCodex(player, menu);
         player.openInventory(menu.inventory);
+        return "증강 도감을 열었습니다.";
+    }
+
+    private void renderCodex(Player player, SummaryMenu menu) {
+        var stored = profiles.get(menu.owner);
+        var profile = stored == null ? new Profile() : stored;
+        menu.updated = clock.get() == null ? 0 : clock.get().elapsedSeconds();
+        menu.inventory.clear();
+        var definitions = registry.all().stream()
+                .sorted(Comparator.comparing((AugmentDefinition a) -> !profile.owned.contains(a.id()))
+                        .thenComparing(AugmentDefinition::rarity).thenComparing(AugmentDefinition::id)).toList();
+        int last = (definitions.size() + CODEX_CARDS - 1) / CODEX_CARDS;
+        if (menu.page == 0) {
+            int slot = 0;
+            for (var card : official.codexStatus(menu.owner)) menu.inventory.setItem(slot++, PaperIntel.item(card));
+        } else {
+            int offset = (menu.page - 1) * CODEX_CARDS;
+            for (int i = offset; i < Math.min(offset + CODEX_CARDS, definitions.size()); i++) {
+                menu.inventory.setItem(i - offset, augmentItem(player, profile, definitions.get(i), true));
+            }
+        }
+        if (menu.page > 0) menu.inventory.setItem(45, item(Material.ARROW, Component.text("이전 페이지"), List.of()));
+        menu.inventory.setItem(49, item(Material.BOOK, Component.text(menu.page == 0 ? "조합 · 진화 · 공명" : "증강 목록 " + menu.page + "/" + last),
+                List.of(Component.text("보유 " + profile.owned.size() + "/" + definitions.size()))));
+        if (menu.page < last) menu.inventory.setItem(53, item(Material.ARROW, Component.text("다음 페이지"), List.of()));
     }
 
     private ItemStack augmentItem(Player player, Profile profile, AugmentDefinition augment) {
+        return augmentItem(player, profile, augment, false);
+    }
+
+    private ItemStack augmentItem(Player player, Profile profile, AugmentDefinition augment, boolean codex) {
         var color = switch (augment.rarity()) {
             case SILVER -> NamedTextColor.GRAY;
             case GOLD -> NamedTextColor.GOLD;
@@ -464,9 +520,13 @@ final class PaperAugments implements Listener {
                 Component.text(String.format(Locale.ROOT, "효과: %.2f%s", shown, augment.unit())),
                 Component.text("지속 " + (augment.duration() == 0 ? "상시 또는 즉시" : augment.duration() + "초")
                         + " · 쿨다운 " + augment.cooldown() + "초"),
-                Component.text(profile.owned.contains(augment.id()) ? "보유 중" : "획득 가능")));
-        official.resonanceDetails(player.getUniqueId(), augment.id()).forEach(line -> lore.add(Component.text(line)));
-        official.details(player.getUniqueId(), augment.id()).forEach(line -> lore.add(Component.text(line)));
+                Component.text(profile.owned.contains(augment.id()) ? "보유 중"
+                        : !augment.selectable() ? "비활성화" : codex ? "미보유" : "획득 가능")));
+        if (codex) lore.add(Component.text(augment.id(), NamedTextColor.DARK_GRAY));
+        if (!codex || profile.owned.contains(augment.id())) {
+            official.resonanceDetails(player.getUniqueId(), augment.id()).forEach(line -> lore.add(Component.text(line)));
+            official.details(player.getUniqueId(), augment.id()).forEach(line -> lore.add(Component.text(line)));
+        }
         return item(icon, Component.text(augment.name(), color), lore);
     }
 
@@ -540,33 +600,32 @@ final class PaperAugments implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST)
     public void click(InventoryClickEvent event) {
-        if (event.getView().getTopInventory().getHolder() instanceof SummaryMenu) {
-            event.setCancelled(true);
+        if (event.getView().getTopInventory().getHolder() instanceof SummaryMenu codex) {
+            int slot = PaperMenu.lock(event, false);
+            if (!(event.getWhoClicked() instanceof Player player) || !codex.owner.equals(player.getUniqueId())
+                    || !Objects.equals(codex.match, match)) return;
+            if (slot == 45 && codex.page > 0) codex.page--;
+            else if (slot == 53 && codex.page < (registry.all().size() + CODEX_CARDS - 1) / CODEX_CARDS) codex.page++;
+            else return;
+            renderCodex(player, codex);
             return;
         }
         if (event.getView().getTopInventory().getHolder() instanceof ExchangeMenu exchange) {
             boolean alreadyCancelled = event.isCancelled();
-            event.setCancelled(true);
-            if (!alreadyCancelled && event.getWhoClicked() instanceof Player player
-                    && (event.getClick() == org.bukkit.event.inventory.ClickType.LEFT
-                        || event.getClick() == org.bukkit.event.inventory.ClickType.RIGHT)) {
-                chooseExchange(player, exchange, event.getRawSlot());
-            }
+            int slot = PaperMenu.lock(event, true);
+            if (!alreadyCancelled && slot >= 0 && event.getWhoClicked() instanceof Player player) chooseExchange(player, exchange, slot);
             return;
         }
         if (!(event.getView().getTopInventory().getHolder() instanceof Menu menu)) return;
         boolean alreadyCancelled = event.isCancelled();
-        event.setCancelled(true);
-        if (alreadyCancelled || !(event.getWhoClicked() instanceof Player player)
-                || !menu.owner.equals(player.getUniqueId()) || !menu.match.equals(match) || !active.test(player)
-                || (event.getClick() != org.bukkit.event.inventory.ClickType.LEFT
-                    && event.getClick() != org.bukkit.event.inventory.ClickType.RIGHT)) return;
+        int slot = PaperMenu.lock(event, true);
+        if (alreadyCancelled || slot < 0 || !(event.getWhoClicked() instanceof Player player)
+                || !menu.owner.equals(player.getUniqueId()) || !menu.match.equals(match) || !active.test(player)) return;
         var timer = clock.get();
         var round = timer == null ? null : timer.selection().orElse(null);
         if (round == null || round.round() != menu.round || !round.matchId().equals(menu.match)) return;
         var choice = round.choices().get(menu.owner);
         if (choice == null || !choice.offers().equals(menu.offers) || choice.status() != SelectionRound.Status.PENDING) return;
-        int slot = event.getRawSlot();
         var profile = profiles.get(menu.owner);
         if (slot == REROLL) {
             if (!timer.hasRerolled(menu.owner) && timer.reroll(menu.owner, menu.round, roll(profile, round.prismaticOnly(), menu.offers))) {
@@ -580,13 +639,6 @@ final class PaperAugments implements Listener {
                 return;
             }
         }
-    }
-
-    @EventHandler(priority = EventPriority.HIGHEST)
-    public void drag(InventoryDragEvent event) {
-        if (event.getView().getTopInventory().getHolder() instanceof Menu
-                || event.getView().getTopInventory().getHolder() instanceof ExchangeMenu
-                || event.getView().getTopInventory().getHolder() instanceof SummaryMenu) event.setCancelled(true);
     }
 
     private Menu ownedMenu(Player player) {
@@ -620,7 +672,11 @@ final class PaperAugments implements Listener {
 
     void clear() {
         List.copyOf(profiles.keySet()).forEach(this::remove);
+        for (Player player : plugin.getServer().getOnlinePlayers()) {
+            if (player.getOpenInventory().getTopInventory().getHolder() instanceof SummaryMenu) player.closeInventory();
+        }
         official.clear();
+        observedProcs.clear();
         completed = 0;
         match = null;
     }
@@ -679,6 +735,8 @@ final class PaperAugments implements Listener {
         if (!(event.getDamager() instanceof Player attacker) || !(event.getEntity() instanceof Player target)
                 || event.getFinalDamage() <= 0 || !active.test(attacker) || !active.test(target)
                 || protectedPlayer.test(attacker) || protectedPlayer.test(target)) return;
+        var confirmed = observedProcs.remove(event);
+        if (confirmed != null) confirmed.forEach(hud::proc);
         var attacking = profiles.get(attacker.getUniqueId());
         var defending = profiles.get(target.getUniqueId());
         if (attacking != null) {
@@ -712,6 +770,11 @@ final class PaperAugments implements Listener {
             guard.run(event, new ProcKey(player.getUniqueId(), a.id()), () -> {
                 profile.timers.cooldown(a.id(), now, official.cooldown(player, a.cooldown()));
                 action.accept(player, a);
+                if (event instanceof EntityDamageByEntityEvent hit) {
+                    if (effect == Effect.REAR || effect == Effect.FALL || effect == Effect.DEFENSE) {
+                        observedProcs.computeIfAbsent(hit, ignored -> new LinkedHashMap<>()).putIfAbsent(player, a.name());
+                    } else hud.proc(player, a.name());
+                }
                 plugin.getLogger().fine("Augment proc match=" + match + " player=" + player.getUniqueId() + " id=" + a.id());
             });
         });

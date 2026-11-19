@@ -78,6 +78,7 @@ public final class BorderProbe extends JavaPlugin implements Listener {
     }
 
     private void verify() {
+        verifyProtectedMenus();
         var console = getServer().getConsoleSender();
         var permission = console.addAttachment(this, "augmentwild.admin.test", false);
         try {
@@ -127,6 +128,30 @@ public final class BorderProbe extends JavaPlugin implements Listener {
         combatLoad.start();
         getLogger().info("AW_RESONANCE_PROBE_PASS: real damage, separate vanilla absorption, exact expiry and cleanup");
         getLogger().info("AW_BORDER_PROBE_PASS: virtual border, unchanged global border, Paper damage event and health delta");
+    }
+
+    private void verifyProtectedMenus() {
+        class Holder implements io.github.augmentwild.paper.PaperMenu {
+            org.bukkit.inventory.Inventory inventory;
+            @Override public org.bukkit.inventory.Inventory getInventory() { return inventory; }
+        }
+        var holder = new Holder();
+        holder.inventory = getServer().createInventory(holder, 54);
+        require(io.github.augmentwild.paper.PaperMenu.protectedInventory(holder.inventory)
+                && !io.github.augmentwild.paper.PaperMenu.protectedInventory(getServer().createInventory(null, 54)),
+                "protected plugin inventory recognized by drag guard");
+        for (var click : org.bukkit.event.inventory.ClickType.values()) {
+            int read = io.github.augmentwild.paper.PaperMenu.controlSlot(click, 53, 54, false);
+            require((read == 53) == (click == org.bukkit.event.inventory.ClickType.LEFT), "codex click " + click);
+            int choice = io.github.augmentwild.paper.PaperMenu.controlSlot(click, 10, 27, true);
+            require((choice == 10) == (click == org.bukkit.event.inventory.ClickType.LEFT
+                    || click == org.bukkit.event.inventory.ClickType.RIGHT), "choice click " + click);
+        }
+        var left = org.bukkit.event.inventory.ClickType.LEFT;
+        require(io.github.augmentwild.paper.PaperMenu.controlSlot(left, 54, 54, true) == -1
+                && io.github.augmentwild.paper.PaperMenu.controlSlot(left, -999, 54, true) == -1,
+                "bottom inventory and outside cannot invoke controls");
+        getLogger().info("AW_PHASE68_MENU_PASS");
     }
 
     private void verifyPhase64(Location spawn) {

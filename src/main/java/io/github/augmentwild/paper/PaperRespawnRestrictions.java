@@ -191,7 +191,7 @@ final class PaperRespawnRestrictions implements Listener {
     public void open(InventoryOpenEvent event) {
         if (!(event.getPlayer() instanceof Player player)) return;
         var inventory = event.getInventory();
-        if (restricted.test(player) && !PaperIntel.isReadOnly(inventory)
+        if (restricted.test(player) && !(inventory.getHolder() instanceof PaperMenu menu && menu.availableWhileRestricted())
                 || labParticipant.test(player) && (inventory.getLocation() != null
                 || inventory.getType() == org.bukkit.event.inventory.InventoryType.ENDER_CHEST)) event.setCancelled(true);
     }
@@ -203,6 +203,7 @@ final class PaperRespawnRestrictions implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void drag(InventoryDragEvent event) {
-        if (event.getWhoClicked() instanceof Player player && restricted.test(player)) event.setCancelled(true);
+        if (PaperMenu.protectedInventory(event.getView().getTopInventory())
+                || event.getWhoClicked() instanceof Player player && restricted.test(player)) event.setCancelled(true);
     }
 }

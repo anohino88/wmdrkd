@@ -4,6 +4,8 @@ import com.destroystokyo.paper.event.player.PlayerPostRespawnEvent;
 import com.destroystokyo.paper.event.server.ServerTickEndEvent;
 import io.github.augmentwild.domain.GameSession;
 import io.github.augmentwild.domain.CombatLab;
+import io.github.augmentwild.domain.HudMessages.Layer;
+import net.kyori.adventure.text.Component;
 import io.github.augmentwild.domain.MatchSimulationClock;
 import io.github.augmentwild.domain.MatchBorder;
 import io.github.augmentwild.domain.MatchTelemetry;
@@ -65,6 +67,7 @@ public final class PaperMatchService implements Listener {
     private final PaperAugments augments;
     private final PaperIntel intel;
     private final PaperSupply supply;
+    private final PaperHud hud = new PaperHud();
     private final MatchTelemetry telemetry = new MatchTelemetry();
 
     public PaperMatchService(JavaPlugin plugin, PaperMatchSettings settings, ArenaSearchService search) {
@@ -86,11 +89,11 @@ public final class PaperMatchService implements Listener {
                 this::labParticipant);
         augments = new PaperAugments(plugin, () -> clock, this::augmentMember, this::augmentActive,
                 player -> placement.protectedFromDamage(player.getUniqueId(), System.nanoTime()),
-                () -> session.state(), this::insideAugmentArena, this::insideAugmentBorder, this::move, placement::protect, settings.rules().procDepth(), telemetry);
+                () -> session.state(), this::insideAugmentArena, this::insideAugmentBorder, this::move, placement::protect, settings.rules().procDepth(), telemetry, hud);
         supply = new PaperSupply(plugin, SupplySettings.load(config, settings.rules().gatheringSeconds()),
                 this::augmentActive, this::insideAugmentBorder, this::notice, telemetry);
         intel = new PaperIntel(plugin, () -> clock, () -> session.participantIds(), this::augmentActive,
-                this::insideAugmentBorder, augments, telemetry, supply::isOpening, supply::nearbyPvp);
+                this::insideAugmentBorder, augments, telemetry, hud, supply::nearbyPvp);
     }
 
     private void notice(String message) {
@@ -121,6 +124,7 @@ public final class PaperMatchService implements Listener {
 
     public String castAugment(Player player, String id) { return augments.cast(player, id); }
     public String openAugments(Player player) { return augments.open(player); }
+    public String openCodex(Player player) { return augments.openCodex(player); }
 
     private boolean augmentMember(UUID id) {
         return task != null && contains(id) && !departures.contains(id)
@@ -208,22 +212,26 @@ public final class PaperMatchService implements Listener {
         }
         if (!lab.ready()) return "전투 실험실을 활성화하고 운영 월드와 다른 기존 테스트 월드를 지정하세요.";
         if (action.equals("start") && args.length == 1) return start(sender, true);
+        if (action.equals("presets") && args.length == 1) {
+            return "실험 프리셋 " + io.github.augmentwild.augment.AugmentCombinations.PRESETS.keySet();
+        }
         if (!lab.allows(true, labWorld != null && task != null, clock == null || clock.isPaused())) {
             return "증강 실험 명령은 진행 중이며 일시정지 상태가 아닌 테스트 경기에서만 사용할 수 있습니다.";
         }
         int length = switch (action) {
             case "list", "clear", "report", "reset" -> 2;
-            case "grant", "remove", "health" -> 3;
+            case "grant", "remove", "health", "preset" -> 3;
             case "progress" -> 4;
             default -> 0;
         };
-        if (length == 0 || args.length != length) return "사용법: /aw admin test <status|start|grant|remove|list|clear|progress|report|reset|health>";
+        if (length == 0 || args.length != length) return "사용법: /aw admin test <status|start|grant|remove|list|clear|progress|report|reset|health|presets|preset>";
         Player player = plugin.getServer().getPlayerExact(args[1]);
         if (player == null || !labParticipant(player) || !augmentActive(player)
                 || !labWorld.equals(player.getWorld().getUID())) return "살아 있는 테스트 참가자를 지정하세요.";
         String id = args.length > 2 ? args[2].toLowerCase(java.util.Locale.ROOT) : "";
         return switch (action) {
             case "grant" -> augments.labGrant(player, id);
+            case "preset" -> augments.labPreset(player, id);
             case "remove" -> augments.labRemove(player, id);
             case "list", "report" -> augments.labReport(player, action.equals("report"));
             case "clear", "reset" -> augments.labClear(player, action.equals("reset"));
@@ -439,6 +447,7 @@ public final class PaperMatchService implements Listener {
                 + " mode=" + mode + " " + new java.util.TreeMap<>(stats));
         intel.clear();
         augments.clear();
+        hud.clear(plugin);
         regionCommitted = false;
         labWorld = null;
         arena = null;
@@ -470,6 +479,7 @@ public final class PaperMatchService implements Listener {
             for (UUID id : departures) {
                 supply.disconnect(id);
                 intel.remove(id);
+                hud.clear(id, plugin.getServer().getPlayer(id));
                 augments.remove(id);
                 session.leave(id);
                 placement.forget(id);
@@ -532,6 +542,24 @@ public final class PaperMatchService implements Listener {
                 }
             }
             intel.tick();
+            long realTime = System.nanoTime();
+            var round = clock.selection().orElse(null);
+            for (UUID id : activeSession.participantIds()) {
+                Player player = plugin.getServer().getPlayer(id);
+                if (player == null || !augmentActive(player)) {
+                    hud.clear(id, player);
+                    continue;
+                }
+                var choice = round == null ? null : round.choices().get(id);
+                if (choice != null && choice.status() == io.github.augmentwild.domain.SelectionRound.Status.PENDING) {
+                    hud.set(id, Layer.SELECTION, Component.text("증강 선택 · 남은 시간 " + clock.selectionRemainingSeconds() + "초"));
+                } else if (clock.isPaused()) hud.set(id, Layer.SELECTION, Component.text("경기 시계 일시정지"));
+                else hud.remove(id, Layer.SELECTION);
+                if (supply.isOpening(id)) hud.set(id, Layer.SUPPLY, Component.text("보급 개봉 중 · 이동하거나 피격되면 중단됩니다."));
+                else hud.remove(id, Layer.SUPPLY);
+                if (clock.isPaused()) hud.remove(id, Layer.PROC);
+                hud.render(player, realTime);
+            }
         } catch (RuntimeException failure) {
             plugin.getLogger().log(Level.SEVERE, "Match tick failed", failure);
             clearMatch();
@@ -618,6 +646,7 @@ public final class PaperMatchService implements Listener {
         if (!contains(id)) return;
         supply.disconnect(id);
         intel.remove(id);
+        hud.clear(id, event.getPlayer());
         if (borderDisplay != null) borderDisplay.detach(event.getPlayer());
         if (session.state() == MatchState.PREPARING) {
             clearMatch();

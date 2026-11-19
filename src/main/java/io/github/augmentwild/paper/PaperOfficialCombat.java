@@ -1,6 +1,8 @@
 package io.github.augmentwild.paper;
 
 import io.github.augmentwild.augment.AugmentBalance;
+import io.github.augmentwild.augment.AugmentCombinations;
+import io.github.augmentwild.augment.AugmentEvolution;
 import io.github.augmentwild.augment.AugmentProgress;
 import io.github.augmentwild.augment.AugmentResonance;
 import io.github.augmentwild.augment.ResonanceShield;
@@ -21,6 +23,7 @@ import java.util.function.*;
 import org.bukkit.Bukkit;
 import org.bukkit.FluidCollisionMode;
 import org.bukkit.Location;
+import io.github.augmentwild.domain.HudMessages.Layer;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.Particle;
@@ -51,14 +54,11 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 
 final class PaperOfficialCombat implements Listener {
-    private static final Set<String> THOUSAND_SWORDS = Set.of("sword_wind", "ultimate_hydra", "dual_wielder");
-    private static final Set<String> HELL_LORD = Set.of("infernal_conductor", "center_of_universe", "jeweled_gauntlet");
-    private static final Set<String> INFINITE_BARRAGE = Set.of("magic_missile", "eureka", "infinite_repeat");
-    private static final Set<String> STEEL_KING = Set.of("steel_heart", "stack_dinosaur", "heavy_fist");
-    private static final Set<String> CALAMITY_TRAIN = Set.of("tank_engine", "calamity_giant", "berserk_engine");
-    private static final Map<String, Set<String>> UNIQUE_SYNERGIES = Map.of(
-            "steel_king", STEEL_KING, "calamity_train", CALAMITY_TRAIN, "infinite_barrage", INFINITE_BARRAGE,
-            "hell_lord", HELL_LORD, "thousand_swords", THOUSAND_SWORDS);
+    private static final Set<String> THOUSAND_SWORDS = AugmentCombinations.UNIQUE.get("thousand_swords");
+    private static final Set<String> HELL_LORD = AugmentCombinations.UNIQUE.get("hell_lord");
+    private static final Set<String> INFINITE_BARRAGE = AugmentCombinations.UNIQUE.get("infinite_barrage");
+    private static final Set<String> STEEL_KING = AugmentCombinations.UNIQUE.get("steel_king");
+    private static final Set<String> CALAMITY_TRAIN = AugmentCombinations.UNIQUE.get("calamity_train");
     private final JavaPlugin plugin;
     private final OfficialAugments catalog;
     private final ResonanceSettings resonance;
@@ -110,7 +110,6 @@ final class PaperOfficialCombat implements Listener {
         final ResonanceShield shield = new ResonanceShield();
         final Set<String> lateChecked = new HashSet<>();
         AugmentResonance.State resonance;
-        long shieldShownAt = -1;
         double shieldShownPoints;
         double overgrowthAward;
         long acquiredGrowth, lastBerserkHit = -1, lastSecond = -1;
@@ -147,14 +146,16 @@ final class PaperOfficialCombat implements Listener {
     }
 
     private final MatchTelemetry telemetry;
+    private final PaperHud hud;
 
     PaperOfficialCombat(JavaPlugin plugin, AugmentRegistry registry, Supplier<MatchSimulationClock> clock,
                         Supplier<MatchState> phase, Predicate<UUID> member, Predicate<Player> active, Predicate<Player> protectedPlayer,
                         Predicate<Location> arena, Predicate<Location> safe, BiPredicate<Player, Location> teleport,
                         BiConsumer<UUID, Integer> protection,
-                        Function<UUID, Set<String>> owned, int depth, MatchTelemetry telemetry) {
+                        Function<UUID, Set<String>> owned, int depth, MatchTelemetry telemetry, PaperHud hud) {
         this.plugin = plugin;
         this.telemetry = telemetry;
+        this.hud = hud;
         this.clock = clock;
         this.phase = phase;
         this.member = member;
@@ -183,7 +184,7 @@ final class PaperOfficialCombat implements Listener {
         random = new Random(id.getMostSignificantBits() ^ id.getLeastSignificantBits());
     }
     SynergyDraftWeights draftWeights() {
-        return new SynergyDraftWeights(UNIQUE_SYNERGIES.entrySet().stream()
+        return new SynergyDraftWeights(AugmentCombinations.UNIQUE.entrySet().stream()
                 .filter(entry -> catalog.synergies.getBoolean(entry.getKey() + ".enabled"))
                 .map(Map.Entry::getValue).toList(), resonance.oneWeight(), resonance.twoWeight());
     }
@@ -260,11 +261,11 @@ final class PaperOfficialCombat implements Listener {
                 int updated = state.progress.add(augment, adjustment, rule(augment).cap());
                 Player player = plugin.getServer().getPlayer(id);
                 if (player != null && augment.equals("steel_heart")) {
-                    int threshold = catalog.count("steel-evolution-stacks");
+                    int threshold = catalog.count(AugmentEvolution.STEEL.goal);
                     if (old < threshold && updated >= threshold) evolution(player, state, augment);
                 }
                 if (player != null && augment.equals("tank_engine")) {
-                    int threshold = catalog.count("tank-evolution-stacks");
+                    int threshold = catalog.count(AugmentEvolution.TANK.goal);
                     if (old < threshold && updated >= threshold) evolution(player, state, augment);
                 }
             }
@@ -296,16 +297,16 @@ final class PaperOfficialCombat implements Listener {
             case "blood_trace" -> state.traceTarget = null;
             case "wound_record" -> state.woundDamage = 0;
             case "magic_missile" -> {
-                state.progress.reset("missile_shots");
+                state.progress.reset(AugmentEvolution.MISSILE.counter);
                 state.missiles.clear();
             }
-            case "sword_wind" -> state.progress.reset("sword_hits");
+            case "sword_wind" -> state.progress.reset(AugmentEvolution.SWORD.counter);
             case "infernal_conductor" -> {
                 state.burned = 0;
                 state.burns.clear();
             }
             case "berserk_engine" -> {
-                state.progress.reset("berserk_seconds");
+                state.progress.reset(AugmentEvolution.BERSERK.counter);
                 state.lastBerserkHit = -1;
             }
             case "center_of_universe" -> state.progress.resetCooldown("orbit");
@@ -353,24 +354,13 @@ final class PaperOfficialCombat implements Listener {
         if (state == null) return "진행도 설정을 지원하지 않는 증강입니다.";
         if (id.equals("infernal_conductor")) {
             boolean evolved = burnEvolved(state);
-            state.burned = Math.min(value, catalog.setting("burn-evolution-damage"));
+            state.burned = Math.min(value, catalog.setting(AugmentEvolution.BURN.goal));
             if (!evolved && burnEvolved(state)) evolution(player, state, id);
             return player.getName() + " 진행도 " + id + "=" + state.burned;
         }
-        String key = switch (id) {
-            case "magic_missile" -> "missile_shots";
-            case "sword_wind" -> "sword_hits";
-            case "berserk_engine" -> "berserk_seconds";
-            default -> id;
-        };
-        int threshold = switch (id) {
-            case "steel_heart" -> catalog.count("steel-evolution-stacks");
-            case "tank_engine" -> catalog.count("tank-evolution-stacks");
-            case "magic_missile" -> catalog.count("missile-evolution-shots");
-            case "sword_wind" -> catalog.count("sword-evolution-hits");
-            case "berserk_engine" -> catalog.count("berserk-evolution-seconds");
-            default -> 0;
-        };
+        var evolution = AugmentEvolution.of(id);
+        String key = evolution == null ? id : evolution.counter;
+        int threshold = evolution == null ? 0 : catalog.count(evolution.goal);
         boolean permanent = AugmentResonance.PERMANENT.contains(id);
         if (!permanent && threshold == 0) return "진행도 설정을 지원하지 않는 증강입니다.";
         int before = state.progress.value(key);
@@ -431,9 +421,7 @@ final class PaperOfficialCombat implements Listener {
         if (state != null) {
             removeBomb(state);
             state.shield.clear();
-            if (player != null && state.shieldShownAt != -1) {
-                player.sendActionBar(net.kyori.adventure.text.Component.empty());
-            }
+            hud.remove(id, Layer.SHIELD);
         }
         erosion.remove(id);
     }
@@ -476,7 +464,8 @@ final class PaperOfficialCombat implements Listener {
     void disconnected(Player player) {
         Fighter state = fighters.get(player.getUniqueId());
         if (state != null) {
-            state.shieldShownAt = -1;
+            state.shieldShownPoints = 0;
+            hud.remove(player.getUniqueId(), Layer.SHIELD);
             state.missiles.clear();
             state.arrows.clear();
             state.poisonClouds.clear();
@@ -503,7 +492,7 @@ final class PaperOfficialCombat implements Listener {
         int stacks = state == null ? 0 : state.progress.value(augment);
         var lines = new ArrayList<String>();
         int cap = augment.equals("berserk_engine") && state != null
-                && evolved(state, "berserk_seconds", "berserk-evolution-seconds")
+                && evolved(state, AugmentEvolution.BERSERK.counter, AugmentEvolution.BERSERK.goal)
                 ? catalog.count("berserk-evolved-cap") : rule.cap();
         if (cap > 0) lines.add("중첩 " + stacks + "/" + cap);
         if (Set.of("immortal_berserker", "phoenix_heart", "russian_doll").contains(augment)) {
@@ -511,22 +500,8 @@ final class PaperOfficialCombat implements Listener {
             int used = state == null ? 0 : state.progress.value("revive:" + augment);
             lines.add("치명 피해 방지 잔여 " + (limit - used) + "/" + limit);
         }
-        String progress = switch (augment) {
-            case "infernal_conductor" -> String.format(Locale.ROOT, "지옥의 전도체 진화 %.1f/%.1f",
-                    state == null ? 0 : state.burned, catalog.setting("burn-evolution-damage"));
-            case "magic_missile" -> "마법 미사일 진화 " + (state == null ? 0 : state.progress.value("missile_shots"))
-                    + "/" + catalog.count("missile-evolution-shots");
-            case "tank_engine" -> "탱크 엔진 진화 " + Math.min(stacks, catalog.count("tank-evolution-stacks"))
-                    + "/" + catalog.count("tank-evolution-stacks");
-            case "steel_heart" -> "강철심장 진화 " + Math.min(stacks, catalog.count("steel-evolution-stacks"))
-                    + "/" + catalog.count("steel-evolution-stacks");
-            case "sword_wind" -> "검풍 진화 " + (state == null ? 0 : state.progress.value("sword_hits"))
-                    + "/" + catalog.count("sword-evolution-hits");
-            case "berserk_engine" -> "폭주 기관 진화 " + (state == null ? 0 : state.progress.value("berserk_seconds"))
-                    + "/" + catalog.count("berserk-evolution-seconds");
-            default -> null;
-        };
-        if (progress != null) lines.add(progress);
+        var evolution = AugmentEvolution.of(augment);
+        if (evolution != null) lines.add(evolutionLine(id, evolution));
         if (Set.of("tank_engine", "calamity_giant", "berserk_engine").contains(augment)) {
             lines.add("재앙의 기관차 · " + (state != null && state.train ? "활성" : "미활성"));
         }
@@ -535,6 +510,56 @@ final class PaperOfficialCombat implements Listener {
         if (INFINITE_BARRAGE.contains(augment)) lines.add("무한 포격 · " + (state != null && state.barrage ? "활성" : "미활성"));
         if (STEEL_KING.contains(augment)) lines.add("강철의 왕 · " + (state != null && state.king ? "활성" : "미활성"));
         return lines;
+    }
+
+    private double evolutionThreshold(AugmentEvolution evolution) {
+        return evolution == AugmentEvolution.BURN ? catalog.setting(evolution.goal) : catalog.count(evolution.goal);
+    }
+
+    private String evolutionLine(UUID id, AugmentEvolution evolution) {
+        var state = fighters.get(id);
+        boolean owned = ownsId(id, evolution.augment);
+        double progress = state == null || !owned ? 0 : evolution.progress(state.progress, state.burned);
+        double threshold = evolutionThreshold(evolution);
+        String status = !owned ? "미보유" : evolution.complete(progress, threshold) ? "달성" : "진행 중";
+        return String.format(Locale.ROOT, "%s %.1f/%.1f · %s", evolution.unit, Math.min(progress, threshold), threshold, status);
+    }
+
+    private boolean ownsId(UUID id, String augment) { return owned.apply(id).contains(augment); }
+
+    List<PaperIntel.Card> codexStatus(UUID id) {
+        var cards = new ArrayList<PaperIntel.Card>();
+        Set<String> actual = owned.apply(id);
+        for (var entry : new TreeMap<>(AugmentCombinations.UNIQUE).entrySet()) {
+            String key = entry.getKey();
+            long count = entry.getValue().stream().filter(actual::contains).count();
+            var lore = new ArrayList<String>();
+            String status = !catalog.synergies.getBoolean(key + ".enabled") ? "비활성화"
+                    : count == entry.getValue().size() ? "활성" : "미완성";
+            lore.add(count + "/" + entry.getValue().size() + " · " + status);
+            for (String member : new TreeSet<>(entry.getValue())) {
+                lore.add((actual.contains(member) ? "✓ " : "○ ") + rule(member).definition().name());
+            }
+            cards.add(PaperIntel.card(Material.NETHER_STAR, catalog.synergies.getString(key + ".name", key), lore.toArray(String[]::new)));
+        }
+        for (var evolution : AugmentEvolution.values()) {
+            cards.add(PaperIntel.card(Material.EXPERIENCE_BOTTLE, rule(evolution.augment).definition().name() + " 진화",
+                    evolutionLine(id, evolution)));
+        }
+        var families = resonance.families();
+        var current = currentResonance(id, actual);
+        var state = fighters.get(id);
+        var timer = clock.get();
+        double shield = state == null || timer == null ? 0 : state.shield.remaining(timer.elapsedNanos());
+        cards.add(PaperIntel.card(Material.ANVIL, families.stacking().name(),
+                families.enabled() && families.stacking().enabled() ? "보유 " + current.stackingCount() + "종 · 계열 "
+                        + percent(current.familyMultiplier()) : "비활성화",
+                "영구 중첩 획득 합계 " + percent(current.totalMultiplier())));
+        cards.add(PaperIntel.card(Material.GOLDEN_APPLE, families.revival().name(),
+                families.enabled() && families.revival().enabled() ? "인정되는 방지 증강 " + current.revivalCount()
+                        + "종 · 발동 보호막 " + current.shieldPoints() / 2 + "하트" : "비활성화",
+                "현재 보호막 " + shield / 2 + "하트 · 기본 지속 " + families.revival().durationSeconds() + "초"));
+        return cards;
     }
 
     private static String percent(int scaled) {
@@ -584,22 +609,16 @@ final class PaperOfficialCombat implements Listener {
         return List.of();
     }
 
-    boolean showsShield(UUID player) {
-        var fighter = fighters.get(player);
-        return fighter != null && clock.get() != null && fighter.shield.remaining(clock.get().elapsedNanos()) > 0;
-    }
-
     private void updateShieldDisplay(Player player, Fighter state) {
-        long elapsed = clock.get().elapsedNanos();
-        double points = state.shield.remaining(elapsed);
-        if (points > 0 && (state.shieldShownAt != now() || state.shieldShownPoints != points)) {
-            state.shieldShownAt = now();
+        double points = state.shield.remaining(clock.get().elapsedNanos());
+        UUID id = player.getUniqueId();
+        if (points <= 0) {
+            hud.remove(id, Layer.SHIELD);
+            state.shieldShownPoints = 0;
+        } else if (points != state.shieldShownPoints) {
             state.shieldShownPoints = points;
-            player.sendActionBar(net.kyori.adventure.text.Component.text(resonance.families().revival().name()
+            hud.set(id, Layer.SHIELD, net.kyori.adventure.text.Component.text(resonance.families().revival().name()
                     + " · " + String.format(Locale.ROOT, "%.1f", points / 2) + "하트"));
-        } else if (points <= 0 && state.shieldShownAt != -1) {
-            state.shieldShownAt = -1;
-            player.sendActionBar(net.kyori.adventure.text.Component.empty());
         }
     }
 
@@ -726,11 +745,11 @@ final class PaperOfficialCombat implements Listener {
         if (state.lastBerserkHit < 0) return;
         var rule = rule("berserk_engine");
         long expires = state.lastBerserkHit + rule.duration();
-        int limit = catalog.count("berserk-evolution-seconds");
+        int limit = catalog.count(AugmentEvolution.BERSERK.goal);
         if (previous >= 0 && state.progress.value("berserk_engine") >= rule.cap()) {
             int credited = (int) Math.clamp(Math.min(second, expires) - previous, 0, limit);
-            int past = state.progress.value("berserk_seconds");
-            if (credited > 0 && past < limit && state.progress.add("berserk_seconds", credited, limit) == limit) {
+            int past = state.progress.value(AugmentEvolution.BERSERK.counter);
+            if (credited > 0 && past < limit && state.progress.add(AugmentEvolution.BERSERK.counter, credited, limit) == limit) {
                 evolution(player, state, "berserk_engine");
             }
         }
@@ -886,6 +905,7 @@ final class PaperOfficialCombat implements Listener {
         }
         originalHit = new DamageChain.Root(origin, budget);
         reviewOrigins.put(event, originalHit.id());
+        if (reviewHeavyFist.contains(event)) announceProc(attacker, "heavy_fist");
         if (audit.sampleAvailable()) audit.sample(now(), "root=" + originalHit.id()
                 + " attacker=" + audit.actor(attacker.getUniqueId())
                 + " victim=" + (target instanceof Player ? audit.actor(target.getUniqueId()) : target.getType())
@@ -936,7 +956,7 @@ final class PaperOfficialCombat implements Listener {
         }
         if (owns(attacker, "berserk_engine")) {
             recordTopSpeed(attacker, state, now());
-            boolean upgraded = evolved(state, "berserk_seconds", "berserk-evolution-seconds");
+            boolean upgraded = evolved(state, AugmentEvolution.BERSERK.counter, AugmentEvolution.BERSERK.goal);
             state.progress.add("berserk_engine", 1, upgraded ? catalog.count("berserk-evolved-cap") : rule("berserk_engine").cap());
             state.lastBerserkHit = now();
         }
@@ -1080,6 +1100,7 @@ final class PaperOfficialCombat implements Listener {
         };
         if (!applied) return "안전한 위치 또는 유효한 기록이 없어 발동하지 못했습니다.";
         ready(player, state, id);
+        announceProc(player, id);
         return rule(id).definition().name() + " 발동";
     }
 
@@ -1273,8 +1294,9 @@ final class PaperOfficialCombat implements Listener {
     private void meleeEffects(Player attacker, LivingEntity target, Fighter state, boolean phantom) {
         var allowlist = catalog.config.getStringList("settings.phantom-melee-effects");
         if (owns(attacker, "steel_heart") && (!phantom || allowlist.contains("steel_heart")) && ready(attacker, state, "steel_heart")) {
-            int limit = catalog.count("steel-evolution-stacks"), before = state.progress.value("steel_heart");
+            int limit = catalog.count(AugmentEvolution.STEEL.goal), before = state.progress.value("steel_heart");
             int after = grant(state, "steel_heart", before >= limit ? 2 : 1);
+            if (after > before) announceProc(attacker, "steel_heart");
             if (before < limit && after >= limit) evolution(attacker, state, "steel_heart");
         }
         if (owns(attacker, "predator") && (!phantom || allowlist.contains("predator")) && every(state, "predator") && ready(attacker, state, "predator")) {
@@ -1322,7 +1344,7 @@ final class PaperOfficialCombat implements Listener {
     }
 
     private boolean burnEvolved(Fighter state) {
-        return state.burned >= catalog.setting("burn-evolution-damage");
+        return state.burned >= catalog.setting(AugmentEvolution.BURN.goal);
     }
 
     private void ignite(Fighter state, LivingEntity target, int gain) {
@@ -1344,7 +1366,7 @@ final class PaperOfficialCombat implements Listener {
                 chain.root(() -> {
                     if (syntheticHit(player, target, "infernal_conductor", burn.stacks() * rule("infernal_conductor").amount())
                             && !burnEvolved(state)) {
-                        state.burned = Math.min(state.burned + syntheticFinalDamage, catalog.setting("burn-evolution-damage"));
+                        state.burned = Math.min(state.burned + syntheticFinalDamage, catalog.setting(AugmentEvolution.BURN.goal));
                         if (burnEvolved(state)) evolution(player, state, "infernal_conductor");
                     }
                 });
@@ -1403,8 +1425,8 @@ final class PaperOfficialCombat implements Listener {
         LivingEntity target = opponent(player, primary) ? primary
                 : opponents(player, player.getLocation(), catalog.setting("missile-target-range")).stream().findFirst().orElse(null);
         if (target == null) return;
-        int threshold = catalog.count("missile-evolution-shots");
-        int before = state.progress.value("missile_shots");
+        int threshold = catalog.count(AugmentEvolution.MISSILE.goal);
+        int before = state.progress.value(AugmentEvolution.MISSILE.counter);
         int baseCount = catalog.count(before >= threshold ? "missile-evolved-count" : "missile-count");
         int multiplier = state.barrage ? catalog.synergies.getInt("infinite_barrage.missile-multiplier") : 1;
         int reserved = owns(player, "bomb_alchemy") ? 1 : 0;
@@ -1416,7 +1438,7 @@ final class PaperOfficialCombat implements Listener {
             var missile = new PaperMissiles.Missile(start, target, catalog.count("missile-lifetime-ticks") + i % 5, bounces);
             state.missiles.add(new MissileShot(missile, chain.currentRoot()));
         }
-        if (count > 0 && before < threshold && state.progress.add("missile_shots", count, threshold) == threshold) {
+        if (count > 0 && before < threshold && state.progress.add(AugmentEvolution.MISSILE.counter, count, threshold) == threshold) {
             evolution(player, state, "magic_missile");
         }
     }
@@ -1527,11 +1549,11 @@ final class PaperOfficialCombat implements Listener {
             if (earned > 0) {
                 int past = state.progress.value("tank_engine");
                 int next = grant(state, "tank_engine", earned);
-                int evolution = catalog.count("tank-evolution-stacks");
+                int evolution = catalog.count(AugmentEvolution.TANK.goal);
                 if (past < evolution && next >= evolution) evolution(player, state, "tank_engine");
             }
         }
-        boolean tank = owns(player, "tank_engine") && evolved(state, "tank_engine", "tank-evolution-stacks");
+        boolean tank = owns(player, "tank_engine") && evolved(state, "tank_engine", AugmentEvolution.TANK.goal);
         boolean giant = owns(player, "calamity_giant") && player.isSprinting();
         boolean train = state.train && player.isSprinting();
         if (!tank && !giant && !train) return;
@@ -1584,15 +1606,15 @@ final class PaperOfficialCombat implements Listener {
     private void sword(Player player, Fighter state) {
         var start = player.getEyeLocation();
         var forward = start.getDirection();
-        boolean evolved = evolved(state, "sword_hits", "sword-evolution-hits");
+        boolean evolved = evolved(state, AugmentEvolution.SWORD.counter, AugmentEvolution.SWORD.goal);
         var rays = evolved ? List.of(forward.clone().rotateAroundY(.18).setY(forward.getY() + .18).normalize(),
                 forward.clone().rotateAroundY(-.18).setY(forward.getY() - .18).normalize()) : List.of(forward);
         var hit = new HashSet<UUID>();
         for (var direction : rays) {
             var victim = ray(player, start, direction, catalog.setting("sword-reach"));
             if (victim != null && hit.add(victim.getUniqueId()) && syntheticHit(player, victim, "sword_wind", rule("sword_wind").amount())) {
-                int limit = catalog.count("sword-evolution-hits");
-                if (state.progress.value("sword_hits") < limit && state.progress.add("sword_hits", 1, limit) == limit) {
+                int limit = catalog.count(AugmentEvolution.SWORD.goal);
+                if (state.progress.value(AugmentEvolution.SWORD.counter) < limit && state.progress.add(AugmentEvolution.SWORD.counter, 1, limit) == limit) {
                     evolution(player, state, "sword_wind");
                 }
                 phantom(player, victim, state);
@@ -1663,6 +1685,7 @@ final class PaperOfficialCombat implements Listener {
         });
         if (hit) {
             audit.add(id, Metric.PROC, 1);
+            announceProc(source, id);
             audit.add(id, Metric.DAMAGE, syntheticFinalDamage);
         }
         if (budget != null) {
@@ -1672,6 +1695,12 @@ final class PaperOfficialCombat implements Listener {
             } else budget.refund(victim.getUniqueId(), appliedPoints);
         }
         return hit;
+    }
+
+    private void announceProc(Player player, String id) {
+        var definition = catalog.rules.get(id);
+        String name = definition != null ? definition.definition().name() : catalog.synergies.getString(id + ".name");
+        if (name != null) hud.proc(player, name);
     }
 
     private void announceSynergy(UUID id, String synergy) {
@@ -2013,6 +2042,7 @@ final class PaperOfficialCombat implements Listener {
         });
         if (applied == null) return;
         audit.add(applied, Metric.REVIVED, 1);
+        announceProc(player, applied);
         if (audit.sampleAvailable()) audit.sample(now(), "revive actor=" + audit.actor(id) + " effect=" + applied
                 + " health_after=" + player.getHealth() + " shield_grant=" + shield.shieldPoints());
         event.setCancelled(true);

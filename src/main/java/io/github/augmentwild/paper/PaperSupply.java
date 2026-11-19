@@ -7,7 +7,6 @@ import io.github.augmentwild.domain.Timeline;
 import java.util.*;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
-import net.kyori.adventure.text.Component;
 import org.bukkit.*;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
@@ -365,7 +364,6 @@ final class PaperSupply implements Listener {
         if (opening.containsKey(id)) return;
         stats.count(Counter.OPEN_ATTEMPTS);
         opening.put(id, new Opening(delivery, player.getLocation(), elapsed + settings.openingNanos()));
-        player.sendActionBar(Component.text("보급 개봉 중 · 이동하거나 피격되면 중단됩니다."));
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)

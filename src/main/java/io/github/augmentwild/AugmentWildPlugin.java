@@ -88,6 +88,7 @@ public final class AugmentWildPlugin extends JavaPlugin {
         }
         if (args.length != 1) return false;
         switch (args[0].toLowerCase(Locale.ROOT)) {
+            case "augments" -> sender.sendMessage(sender instanceof Player player ? matches.openCodex(player) : "플레이어 전용 명령입니다.");
             case "augment" -> sender.sendMessage(sender instanceof Player player ? matches.openAugments(player) : "플레이어 전용 명령입니다.");
             case "locate", "track" -> sender.sendMessage(sender instanceof Player player && sender.hasPermission("augmentwild.track")
                     ? matches.locate(player) : "추적 권한이 없습니다.");

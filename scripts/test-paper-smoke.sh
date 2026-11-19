@@ -70,10 +70,14 @@ with log.open("wb") as output:
             wait_for('Enabling AugmentWild', 5)
             command("aw status")
             wait_for('경기 단계 WAITING', 15)
+            command("aw augments")
+            wait_for("플레이어 전용 명령입니다", 15)
             command("aw admin test status")
             if benchmark:
                 wait_for("전투 실험실 설정됨 (fixture_lab_unloaded)", 15)
-                command("aw admin test grant Missing steel_heart")
+                command("aw admin test presets")
+                wait_for("실험 프리셋 [calamity_train, hell_lord, infinite_barrage, life_echo, steel_king, thousand_swords]", 15)
+                command("aw admin test preset Missing steel_king")
                 wait_for("진행 중이며 일시정지 상태가 아닌 테스트 경기에서만", 15)
                 command("aw admin test start")
                 wait_for("참가자가 최소 2명 필요합니다", 15)
@@ -83,6 +87,7 @@ with log.open("wb") as output:
                 wait_for("운영 월드와 다른 기존 테스트 월드를 지정하세요", 15)
             if os.environ.get("AW_BORDER_PROBE") == "1":
                 wait_for("관리자 권한이 없습니다", 15)
+                wait_for("AW_PHASE68_MENU_PASS", 15)
                 wait_for("AW_BORDER_PROBE_PASS", 15)
                 wait_for("AW_AUGMENT_PROBE_PASS", 15)
                 wait_for("AW_RESONANCE_PROBE_PASS", 15)

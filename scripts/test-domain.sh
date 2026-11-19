@@ -20,6 +20,7 @@ java -cp "$tmp" Phase65Checks "$root"
 java -cp "$tmp" Phase66Checks
 java -Xmx256m -cp "$tmp" Phase66DraftStudy "$root"
 java -Xmx256m -cp "$tmp" Phase67Checks "$root"
+java -cp "$tmp" Phase68Checks "$root"
 for scenario in A B C D E F G; do
     java -cp "$tmp" ScenarioChecks "$scenario"
 done
