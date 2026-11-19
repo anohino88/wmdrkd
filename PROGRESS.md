@@ -249,3 +249,12 @@ PHASE 2B의 GitHub Actions #6에서 Java 버전 확인, `./gradlew clean build -
 - Java 25 독립 회귀 PASS. 신규 PHASE 6.3 도메인 단언 126개에 13개 영구 원장, 진화 6종 경계, 고유 시너지 구성, 연쇄 ID 및 진단의 상한·정리를 포함했다. `git diff --check` PASS. 로컬 Gradle은 Paper Maven 403과 Java PKIX로 BLOCKED다.
 - 6가지 선택 전략 × 재추첨 유무, 총 120만 경기의 시뮬레이션과 강철심장 후보 곡선을 비교했다. 실제 Paper의 2·8·16개 테스트 엔티티 부하에서 피해 이벤트 60·240·480건을 관찰했고 임시 엔티티 잔여는 모두 0이었다. 실제 FFA 성능과 증강별 실효과, 실제 GUI·재접속은 NOT_RUN이다. 결과와 재현 절차는 [검증 기록](docs/phase63-validation-ko.md)에 있다.
 - 최종 코드 `411fc16`의 [GitHub Actions](https://github.com/anohino88/wmdrkd/actions/runs/44436414303) PASS. Java 25 빌드, JUnit, 독립 검사, JAR 구성, Paper 26.3 기동·종료, 자기장·보호막·합성 전투 프로브, 경기장 벤치마크가 통과했다. [서버 JAR](https://github.com/anohino88/wmdrkd/actions/runs/44436414303/artifacts/14489227747).
+
+## PHASE 6.4 정보전과 보급 (2026-11-19)
+
+- 기준 `fe86f7b`. 기존 증강 76종과 진화·시너지·공명, 경기 시계·리스폰·자기장을 유지했다. `/aw locate` 및 `/aw track`에 다이아몬드 비용과 방향 전용 추적을 연결했다. 실제 바닐라 망원경 사용과 시야를 조건으로 스냅샷을 만들고 참가자별 읽기 전용 결과를 연다.
+- Bukkit 최종 피격과 공식 전투 엔진의 출처 정보를 사망 분석에 연결했다. 체력 피해와 흡수를 분리하며 기록은 참가자별로 제한한다. 경기 종료 시 원장과 활성 추적·정찰을 정리하고 최종 사망 보고서만 전달 기한까지 남긴다.
+- 경기 시간에서 일반 6~10분과 14~20분, 고급 23~28분에 상자 하나씩을 선택한다. 예고 2분, 좌표 공개 1분, 개봉 3초와 피격·이동 중단, 성공 시 단일 지급을 연결했다. 보상 세트는 장비나 XP를 읽지 않고 등장 시 추첨한다. 관리 종료 시 월드 마커와 청크 티켓을 정리한다.
+- Java 25 독립 검사 PASS. 기존 회귀와 새 도메인 단언 27개를 실행했다. 2·8·16 가상 참가자 대상 최근접 검색 및 상한 기록 합성 검사도 실행했다. 로컬 전체 Gradle은 Paper Maven 403 및 Maven Central PKIX로 BLOCKED. `git diff --check` PASS.
+- `REAL_CLIENT_VERIFIED = NOT_RUN`. 서버 프로브는 아이템 비용·공간, 실제 시야, 상자 마커 생성·정리의 범위를 검증한다. 실제 2·8·16인 플레이의 망원경 GUI, 사망 표시, 동시 개봉, 재접속은 미실행이다. [명령·설정·검증 절차](docs/phase64-intel-supply-ko.md)
+- 최종 코드 `acc5473`의 [GitHub Actions](https://github.com/anohino88/wmdrkd/actions/runs/44458233133) PASS. Java 25 Gradle 전체 빌드·JUnit·JAR 구조 검사, Paper 26.3 기동·종료와 증강·자기장·보호막·정보전 프로브, 경기장 벤치마크가 통과했다. [서버 JAR](https://github.com/anohino88/wmdrkd/actions/runs/44458233133/artifacts/14498053304).

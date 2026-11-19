@@ -205,28 +205,17 @@ D. 경기 타임라인
 10:00
 - 증강 선택 2
 
-13:00
-- 일반 보급 상자 사전 예고
-
-14:00
-- 일반 보급 상자 좌표 공개
-
 15:00
 - 증강 선택 3
-- 일반 보급 상자 2개 등장
 
 20:00
 - 증강 선택 4
 
-23:00
-- 고급 보급 상자 사전 예고
-
-24:00
-- 고급 보급 상자 좌표 공개
-
 25:00
 - 증강 선택 5
-- 고급 보급 상자 2개 등장
+
+보급은 일반 6~10분과 14~20분, 고급 23~28분에서 무작위 초를 정한다.
+각 이벤트는 상자 1개이며 등장 2분 전 예고, 1분 전 좌표를 공개한다.
 
 30:00
 - 증강 선택 6
@@ -807,7 +796,7 @@ alias:
 DIAMOND ×1
 
 기본 쿨타임:
-0
+60초
 
 동작:
 1. 명령 실행자 경기 참가 확인
@@ -837,25 +826,12 @@ DIAMOND ×1
 3D Euclidean distance.
 
 표시:
-- 이름
-- X
-- Y
-- Z
-- 거리
-- 방향
+- actionbar의 8방향
+- 선택적으로 이름 공개, 기본 비공개
+- 위치·Y좌표·거리는 비공개
 
-방향:
-북 / 북동 / 동 / 남동 / 남 / 남서 / 서 / 북서
-
-출력:
-- chat
-- actionbar
-
-좌표는 1회 snapshot.
-
-지속 tracker 아님.
-
-대상이 이동해도 갱신하지 않음.
+성공 후 경기 시간 10초간 방향을 갱신한다.
+대상이 사망·탈락·오프라인이 되거나 현재 안전 구역을 벗어나면 종료한다.
 
 유효 대상 없음:
 비용 차감 금지.
@@ -867,29 +843,12 @@ UUID stable ordering으로 deterministic tie-break.
 U. 보급 상자
 ==================================================
 
-일반:
-15분
-2개
+일반은 6~10분, 14~20분에 각각 상자 1개.
+고급은 23~28분에 상자 1개.
 
-고급:
-25분
-2개
-
-일반 보급:
-- 철 장비
-- 금 장비
-- 화살
-- 경험치
-- 황금 사과
-- reroll token
-
-고급:
-- diamond gear
-- enchanted books
-- potions
-- golden apples
-- special consumables
-- reroll token
+일반 보급은 전투 장비, 화살, 황금사과, 물약 및 경험치 병을 포함한다.
+고급 보급은 희귀·인챈트 장비, 인챈트 책과 강한 소비품을 포함한다.
+등장 시에만 보상 세트를 추첨하며 장비와 경험치 레벨은 추첨에 사용하지 않는다.
 
 기본:
 2분 전 예고
@@ -905,7 +864,7 @@ U. 보급 상자
 동시 open race:
 상자 claim을 atomic하게 처리.
 
-첫 성공 opener만 획득.
+유효 거리에서 3초 개봉을 먼저 완료한 참가자만 획득한다. 이동 및 피격 시 개봉을 중단한다.
 
 두 명이 같은 tick에 열어도
 보상 duplication 금지.
@@ -2205,36 +2164,21 @@ augments:
     minimum-cooldown-seconds: 1
 
 tracker:
-  enabled: true
-  material: DIAMOND
   amount: 1
-  cooldown-seconds: 0
   maximum-distance: -1
-  allowed:
-    gathering: true
-    pvp: true
-    sudden-death: true
-  display:
-    name: true
-    coordinates: true
-    y: true
-    distance: true
-    direction: true
-    chat: true
-    actionbar: true
+  duration-seconds: 10
+  cooldown-seconds: 60
+  update-seconds: 1
+  reveal-name: false
 
 supply:
-  normal:
-    time-seconds: 900
-    count: 2
-    announcement-seconds-before: 120
-    coordinate-seconds-before: 60
-
-  premium:
-    time-seconds: 1500
-    count: 2
-    announcement-seconds-before: 120
-    coordinate-seconds-before: 60
+  windows:
+    first-normal: {min-seconds: 360, max-seconds: 600}
+    second-normal: {min-seconds: 840, max-seconds: 1200}
+    premium: {min-seconds: 1380, max-seconds: 1680}
+  announce-seconds: 120
+  coordinates-seconds: 60
+  opening-seconds: 3
 
 performance:
   max-active-custom-projectiles-per-player: 40
@@ -2413,31 +2357,10 @@ parse -> validate -> save temp -> atomic replace
 AT. 보급 Loot schema
 ==================================================
 
-loot.yml:
-
-schema-version: 1
-
-normal:
-  rolls: 4
-  entries:
-    - id: arrows
-      material: ARROW
-      weight: 20
-      min: 8
-      max: 24
-
-premium:
-  rolls: 5
-  entries:
-    ...
-
-weighted random utility reusable.
-
-잘못된 Material:
-startup warning + 해당 entry disable.
-
-전체 loot table invalid:
-기능 비활성화 후 관리자에게 경고.
+현재 보급 보상은 config.yml의 supply.rewards.normal과 supply.rewards.premium에 있다.
+각 항목은 등확률로 한 번 추첨하는 완성 보상 세트다.
+MATERIAL*수량, POTION:종류, MATERIAL:마법부여:레벨, BOOK:마법부여:레벨 형식을 지원한다.
+설정은 활성화 시 검증한다. 자세한 설정과 운영 방법은 phase64-intel-supply-ko.md를 참고한다.
 
 ==================================================
 AU. UI
