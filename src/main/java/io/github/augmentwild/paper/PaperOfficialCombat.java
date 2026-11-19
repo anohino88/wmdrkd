@@ -10,6 +10,9 @@ import io.github.augmentwild.augment.SynergyDraftWeights;
 import io.github.augmentwild.augment.AugmentRegistry;
 import io.github.augmentwild.augment.DamageChain;
 import io.github.augmentwild.augment.CombatAudit;
+import io.github.augmentwild.augment.CombatReaction;
+import io.github.augmentwild.augment.ReactionRules;
+import io.github.augmentwild.augment.CombatReaction.Action;
 import io.github.augmentwild.augment.CombatAudit.Metric;
 import io.github.augmentwild.augment.LinkedDamageBudget;
 import io.github.augmentwild.augment.NaturalOreTracker;
@@ -106,9 +109,13 @@ final class PaperOfficialCombat implements Listener {
     private record MissileShot(PaperMissiles.Missile missile, DamageChain.Root root) { }
 
     private static final class Fighter {
-        final Map<String, Reaction> reactions = new HashMap<>();
+        final Map<String, CombatReaction> reactions = new HashMap<>();
         final List<Pending> pending = new ArrayList<>();
         String skill;
+        boolean skillCooling;
+        long hudSecond = -1, bastionVisualSecond = -1;
+        boolean hudAvailable;
+        final Map<String, Long> lastVisual = new HashMap<>();
         final AugmentProgress progress = new AugmentProgress();
         final ResonanceShield shield = new ResonanceShield();
         final Set<String> lateChecked = new HashSet<>();
@@ -432,6 +439,7 @@ final class PaperOfficialCombat implements Listener {
             removeBomb(state);
             state.shield.clear();
             hud.remove(id, Layer.SHIELD);
+            hud.remove(id, Layer.SKILL);
         }
         erosion.remove(id);
     }
@@ -461,6 +469,7 @@ final class PaperOfficialCombat implements Listener {
                     + " over=" + budgetOver + " limited=" + budgetReduced + " hits=" + budgetHits
                     + " requestedPoints=" + budgetRaw + " healthDamagePoints=" + budgetFinal);
         }
+        wardSpent.clear();
         shieldSpends.clear();
         reviewOrigins.clear();
         reviewShields.clear();
@@ -509,9 +518,9 @@ final class PaperOfficialCombat implements Listener {
             lines.add("재사용 대기 " + labCooldown(id, augment) + "초");
             var r = state.reactions.get(augment);
             if (r != null) {
-                if (augment.equals("ore_ward")) lines.add("방벽 충전 " + r.charges + "/" + cap);
+                if (augment.equals("ore_ward")) lines.add("방벽 충전 " + r.charges() + "/" + cap);
                 if (r.charged(millis())) lines.add("충전 활성");
-                if (millis() < r.readyAt) lines.add("반응 대기 " + (r.readyAt - millis() + 999) / 1000 + "초");
+                if (r.remaining(millis()) > 0) lines.add("반응 대기 " + (r.remaining(millis()) + 999) / 1000 + "초");
             }
             if (follow(augment)) {
                 lines.add(catalog.config.getString("followups." + augment + ".description", ""));
@@ -695,12 +704,8 @@ final class PaperOfficialCombat implements Listener {
 
     private void clearReactions(Player player, Fighter state) {
         state.pending.clear();
-        for (var r : state.reactions.values()) {
-            r.chargedUntil = 0;
-            r.charges = 0;
-            Arrays.fill(r.actions, -1);
-            r.windows.clear();
-        }
+        state.hudSecond = -1;
+        state.reactions.values().forEach(CombatReaction::clearTransient);
         state.progress.reset("hits:ore_ward");
         deferred.removeIf(task -> task.player().equals(player));
     }
@@ -708,8 +713,7 @@ final class PaperOfficialCombat implements Listener {
     void sync(Player player) {
         Fighter state = fighters.get(player.getUniqueId());
         if (state == null) return;
-        if (state.skill != null) hud.set(player.getUniqueId(), Layer.SKILL,
-                net.kyori.adventure.text.Component.text(skillStatus(player, state)));
+        updateSkillHud(player, state);
         if (!active.test(player)) {
             clearReactions(player, state);
             state.shield.clear();
@@ -982,7 +986,7 @@ final class PaperOfficialCombat implements Listener {
             state.frenzyAt = now();
             int cap = rule("frenzy_rhythm").cap();
             int before = state.progress.value("frenzy_rhythm");
-            if (state.progress.add("frenzy_rhythm", 1, cap) == cap && before < cap && followReady(state, "frenzy_rhythm")) {
+            if (ReactionRules.reachedMaximum(before, state.progress.add("frenzy_rhythm", 1, cap), cap) && followReady(state, "frenzy_rhythm")) {
                 speed(attacker, "frenzy_rhythm");
                 visual(attacker, state, "frenzy_rhythm", attacker.getLocation(), Particle.CLOUD, Sound.BLOCK_AMETHYST_BLOCK_CHIME);
                 announceProc(attacker, "frenzy_rhythm");
@@ -995,7 +999,7 @@ final class PaperOfficialCombat implements Listener {
         }
         if (owns(attacker, "time_thief") && ready(attacker, state, "time_thief")) stealTime(attacker, target);
         if (owns(attacker, "blood_trace")) {
-            if (target.getUniqueId().equals(state.traceTarget) && state.traceUntil > now()) {
+            if (ReactionRules.marked(target.getUniqueId(), state.traceTarget, now(), state.traceUntil)) {
                 if (followReady(state, "blood_trace")) later(state, "blood_trace", interval("blood_trace", "delay"),
                         () -> afterRecovery(attacker, target, () -> followHit(attacker, target, state, "blood_trace")));
                 state.traceTarget = null;
@@ -1123,21 +1127,6 @@ final class PaperOfficialCombat implements Listener {
     private static final Set<String> ACTIVE_SKILLS = Set.of("shadow_dash", "earthquake_mage", "time_rewind",
             "void_lord", "bomb_alchemy", "duel_contract", "calamity_giant");
 
-    private static final class Reaction {
-        final Map<UUID, io.github.augmentwild.augment.ReactionWindow> windows = new HashMap<>();
-        final long[] actions = {-1, -1, -1};
-        long chargedUntil, readyAt;
-        int charges;
-        boolean charged(long time) { return time < chargedUntil; }
-        boolean accumulate(UUID key, long time, long interval, double amount, double threshold) {
-            windows.values().removeIf(window -> window.expired(time, interval));
-            var window = windows.computeIfAbsent(key, ignored -> new io.github.augmentwild.augment.ReactionWindow());
-            if (window.add(time, interval, amount) < threshold) return false;
-            windows.remove(key);
-            return true;
-        }
-    }
-
     private record Pending(String id, long due, DamageChain.Root origin, Runnable action) {}
     private long millis() { return clock.get().elapsedNanos() / 1_000_000L; }
     private double option(String id, String key) {
@@ -1148,17 +1137,16 @@ final class PaperOfficialCombat implements Listener {
     }
     private boolean follow(String id) { return catalog.config.getBoolean("followups." + id + ".enabled"); }
     private long interval(String id, String key) { return Math.round(option(id, key) * 1000); }
-    private Reaction reaction(Fighter state, String id) {
-        return state.reactions.computeIfAbsent(id, ignored -> new Reaction());
+    private CombatReaction reaction(Fighter state, String id) {
+        return state.reactions.computeIfAbsent(id, ignored -> new CombatReaction());
     }
     private void visual(Player player, Fighter state, String id, Location at, Particle kind, Sound sound) {
         if (catalog.config.getBoolean(path(id) + "particles")) particle(player, state, kind, at);
         if (catalog.config.getBoolean(path(id) + "sound")) at.getWorld().playSound(at, sound, .45f, 1.2f);
     }
     private void charge(Player player, Fighter state, String id) {
-        Reaction r = reaction(state, id);
-        r.chargedUntil = millis() + interval(id, "duration");
-        r.readyAt = millis() + interval(id, "cooldown");
+        CombatReaction r = reaction(state, id);
+        r.charge(millis(), interval(id, "duration"), interval(id, "cooldown"));
         hud.proc(player, rule(id).definition().name() + " 충전 완료");
         visual(player, state, id, player.getLocation().add(0, 1, 0), Particle.CRIT, Sound.BLOCK_AMETHYST_BLOCK_CHIME);
     }
@@ -1174,7 +1162,8 @@ final class PaperOfficialCombat implements Listener {
             if (owns(player, task.id())) chain.root(task.origin(), task.action());
         }
         var bastion = state.reactions.get("last_bastion");
-        if (bastion != null && bastion.charged(millis()) && state.lastSecond != now()) {
+        if (bastion != null && bastion.charged(millis()) && state.bastionVisualSecond != now()) {
+            state.bastionVisualSecond = now();
             if (catalog.config.getBoolean("augments.last_bastion.particles"))
                 particle(player, state, Particle.END_ROD, player.getLocation().add(0, 1, 0));
         }
@@ -1183,15 +1172,12 @@ final class PaperOfficialCombat implements Listener {
         var vector = victim.getLocation().toVector().subtract(source.getLocation().toVector()).setY(0);
         if (vector.lengthSquared() > 0) victim.setVelocity(vector.normalize().multiply(strength).setY(.2));
     }
-    private void triad(Player p, Fighter s, int type) {
+    private void triad(Player p, Fighter s, Action type) {
         String id = "triad_reactor";
         if (!owns(p, id)) return;
-        Reaction r = reaction(s, id);
+        CombatReaction r = reaction(s, id);
         long time = millis();
-        if (time < r.readyAt || r.charged(time)) return;
-        r.actions[type] = time;
-        for (long at : r.actions) if (at < 0 || time - at > interval(id, "window")) return;
-        Arrays.fill(r.actions, -1);
+        if (!r.action(type, time, interval(id, "window"))) return;
         charge(p, s, id);
     }
 
@@ -1203,9 +1189,9 @@ final class PaperOfficialCombat implements Listener {
         UUID target = victim.getUniqueId();
         double points = Math.min(event.getFinalDamage(), victim.getHealth());
         for (String id : List.of("kinetic_reversal", "afterimage_stride", "sword_wind", "reflex", "triad_reactor")) {
-            Reaction r = s.reactions.get(id);
+            CombatReaction r = s.reactions.get(id);
             if (r == null || !r.charged(t) || !melee && !id.equals("triad_reactor")) continue;
-            r.chargedUntil = 0;
+            r.spend(t);
             switch (id) {
                 case "kinetic_reversal" -> push(p, victim, option(id, "push"));
                 case "afterimage_stride" -> speed(p, id);
@@ -1220,7 +1206,7 @@ final class PaperOfficialCombat implements Listener {
                 default -> { }
             }
         }
-        triad(p, s, melee ? 0 : 1);
+        triad(p, s, melee ? Action.MELEE : Action.PROJECTILE);
         if (melee && s.counterReady && follow("counter_shield")) {
             push(p, victim, option("counter_shield", "push"));
             visual(p, s, "counter_shield", victim.getLocation(), Particle.CRIT, Sound.ITEM_SHIELD_BLOCK);
@@ -1233,7 +1219,7 @@ final class PaperOfficialCombat implements Listener {
                     .min(Comparator.comparingDouble(other -> other.getLocation().distanceSquared(center)));
             if (next.isPresent() && ready(p, s, arrow)) {
                 later(s, arrow, 0, () -> {
-                    if (syntheticHit(p, next.get(), arrow, Math.min(rule(arrow).cap(), points * rule(arrow).amount())))
+                    if (syntheticHit(p, next.get(), arrow, ReactionRules.ricochet(points, rule(arrow).amount(), rule(arrow).cap())))
                         visual(p, s, arrow, next.get().getLocation(), Particle.CRIT, Sound.ENTITY_ARROW_HIT);
                 });
             }
@@ -1254,6 +1240,13 @@ final class PaperOfficialCombat implements Listener {
                 }));
             } else {
                 visual(p, s, id, center, Particle.FLAME, Sound.ENTITY_TNT_PRIMED);
+                if (catalog.config.getBoolean(path(id) + "particles")) {
+                    for (int i = 0; i < 12; i++) {
+                        double angle = i * Math.PI / 6;
+                        double radius = option(id, "radius");
+                        particle(p, s, Particle.FLAME, center.clone().add(radius * Math.cos(angle), .1, radius * Math.sin(angle)));
+                    }
+                }
                 later(s, id, interval(id, "duration"), () -> {
                     visual(p, s, id, center, Particle.EXPLOSION, Sound.ENTITY_GENERIC_EXPLODE);
                     area(p, center, option(id, "radius"), id, rule(id).amount(), other -> {});
@@ -1283,15 +1276,41 @@ final class PaperOfficialCombat implements Listener {
             String id = args[2].toLowerCase(Locale.ROOT);
             if (!ACTIVE_SKILLS.contains(id) || !owns(player, id)) return "보유한 발동형 증강을 지정하세요.";
             state.skill = id;
+            state.skillCooling = false;
+            state.hudSecond = -1;
             return skillStatus(player, state);
         }
         if (args.length != 2) return "/aw skill bind <id> | unbind | use | status";
         return switch (op) {
-            case "unbind" -> { state.skill = null; hud.remove(player.getUniqueId(), Layer.SKILL); yield "스킬 지정 해제"; }
+            case "unbind" -> { state.skill = null; state.hudSecond = -1; hud.remove(player.getUniqueId(), Layer.SKILL); yield "스킬 지정 해제"; }
             case "use" -> state.skill == null ? "지정한 스킬 없음" : cast(player, state.skill);
             case "status" -> skillStatus(player, state);
             default -> "/aw skill bind <id> | unbind | use | status";
         };
+    }
+
+    private void updateSkillHud(Player player, Fighter state) {
+        boolean available = valid(player);
+        if (state.hudSecond == now() && state.hudAvailable == available) return;
+        state.hudAvailable = available;
+        state.hudSecond = now();
+        var lines = new ArrayList<String>();
+        if (state.skill != null) {
+            lines.add(skillStatus(player, state));
+            boolean cooling = !state.progress.ready(state.skill, now());
+            if (state.skillCooling && !cooling) hud.proc(player, rule(state.skill).definition().name() + " 준비 완료");
+            state.skillCooling = cooling;
+        }
+        if (active.test(player)) {
+            for (var entry : state.reactions.entrySet()) {
+                var r = entry.getValue();
+                if (r.charged(millis())) lines.add(rule(entry.getKey()).definition().name() + " 충전");
+                if (entry.getKey().equals("ore_ward")) lines.add("광맥 방벽 " + r.charges() + "/" + rule("ore_ward").cap()
+                        + " · 광석 " + state.progress.value("hits:ore_ward") + "/" + rule("ore_ward").threshold());
+            }
+        }
+        if (lines.isEmpty()) hud.remove(player.getUniqueId(), Layer.SKILL);
+        else hud.set(player.getUniqueId(), Layer.SKILL, net.kyori.adventure.text.Component.text(String.join(" · ", lines)));
     }
 
     private String skillStatus(Player player, Fighter state) {
@@ -1361,6 +1380,7 @@ final class PaperOfficialCombat implements Listener {
         };
         if (!applied) return "안전한 위치 또는 유효한 기록이 없어 발동하지 못했습니다.";
         ready(player, state, id);
+        state.hudSecond = -1;
         announceProc(player, id);
         return rule(id).definition().name() + " 발동";
     }
@@ -1562,12 +1582,12 @@ final class PaperOfficialCombat implements Listener {
         }
         if (owns(attacker, "predator") && (!phantom || allowlist.contains("predator")) && every(state, "predator") && ready(attacker, state, "predator")) {
             double healed = attacker.getHealth() + rule("predator").amount();
-            double overflow = healed - maxHealth(attacker);
+            double extra = ReactionRules.overheal(attacker.getHealth(), maxHealth(attacker), rule("predator").amount(),
+                    option("predator", "ratio"), option("predator", "cap"));
             attacker.setHealth(Math.min(maxHealth(attacker), healed));
-            if (follow("predator") && overflow > 0 && attacker.getAbsorptionAmount() == 0
+            if (follow("predator") && extra > 0 && attacker.getAbsorptionAmount() == 0
                     && !attacker.hasPotionEffect(PotionEffectType.ABSORPTION)) {
-                double extra = Math.min(option("predator", "cap"), overflow * option("predator", "ratio"));
-                if (extra > 0 && attacker.addPotionEffect(new PotionEffect(PotionEffectType.ABSORPTION,
+                if (attacker.addPotionEffect(new PotionEffect(PotionEffectType.ABSORPTION,
                         (int) (option("predator", "duration") * 20), (int) Math.ceil(extra / 4) - 1))) {
                     attacker.setAbsorptionAmount(extra);
                     visual(attacker, state, "predator", attacker.getLocation(), Particle.HEART, Sound.BLOCK_AMETHYST_BLOCK_CHIME);
@@ -1751,14 +1771,18 @@ final class PaperOfficialCombat implements Listener {
     }
 
     private void particle(Player player, Fighter state, Particle kind, Location location) {
+        if (particleAvailable(state)) location.getWorld().spawnParticle(kind, location, 1);
+    }
+
+    private boolean particleAvailable(Fighter state) {
         long second = System.nanoTime() / 1_000_000_000L;
         if (state.particleSecond != second) {
             state.particleSecond = second;
             state.particles = 0;
         }
-        if (state.particles >= catalog.count("particles-per-second")) return;
+        if (state.particles >= catalog.count("particles-per-second")) return false;
         state.particles++;
-        location.getWorld().spawnParticle(kind, location, 1);
+        return true;
     }
 
     private void afterDamage(Player source, Runnable action) {
@@ -1824,8 +1848,8 @@ final class PaperOfficialCombat implements Listener {
         if (step == 0 || !countedMovement.add(event)) return;
         String stride = "afterimage_stride";
         if (owns(player, stride)) {
-            Reaction r = reaction(state, stride);
-            if (millis() >= r.readyAt && !r.charged(millis()) && r.accumulate(player.getUniqueId(), millis(),
+            CombatReaction r = reaction(state, stride);
+            if (r.ready(millis()) && r.accumulate(player.getUniqueId(), millis(),
                     interval(stride, "window"), step, rule(stride).threshold())) charge(player, state, stride);
         }
         if (owns(player, "storm_chaser")) state.stormDistance = Math.min(rule("storm_chaser").threshold(), state.stormDistance + step);
@@ -1976,7 +2000,7 @@ final class PaperOfficialCombat implements Listener {
             }
         });
         if (hit) {
-            if (!id.equals("triad_reactor")) triad(source, state, 2);
+            if (!id.equals("triad_reactor")) triad(source, state, Action.REACTION);
             audit.add(id, Metric.PROC, 1);
             announceProc(source, id);
             audit.add(id, Metric.DAMAGE, syntheticFinalDamage);
@@ -1994,6 +2018,31 @@ final class PaperOfficialCombat implements Listener {
         var definition = catalog.rules.get(id);
         String name = definition != null ? definition.definition().name() : catalog.synergies.getString(id + ".name");
         if (name != null) hud.proc(player, name);
+        var state = fighters.get(player.getUniqueId());
+        if (state == null) return;
+        String synergy = switch (id) {
+            case "magic_missile" -> state.barrage ? "infinite_barrage" : null;
+            case "center_of_universe", "infernal_conductor" -> state.hellLord ? "hell_lord" : null;
+            default -> AugmentCombinations.UNIQUE.containsKey(id) ? id : null;
+        };
+        if (synergy != null) synergyVisual(player, state, synergy);
+    }
+
+    private void synergyVisual(Player player, Fighter state, String synergy) {
+        long time = millis();
+        if (time - state.lastVisual.getOrDefault(synergy, -1000L) < 1000) return;
+        state.lastVisual.put(synergy, time);
+        int color = catalog.synergies.getInt(synergy + ".color");
+        Location center = player.getLocation().add(0, 1, 0);
+        if (catalog.synergies.getBoolean(synergy + ".particles")) {
+            var dust = new Particle.DustOptions(org.bukkit.Color.fromRGB(color), 1);
+            for (int i = 0; i < 8 && particleAvailable(state); i++) {
+                double angle = i * Math.PI / 4;
+                center.getWorld().spawnParticle(Particle.DUST, center.clone().add(Math.cos(angle), 0, Math.sin(angle)), 1, dust);
+            }
+        }
+        if (catalog.synergies.getBoolean(synergy + ".sound"))
+            player.playSound(center, catalog.synergies.getString(synergy + ".sound-key"), .55f, 1.2f);
     }
 
     private void announceSynergy(UUID id, String synergy) {
@@ -2001,13 +2050,11 @@ final class PaperOfficialCombat implements Listener {
         telemetry.synergy(id, synergy);
         Player player = plugin.getServer().getPlayer(id);
         if (player == null) return;
+        synergyVisual(player, fighter(id), synergy);
         String message = "시너지 활성화 · " + catalog.synergies.getString(synergy + ".name", synergy);
         if (catalog.synergies.getBoolean("announcements.broadcast")) {
             plugin.getServer().broadcast(net.kyori.adventure.text.Component.text(player.getName() + " · " + message));
-            if (catalog.synergies.getBoolean(synergy + ".sound")) {
-                player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, .6f, 1.3f);
-            }
-        } else announce(id, message, catalog.synergies.getBoolean(synergy + ".sound"));
+        } else hud.proc(player, message);
     }
 
     private void evolution(Player player, Fighter state, String id) {
@@ -2133,9 +2180,9 @@ final class PaperOfficialCombat implements Listener {
         if (owns(player, "ore_ward")) {
             var s = fighter(player.getUniqueId());
             var ward = reaction(s, "ore_ward");
-            if (ward.charges < rule("ore_ward").cap() && every(s, "ore_ward")) {
-                ward.charges++;
-                hud.proc(player, "광맥 방벽 · " + ward.charges);
+            if (ward.charges() < rule("ore_ward").cap() && every(s, "ore_ward")) {
+                ward.store(rule("ore_ward").cap());
+                hud.proc(player, "광맥 방벽 · " + ward.charges());
             }
         }
         for (String id : List.of("mineral_addiction", "mineral_devourer", "vein_overload")) {
@@ -2186,14 +2233,36 @@ final class PaperOfficialCombat implements Listener {
                 && event.getDamageSource().getDamageType() != DamageType.OUT_OF_WORLD) {
             var state = fighters.get(player.getUniqueId());
             if (state != null && !shieldSpends.containsKey(event)) {
+                defendReactions(event, player, state);
                 var spent = PaperResonanceShield.protect(event, state.shield, clock.get().elapsedNanos());
-                if (spent != null) shieldSpends.put(event, spent);
+                if (spent != null) {
+                    shieldSpends.put(event, spent);
+                    wardSpent.computeIfPresent(event, (ignored, base) -> spent.protectedBase());
+                }
             }
         }
         revive(event);
     }
 
-    private final Set<EntityDamageEvent> wardSpent = Collections.newSetFromMap(new WeakHashMap<>());
+    private final Map<EntityDamageEvent, Double> wardSpent = new WeakHashMap<>();
+
+    private void defendReactions(EntityDamageEvent event, Player player, Fighter state) {
+        if (event instanceof EntityDamageByEntityEvent hit && event.getFinalDamage() > 0) {
+            Player source = attacker(hit);
+            boolean enemy = source != null && valid(source) && opponent(source, player)
+                    || hit.getDamageSource().getCausingEntity() instanceof Enemy mob && arena.test(mob.getLocation());
+            if (enemy) {
+                var bastion = state.reactions.get("last_bastion");
+                if (bastion != null && bastion.charged(millis()))
+                    PaperResonanceShield.reduce(event, event.getFinalDamage() * rule("last_bastion").amount());
+                var ward = state.reactions.get("ore_ward");
+                if (ward != null && ward.charges() > 0 && ward.ready(millis()) && event.getFinalDamage() > 0) {
+                    var reduced = PaperResonanceShield.reduce(event, rule("ore_ward").amount());
+                    if (reduced != null) wardSpent.put(event, reduced.protectedBase());
+                }
+            }
+        }
+    }
 
     private void evadeOrResist(EntityDamageEvent event) {
         if (!(event.getEntity() instanceof Player player) || !valid(player) || event.getFinalDamage() <= 0) return;
@@ -2210,7 +2279,7 @@ final class PaperOfficialCombat implements Listener {
                 if ((target != null && teleport.test(player, target)) || catalog.config.getBoolean("settings.reflex-fallback-dodge")) {
                     ready(player, state, "reflex");
                     if (follow("reflex")) charge(player, state, "reflex");
-                    triad(player, state, 2);
+                    triad(player, state, Action.REACTION);
                     event.setCancelled(true);
                     return;
                 }
@@ -2218,20 +2287,6 @@ final class PaperOfficialCombat implements Listener {
             if (threat && owns(player, "mad_scientist") && small(state, now()) && random.nextDouble() < catalog.setting("mad-small-dodge-chance")) {
                 event.setCancelled(true);
                 return;
-            }
-        }
-        if (event instanceof EntityDamageByEntityEvent hit && event.getFinalDamage() > 0) {
-            Player source = attacker(hit);
-            boolean enemy = source != null && valid(source) && opponent(source, player)
-                    || hit.getDamager() instanceof Enemy && arena.test(hit.getDamager().getLocation());
-            if (enemy) {
-                var bastion = state.reactions.get("last_bastion");
-                if (bastion != null && bastion.charged(millis()))
-                    PaperResonanceShield.reduce(event, event.getFinalDamage() * rule("last_bastion").amount());
-                var ward = state.reactions.get("ore_ward");
-                if (ward != null && ward.charges > 0 && millis() >= ward.readyAt && event.getFinalDamage() > 0) {
-                    if (PaperResonanceShield.reduce(event, rule("ore_ward").amount()) != null) wardSpent.add(event);
-                }
             }
         }
         if (state.duelTarget != null && state.duelUntil > now()) {
@@ -2272,13 +2327,13 @@ final class PaperOfficialCombat implements Listener {
                     + " reserved=" + spent.reserved() + " absorbed=" + confirmed);
             updateShieldDisplay(player, state);
         }
-        if (wardSpent.remove(event)) {
+        Double wardBase = wardSpent.remove(event);
+        if (wardBase != null && event.getDamage() == wardBase) {
             var ward = reaction(state, "ore_ward");
-            ward.charges--;
-            ward.readyAt = millis() + interval("ore_ward", "cooldown");
+            ward.spendWard(millis(), interval("ore_ward", "cooldown"));
             visual(player, state, "ore_ward", player.getLocation(), Particle.CRIT, Sound.ITEM_SHIELD_BLOCK);
-            hud.proc(player, "광맥 방벽 · 잔여 " + ward.charges);
-            triad(player, state, 2);
+            hud.proc(player, "광맥 방벽 · 잔여 " + ward.charges());
+            triad(player, state, Action.REACTION);
         }
         if (!synthetic() && event instanceof EntityDamageByEntityEvent hit && event.getFinalDamage() > 0) {
             Player source = attacker(hit);
@@ -2287,9 +2342,9 @@ final class PaperOfficialCombat implements Listener {
                     && (melee || event.getCause() == EntityDamageEvent.DamageCause.PROJECTILE)) {
                 String id = "kinetic_reversal";
                 if (melee && owns(player, id) && Math.min(player.getHealth(), event.getFinalDamage()) >= rule(id).threshold()
-                        && reaction(state, id).readyAt <= millis() && !reaction(state, id).charged(millis())) charge(player, state, id);
+                        && reaction(state, id).ready(millis())) charge(player, state, id);
                 String fort = "last_bastion";
-                if (owns(player, fort) && reaction(state, fort).readyAt <= millis()
+                if (owns(player, fort) && reaction(state, fort).ready(millis())
                         && reaction(state, fort).accumulate(player.getUniqueId(), millis(), interval(fort, "window"), 1, rule(fort).threshold())) {
                     charge(player, state, fort);
                     later(state, fort, interval(fort, "duration"), () -> {
@@ -2303,7 +2358,7 @@ final class PaperOfficialCombat implements Listener {
         if (owns(player, "counter_shield") && event.isApplicable(EntityDamageEvent.DamageModifier.BLOCKING)
                 && event.getDamage(EntityDamageEvent.DamageModifier.BLOCKING) < 0 && ready(player, state, "counter_shield")) {
             state.counterReady = true;
-            triad(player, state, 2);
+            triad(player, state, Action.REACTION);
             afterDamage(player, () -> player.setHealth(Math.min(maxHealth(player), player.getHealth() + catalog.setting("shield-heal"))));
         }
         if (event.getFinalDamage() <= 0) return;

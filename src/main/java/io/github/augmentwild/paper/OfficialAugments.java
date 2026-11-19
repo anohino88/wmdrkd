@@ -70,6 +70,7 @@ final class OfficialAugments {
             rules.put(id, new Rule(definition, group, threshold, cap));
             registry.register(definition);
         }
+        validateReactions();
         if (rules.size() != 72 || rules.values().stream().filter(r -> r.group().equals("CORE")).count() != 30
                 || !rules.keySet().containsAll(BOUND_EFFECTS)) throw new IllegalArgumentException("Official catalog incomplete");
         if (count("missile-active-cap") > 40 || count("particles-per-second") > 150
@@ -127,6 +128,44 @@ final class OfficialAugments {
                 || setting("gigantification-damage") <= 0 || count("berserk-evolved-cap") < rule("berserk_engine").cap()
                 || synergies.getDouble("steel_king.minimum-health") <= 0 || synergies.getDouble("steel_king.radius") <= 0
                 || synergies.getDouble("steel_king.damage") <= 0) throw new IllegalArgumentException("Invalid official settings");
+    }
+
+    private void validateReactions() {
+        for (String id : Set.of("kinetic_reversal", "ore_ward", "afterimage_stride", "ricochet_arrow",
+                "frost_bind", "delayed_blast", "triad_reactor", "last_bastion")) {
+            var rule = rule(id);
+            if (rule.cooldown() <= 0 || rule.cooldown() > 3600 || rule.duration() > 300)
+                throw new IllegalArgumentException("Invalid reaction timing: " + id);
+            var section = Objects.requireNonNull(config.getConfigurationSection("augments." + id));
+            for (var key : section.getKeys(false)) {
+                if (!Set.of("window", "speed-ticks", "radius", "push", "splash", "pulse").contains(key)) continue;
+                positive(section, key, key.equals("radius") ? 32 : 1200);
+            }
+            if (Set.of("ore_ward", "ricochet_arrow").contains(id) && rule.cap() <= 0
+                    || !Set.of("ricochet_arrow", "triad_reactor").contains(id) && rule.threshold() < 1
+                    || !Set.of("ore_ward", "ricochet_arrow").contains(id) && rule.duration() < 1
+                    || id.equals("last_bastion") && rule.amount() > 1)
+                throw new IllegalArgumentException("Invalid reaction threshold or cap: " + id);
+        }
+        var followups = Objects.requireNonNull(config.getConfigurationSection("followups"));
+        for (String id : followups.getKeys(false)) {
+            var section = Objects.requireNonNull(followups.getConfigurationSection(id));
+            for (String key : section.getKeys(false)) {
+                if (!Set.of("enabled", "sound", "particles", "description").contains(key))
+                    positive(section, key, key.equals("radius") ? 32 : 1200);
+            }
+        }
+        for (String id : io.github.augmentwild.augment.AugmentCombinations.UNIQUE.keySet()) {
+            int color = synergies.getInt(id + ".color", -1);
+            if (color < 0 || color > 0xffffff || synergies.getString(id + ".sound-key", "").isBlank())
+                throw new IllegalArgumentException("Invalid synergy appearance: " + id);
+        }
+    }
+
+    private static void positive(org.bukkit.configuration.ConfigurationSection section, String key, double max) {
+        double value = section.getDouble(key);
+        if (!Double.isFinite(value) || value <= 0 || value > max)
+            throw new IllegalArgumentException("Invalid reaction setting " + section.getCurrentPath() + "." + key);
     }
 
     Rule rule(String id) { return Objects.requireNonNull(rules.get(id), id); }

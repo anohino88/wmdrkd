@@ -1,4 +1,6 @@
 steel_king:
+  color: 12308183
+  sound-key: minecraft:block.anvil.land
   name: 강철의 왕
   enabled: true
   minimum-health: 60.0
@@ -7,6 +9,8 @@ steel_king:
   sound: true
   particles: true
 infinite_barrage:
+  color: 12811007
+  sound-key: minecraft:block.amethyst_block.chime
   name: 무한 포격
   enabled: true
   missile-multiplier: 2
@@ -15,6 +19,8 @@ infinite_barrage:
   sound: true
   particles: true
 calamity_train:
+  color: 16754730
+  sound-key: minecraft:entity.iron_golem.step
   name: 재앙의 기관차
   enabled: true
   radius: 2.0
@@ -23,12 +29,16 @@ calamity_train:
   sound: true
   particles: true
 hell_lord:
+  color: 16401699
+  sound-key: minecraft:entity.blaze.shoot
   name: 지옥의 군주
   enabled: true
   orb-burn-stacks: 1
   sound: true
   particles: true
 thousand_swords:
+  color: 7864270
+  sound-key: minecraft:entity.player.attack.sweep
   name: 천 개의 검
   enabled: true
   reach: 7.0

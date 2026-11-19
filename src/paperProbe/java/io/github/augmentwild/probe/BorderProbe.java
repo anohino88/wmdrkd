@@ -116,6 +116,7 @@ public final class BorderProbe extends JavaPlugin implements Listener {
             require(speed.getModifier(key) == null && speed.getValue() == initialSpeed, "modifier restore");
             verifyAugmentCatalog();
             verifySyntheticDamage(testPig);
+            verifyRicochet(spawn, testPig);
             getLogger().info("AW_AUGMENT_PROBE_PASS: real transient modifiers, official catalog and bounded synthetic health delta");
         } finally {
             testPig.remove();
@@ -241,6 +242,24 @@ public final class BorderProbe extends JavaPlugin implements Listener {
         require(section != null && section.getKeys(false).size() == 72, "official config loaded");
         require(section.getKeys(false).stream().allMatch(id -> section.getBoolean(id + ".implemented")
                 && section.getBoolean(id + ".enabled")), "configured official effects");
+    }
+
+    private void verifyRicochet(Location spawn, Pig target) {
+        var source = spawn.getWorld().spawn(spawn, Pig.class);
+        try {
+            double before = target.getHealth();
+            var arrow = org.bukkit.damage.DamageSource.builder(org.bukkit.damage.DamageType.ARROW)
+                    .withCausingEntity(source).withDirectEntity(source).build();
+            target.setNoDamageTicks(0);
+            target.damage(io.github.augmentwild.augment.ReactionRules.ricochet(8, .35, 4), arrow);
+            require(Math.abs(before - target.getHealth() - 2.8) < 1e-5, "server-owned ricochet health delta");
+            var damage = target.getLastDamageCause();
+            require(damage != null && source.equals(damage.getDamageSource().getCausingEntity())
+                    && damage.getDamageSource().getDamageType() == org.bukkit.damage.DamageType.ARROW, "ricochet provenance");
+            getLogger().info("AW_REACTION_PROBE_PASS: arrow damage type, owner and health delta on live entities");
+        } finally {
+            source.remove();
+        }
     }
 
     private void verifySyntheticDamage(Pig pig) {
