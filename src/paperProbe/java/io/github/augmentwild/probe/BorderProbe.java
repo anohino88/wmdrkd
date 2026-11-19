@@ -124,7 +124,7 @@ public final class BorderProbe extends JavaPlugin implements Listener {
         require(fitted != null && fitted[0].getAmount() == 64 && fitted[1].getAmount() == 1
                 && arrows.getAmount() == 63, "full reward fits without touching source");
 
-        var point = spawn.clone().add(.5, 24, .5);
+        var point = new Location(spawn.getWorld(), spawn.getBlockX() + .5, spawn.getBlockY() + 24, spawn.getBlockZ() + .5);
         var target = point.clone().add(5, 0, 0);
         var obstacle = point.clone().add(2, 0, 0).getBlock();
         var marker = point.clone().add(0, 3, 0).getBlock();
