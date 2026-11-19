@@ -258,3 +258,12 @@ PHASE 2B의 GitHub Actions #6에서 Java 버전 확인, `./gradlew clean build -
 - Java 25 독립 검사 PASS. 기존 회귀와 새 도메인 단언 27개를 실행했다. 2·8·16 가상 참가자 대상 최근접 검색 및 상한 기록 합성 검사도 실행했다. 로컬 전체 Gradle은 Paper Maven 403 및 Maven Central PKIX로 BLOCKED. `git diff --check` PASS.
 - `REAL_CLIENT_VERIFIED = NOT_RUN`. 서버 프로브는 아이템 비용·공간, 실제 시야, 상자 마커 생성·정리의 범위를 검증한다. 실제 2·8·16인 플레이의 망원경 GUI, 사망 표시, 동시 개봉, 재접속은 미실행이다. [명령·설정·검증 절차](docs/phase64-intel-supply-ko.md)
 - 최종 코드 `acc5473`의 [GitHub Actions](https://github.com/anohino88/wmdrkd/actions/runs/44458233133) PASS. Java 25 Gradle 전체 빌드·JUnit·JAR 구조 검사, Paper 26.3 기동·종료와 증강·자기장·보호막·정보전 프로브, 경기장 벤치마크가 통과했다. [서버 JAR](https://github.com/anohino88/wmdrkd/actions/runs/44458233133/artifacts/14498053304).
+
+## PHASE 6.5 보급 복구와 운영 안정화 (2026-11-19)
+
+- 기준 `1de942d8ae1194c127b9e971222a8cb636ca8f48`. 생성 전 원장 쓰기, 시작 시 및 경기 직전 복구를 연결했다. 원장에는 경기·월드 UUID와 이름, 좌표, 원래 블록과 소유권 토큰 및 상태를 저장한다. 토큰 일치·빈 단일 상자만 복원하며 저장 후 원장을 제거한다. 충돌 또는 읽기·저장 실패는 보존하고 새 경기 시작을 차단한다.
+- 보급 공개 위치와 생성 위치를 검증하고 소유권·내용물이 바뀐 상자의 지급을 중단한다. 다른 화면 열기, 이동·피격·접속 종료를 개봉 취소에 연결했다. 공간 부족이나 확실한 원복은 재시도할 수 있으며 원복 불확실은 재지급을 막는다.
+- 정찰 진행률·스냅샷 시각, 추적 잔여 초와 표시 우선순위, 사망 분석의 바닐라 흡수·생명의 잔향 분리를 추가했다. 익명 총계에는 보급 생성·개봉·교전·지연, 추적, 정찰, 사망 조회를 포함한다. 실제 경기 운영 통계는 NOT_RUN이다.
+- Java 25 독립 회귀와 신규 단언 14개 PASS. 합성 통계에서 정찰 시도 2·성공 2·유효 후속 교전 1을 검증했다. 기존 Paper 합성 전투는 계속 검증 범위에 있다. 로컬 전체 Gradle BLOCKED는 Paper Maven 403과 Maven Central PKIX다. `git diff --check` PASS.
+- `CRASH_RECOVERY_REAL = PASS`. 일회용 Paper 프로세스에 SIGKILL 후 두 번 기동했다. 생성 전·완료·미기록 전이·청크 저장 이전 상태 및 지급 후 마커 제거 경계의 복구, 다른 토큰과 내용물이 있는 상자 보호를 확인했다. 실제 참가자의 개봉·지급 중 강제 종료와 2·8·16인 플레이, 망원경 GUI·사망 UI의 `REAL_CLIENT_VERIFIED`는 NOT_RUN이다. [운영·검증 문서](docs/phase65-recovery-ko.md)
+- 최종 코드 `b28c8d5943af1b83b41f5bc8b411ca606c60431b`의 [GitHub Actions](https://github.com/anohino88/wmdrkd/actions/runs/44470056149) PASS. Java 25 Gradle/JUnit, 독립 회귀, JAR 구조 검사, Paper 26.3 프로브, 실제 프로세스 강제 종료 복구와 경기장 벤치마크가 통과했다. [서버 JAR](https://github.com/anohino88/wmdrkd/actions/runs/44470056149/artifacts/14504102405) · [강제 종료 및 재시작 로그](https://github.com/anohino88/wmdrkd/actions/runs/44470056149/artifacts/14503797799).

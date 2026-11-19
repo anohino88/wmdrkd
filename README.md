@@ -22,3 +22,5 @@ Java 25에서 `scripts/test-domain.sh`로 Paper 없이 도메인 회귀 검사�
 증강 선택은 기본 5분 간격으로 열리며 `/aw augment`로 다시 열 수 있습니다. 경험치 레벨로 희귀도를 정하며 경험치는 소비하지 않습니다. [초기 증강 12종·수치·검증 절차](docs/phase5-augments-ko.md)
 
 다이아몬드 방향 추적, 망원경 정찰, 사망 분석, 보급의 명령과 설정은 [PHASE 6.4 운영 문서](docs/phase64-intel-supply-ko.md)에 있습니다.
+
+보급 마커 복구, 인벤토리 지급 실패 처리와 경기 통계는 [PHASE 6.5 운영 문서](docs/phase65-recovery-ko.md)에 있습니다.
