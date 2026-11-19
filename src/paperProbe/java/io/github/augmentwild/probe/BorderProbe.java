@@ -128,16 +128,23 @@ public final class BorderProbe extends JavaPlugin implements Listener {
         var target = point.clone().add(5, 0, 0);
         var obstacle = point.clone().add(2, 0, 0).getBlock();
         var marker = point.clone().add(0, 3, 0).getBlock();
+        int anchorX = (marker.getX() & 15) == 15 ? marker.getX() - 1 : marker.getX() + 1;
+        var anchor = point.getWorld().getBlockAt(anchorX, marker.getY(), marker.getZ());
+        var oldAnchor = anchor.getBlockData();
         var oldObstacle = obstacle.getBlockData();
         var oldMarker = marker.getBlockData();
         Pig pig = null;
         try {
+            // Keep the chunk section allocated so Paper retains the distinct cave-air state.
+            anchor.setType(Material.STONE, false);
             marker.setType(Material.CAVE_AIR, false);
+            var expectedAir = marker.getBlockData();
             var block = SupplyBlock.place(marker, new NamespacedKey(this, "phase64"), "probe-chest");
             require(block != null && block.present() && ((Chest) marker.getState()).getBlockInventory().isEmpty(),
                     "physical marker contains no native loot");
             block.remove();
-            require(marker.getType() == Material.CAVE_AIR && !block.present(), "marker cleanup restores original block");
+            require(marker.getBlockData().equals(expectedAir) && !block.present(),
+                    "marker cleanup expected=" + expectedAir + " actual=" + marker.getBlockData());
             var replacement = SupplyBlock.place(marker, new NamespacedKey(this, "phase64"), "replacement");
             require(replacement != null, "second marker placed");
             block.remove();
@@ -161,6 +168,7 @@ public final class BorderProbe extends JavaPlugin implements Listener {
             if (pig != null) pig.remove();
             obstacle.setBlockData(oldObstacle, false);
             marker.setBlockData(oldMarker, false);
+            anchor.setBlockData(oldAnchor, false);
         }
     }
 
