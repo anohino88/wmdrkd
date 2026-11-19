@@ -56,6 +56,7 @@ final class PaperIntel implements Listener {
     private final Map<UUID, CombatIntel.Dwell> dwell = new HashMap<>();
     private final Map<UUID, Report> scouts = new HashMap<>();
     private final Map<UUID, Report> deaths = new HashMap<>();
+    private final Map<UUID, Long> lateDeathViews = new HashMap<>();
     private final Map<UUID, CombatIntel.History> histories = new HashMap<>();
     private final Set<EntityDamageEvent> recorded = Collections.newSetFromMap(new WeakHashMap<>());
     private UUID match;
@@ -63,9 +64,9 @@ final class PaperIntel implements Listener {
     record Card(Material icon, Component name, List<Component> lore) {
         Card { lore = List.copyOf(lore); }
     }
-    private record Report(String title, CombatIntel.TimedReport<Card> data) {
-        Report(String title, List<Card> cards, long deadline) {
-            this(title, new CombatIntel.TimedReport<>(cards, deadline));
+    private record Report(UUID matchId, String title, CombatIntel.TimedReport<Card> data) {
+        Report(UUID matchId, String title, List<Card> cards, long deadline) {
+            this(matchId, title, new CombatIntel.TimedReport<>(cards, deadline));
         }
         boolean valid() { return data.valid(System.nanoTime()); }
         List<Card> cards() { return data.values(); }
@@ -100,6 +101,7 @@ final class PaperIntel implements Listener {
     }
 
     void start(UUID id) {
+        flushLateViews();
         match = id;
         deaths.clear();
     }
@@ -285,7 +287,7 @@ final class PaperIntel implements Listener {
                 String.format(Locale.ROOT, "경기 %02d:%02d 분석", second / 60, second % 60),
                 "분석 당시의 증강과 활성 조합"));
         cards.addAll(augments.scoutCards(target.getUniqueId()));
-        var report = new Report("망원경 정찰", cards,
+        var report = new Report(match, "망원경 정찰", cards,
                 System.nanoTime() + settings.resultLifetime());
         retain(scouts, id, report);
         target.sendMessage(Component.text("누군가 당신의 증강을 분석했습니다.", NamedTextColor.YELLOW));
@@ -380,7 +382,7 @@ final class PaperIntel implements Listener {
                     "출처 " + (hit.attackerName() == null ? hit.cause() : hit.attackerName()),
                     "체력 피해 " + points(hit.health()) + " · 보호막 " + points(hit.shield()) + " · 흡수 " + points(hit.absorption())));
         }
-        retain(deaths, id, new Report("사망 분석", cards, System.nanoTime() + settings.deathDeliveryLifetime()));
+        retain(deaths, id, new Report(match, "사망 분석", cards, System.nanoTime() + settings.deathDeliveryLifetime()));
         scouts.remove(id);
         clearAim(id);
         endTrack(id);
@@ -429,6 +431,7 @@ final class PaperIntel implements Listener {
     void shutdown() {
         clear();
         deaths.clear();
+        flushLateViews();
         for (Player player : plugin.getServer().getOnlinePlayers()) {
             if (isReadOnly(player.getOpenInventory().getTopInventory())) player.closeInventory();
         }
@@ -446,7 +449,8 @@ final class PaperIntel implements Listener {
         render(menu);
         player.openInventory(menu.inventory);
         if (deaths.get(menu.owner) == report && player.getOpenInventory().getTopInventory().getHolder() == menu) {
-            stats.count(Counter.DEATH_VIEWS);
+            if (report.matchId().equals(match)) stats.count(Counter.DEATH_VIEWS);
+            else lateDeathViews.merge(report.matchId(), 1L, Long::sum);
         }
     }
 
@@ -466,8 +470,18 @@ final class PaperIntel implements Listener {
                 return;
             }
             reports.remove(owner, report);
+            if (reports == deaths) flushLateViews(report.matchId());
             if (displayed) player.closeInventory();
         }, ticks);
+    }
+
+    private void flushLateViews() {
+        for (UUID id : List.copyOf(lateDeathViews.keySet())) flushLateViews(id);
+    }
+
+    private void flushLateViews(UUID matchId) {
+        Long count = lateDeathViews.remove(matchId);
+        if (count != null) plugin.getLogger().info("Match feature late totals match=" + matchId + " DEATH_VIEWS=" + count);
     }
 
     private static void render(Menu menu) {

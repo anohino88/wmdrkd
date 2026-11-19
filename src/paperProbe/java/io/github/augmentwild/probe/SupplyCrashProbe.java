@@ -67,8 +67,8 @@ final class SupplyCrashProbe {
 
     private static Block site(World world, int index) {
         var spawn = world.getSpawnLocation();
-        return world.getBlockAt((spawn.getBlockX() & ~15) + index + 1, spawn.getBlockY() + 24,
-                (spawn.getBlockZ() & ~15) + 2);
+        return world.getBlockAt((spawn.getBlockX() & ~15) + (index % 4) * 3 + 1, spawn.getBlockY() + 24,
+                (spawn.getBlockZ() & ~15) + (index / 4) * 4 + 2);
     }
 
     private static void require(boolean condition, String label) {

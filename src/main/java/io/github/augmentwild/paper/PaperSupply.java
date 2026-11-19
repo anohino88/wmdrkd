@@ -68,6 +68,7 @@ final class PaperSupply implements Listener {
     private boolean paused;
     private boolean prepared;
     private long elapsed;
+    private long lastMarkerCheck = -1;
 
     PaperSupply(JavaPlugin plugin, SupplySettings settings, Predicate<Player> active, Predicate<Location> safe,
                 Consumer<String> notice, MatchTelemetry stats) {
@@ -124,6 +125,15 @@ final class PaperSupply implements Listener {
             if (second >= opensAt) spawn(delivery);
         }
 
+        if (second != lastMarkerCheck) {
+            lastMarkerCheck = second;
+            for (var delivery : List.copyOf(spawned.values())) {
+                if (delivery.block.claimable()) continue;
+                stats.count(Counter.CANCELLED_AFTER_PUBLICATION);
+                remove(delivery);
+                notice.accept(label(delivery) + " · 상자 소유권 또는 내용물이 달라 보급을 중단했습니다.");
+            }
+        }
         var pending = opening.entrySet().stream().sorted(Comparator
                 .<Map.Entry<UUID, Opening>>comparingLong(entry -> entry.getValue().deadline()).thenComparing(Map.Entry::getKey)).toList();
         for (var entry : pending) {
@@ -297,6 +307,7 @@ final class PaperSupply implements Listener {
         plans.clear();
         candidates = List.of();
         elapsed = 0;
+        lastMarkerCheck = -1;
         paused = false;
         prepared = false;
         if (match != null) recovery.recover();

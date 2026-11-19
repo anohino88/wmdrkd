@@ -332,7 +332,7 @@ public final class PaperMatchService implements Listener {
         border = null;
         supply.clear();
         var stats = telemetry.finish();
-        if (!stats.isEmpty()) plugin.getLogger().info("Match feature totals " + new java.util.TreeMap<>(stats));
+        if (!stats.isEmpty()) plugin.getLogger().info("Match feature totals match=" + session.matchId() + " " + new java.util.TreeMap<>(stats));
         intel.clear();
         augments.clear();
         regionCommitted = false;

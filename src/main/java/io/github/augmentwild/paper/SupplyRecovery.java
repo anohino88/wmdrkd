@@ -80,7 +80,7 @@ public final class SupplyRecovery {
 
     /** A successful flush must precede journal deletion, or a crash can resurrect a saved chest. */
     public boolean recover() {
-        if (!Files.exists(folder)) return true;
+        if (Files.notExists(folder)) return true;
         Map<World, List<Entry>> ready = new LinkedHashMap<>();
         boolean clean = true;
         try (var entries = Files.list(folder)) {
@@ -97,7 +97,8 @@ public final class SupplyRecovery {
                     if (!previous.getMaterial().isAir()) throw new IllegalStateException("Original block was not air");
                     if (!block.getType().isAir()) {
                         if (!SupplyBlock.recoverable(block, key, entry.token().toString())) {
-                            throw new IllegalStateException("Block is not an empty, owned single supply chest");
+                            throw new IllegalStateException("Block is not an empty, owned single supply chest at "
+                                    + entry.worldName() + " " + entry.x() + "," + entry.y() + "," + entry.z());
                         }
                         save(entry.in(State.RESTORING));
                         block.setBlockData(previous, false);
