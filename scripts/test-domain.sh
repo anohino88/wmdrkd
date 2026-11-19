@@ -14,6 +14,7 @@ java -cp "$tmp" BorderChecks
 java -cp "$tmp" AugmentChecks
 java -cp "$tmp" OfficialAugmentChecks "$root"
 java -Xmx256m -cp "$tmp" ResonanceChecks "$root"
+java -cp "$tmp" Phase63Checks "$root"
 for scenario in A B C D E F G; do
     java -cp "$tmp" ScenarioChecks "$scenario"
 done
