@@ -5,11 +5,12 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.function.BooleanSupplier;
 
 public final class CombatIntel {
     private CombatIntel() { }
 
-    public record Position(UUID id, double x, double z) { }
+    public record Position(UUID id, double x, double y, double z) { }
 
     public static Position nearest(Position origin, List<Position> eligible, double range) {
         return eligible.stream().filter(target -> !origin.id().equals(target.id()))
@@ -20,7 +21,8 @@ public final class CombatIntel {
 
     private static double distance(Position a, Position b) {
         double x = a.x() - b.x(), z = a.z() - b.z();
-        return x * x + z * z;
+        double y = a.y() - b.y();
+        return x * x + y * y + z * z;
     }
 
     public static String direction(Position origin, Position target) {
@@ -28,6 +30,34 @@ public final class CombatIntel {
         if (x == 0 && z == 0) return "방향 미정";
         String[] directions = {"북", "북동", "동", "남동", "남", "남서", "서", "북서"};
         return directions[Math.floorMod(Math.round(Math.atan2(x, -z) / (Math.PI / 4)), directions.length)];
+    }
+
+    public static final class Tracking {
+        public enum Start { STARTED, COOLDOWN, NO_TARGET, NO_FUNDS }
+
+        private UUID target;
+        private long expires;
+        private long cooldown;
+
+        public Start start(UUID eligible, long now, long duration, long reuse, BooleanSupplier pay) {
+            if (busy(now)) return Start.COOLDOWN;
+            if (eligible == null) return Start.NO_TARGET;
+            if (!pay.getAsBoolean()) return Start.NO_FUNDS;
+            target = eligible;
+            expires = now + duration;
+            cooldown = now + reuse;
+            return Start.STARTED;
+        }
+
+        public boolean busy(long now) { return target(now) != null || now < cooldown; }
+        public UUID target(long now) { return now < expires ? target : null; }
+        public UUID assigned() { return target; }
+        public void stop() { target = null; }
+    }
+
+    public record TimedReport<T>(List<T> values, long deadline) {
+        public TimedReport { values = List.copyOf(values); }
+        public boolean valid(long now) { return deadline - now > 0; }
     }
 
     public static final class Dwell {

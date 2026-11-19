@@ -8,7 +8,6 @@ import java.util.function.Predicate;
 import net.kyori.adventure.text.Component;
 import org.bukkit.*;
 import org.bukkit.block.Block;
-import org.bukkit.block.Chest;
 import org.bukkit.entity.Player;
 import org.bukkit.event.Event;
 import org.bukkit.event.EventHandler;
@@ -24,7 +23,6 @@ import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
 
 final class PaperSupply implements Listener {
@@ -43,6 +41,7 @@ final class PaperSupply implements Listener {
         final SupplyPlan.Claim claim = new SupplyPlan.Claim();
         Location position;
         List<ItemStack> loot = List.of();
+        SupplyBlock block;
         boolean announced, published, attempted;
 
         Delivery(SupplyPlan.Drop plan) { this.plan = plan; }
@@ -175,13 +174,10 @@ final class PaperSupply implements Listener {
         }
         var loot = delivery.plan.premium() ? settings.premium() : settings.normal();
         delivery.loot = loot.get(random.nextInt(loot.size())).stream().map(SupplySettings.Reward::create).toList();
-        Block block = location.getBlock();
-        block.setType(Material.CHEST, false);
-        var chest = (Chest) block.getState();
-        chest.getPersistentDataContainer().set(tag, PersistentDataType.STRING, marker(delivery));
-        if (!chest.update(false, false)) {
-            block.setType(Material.AIR, false);
+        delivery.block = SupplyBlock.place(location.getBlock(), tag, marker(delivery));
+        if (delivery.block == null) {
             release(location);
+            delivery.loot = List.of();
             notice.accept(label(delivery) + " · 상자를 생성하지 못했습니다.");
             return;
         }
@@ -193,7 +189,7 @@ final class PaperSupply implements Listener {
 
     private boolean eligible(Player player, Delivery delivery) {
         if (player == null || !player.isOnline() || player.isDead() || player.getGameMode() == GameMode.SPECTATOR
-                || !active.test(player) || spawned.get(Site.at(delivery.position)) != delivery || !isMarked(delivery)) return false;
+                || !active.test(player) || spawned.get(Site.at(delivery.position)) != delivery || !delivery.block.present()) return false;
         Location target = delivery.position.clone().add(0, .5, 0);
         return player.getWorld().equals(target.getWorld()) && safe.test(target)
                 && player.getEyeLocation().distanceSquared(target) <= square(settings.range())
@@ -215,7 +211,7 @@ final class PaperSupply implements Listener {
         boolean delivered = false;
         try {
             var inventory = player.getInventory();
-            ItemStack[] result = SupplyInventory.fit(inventory.getStorageContents(), inventory.getMaxStackSize(), delivery.loot);
+            ItemStack[] result = MatchInventory.fit(inventory.getStorageContents(), inventory.getMaxStackSize(), delivery.loot);
             if (result == null) {
                 player.sendMessage("보급을 받을 인벤토리 공간이 필요합니다.");
                 return;
@@ -234,17 +230,10 @@ final class PaperSupply implements Listener {
     private void remove(Delivery delivery) {
         var location = delivery.position;
         spawned.remove(Site.at(location));
-        if (isMarked(delivery)) {
-            location.getBlock().setType(Material.AIR, false);
-        }
+        if (plugin.getServer().getWorld(location.getWorld().getUID()) == location.getWorld()) delivery.block.remove();
         release(location);
         opening.values().removeIf(value -> value.delivery() == delivery);
         delivery.loot = List.of();
-    }
-
-    private boolean isMarked(Delivery delivery) {
-        return delivery.position.getBlock().getState() instanceof Chest chest
-                && marker(delivery).equals(chest.getPersistentDataContainer().get(tag, PersistentDataType.STRING));
     }
 
     private String marker(Delivery delivery) { return match + ":" + delivery.plan.id(); }
