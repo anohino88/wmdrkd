@@ -347,7 +347,8 @@ final class PaperOfficialCombat implements Listener {
     }
 
     String labProgress(Player player, String id, int value) {
-        var state = fighter(player.getUniqueId());
+        var state = fighters.get(player.getUniqueId());
+        if (state == null) return "진행도 설정을 지원하지 않는 증강입니다.";
         if (id.equals("infernal_conductor")) {
             boolean evolved = burnEvolved(state);
             state.burned = Math.min(value, catalog.setting("burn-evolution-damage"));

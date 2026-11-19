@@ -277,3 +277,10 @@ PHASE 2B의 GitHub Actions #6에서 Java 버전 확인, `./gradlew clean build -
 - 실제 접속 가능한 클라이언트를 확보하지 못해 `REAL_CLIENT_VERIFIED = NOT_RUN`. 실전 전투 조합별 피해·성장, 실제 경기 템포, 실제 재접속과 플레이어 저장 중 강제 종료는 미실행이다. [서버 준비, 단계, 기록지](docs/phase66-playtest-ko.md)
 - 로컬 전체 Gradle은 `:compileJava`의 Paper API 메타데이터 해석에서 Maven Central과 Paper Maven의 DNS 오류로 차단됐다. Java 25 독립 검사와 `git diff --check`는 통과했다.
 - 검증한 코드 `42e3485e8f7e83238e2caa26aed69db18ba8288c`의 [Actions](https://github.com/anohino88/wmdrkd/actions/runs/44472291871) PASS. Java 25 Gradle/JUnit, JAR 구조, 기존 회귀 및 Paper 26.3 프로브, 1000×1000 경기장 벤치마크와 SIGKILL 복구가 통과했다. 클라이언트가 없는 Paper 합성 부하에서 2·4·8·16개 엔티티의 실제 틱 30개씩을 확인했다. 틱 p95/최대/50ms 초과는 각각 40.825/77.169ms/1회, 4.075/22.232ms/0회, 2.554/2.792ms/0회, 2.899/2.948ms/0회였다. [플러그인 JAR](https://github.com/anohino88/wmdrkd/actions/runs/44472291871/artifacts/14504428818).
+
+## PHASE 6.7 증강 선택과 전투 실험실 (2026-11-19)
+
+- 기준 원격 `1e7e9e3e201b45fb898b095a329b700f549581fe`. 증강 76종의 주 역할과 최종 프리즘 보정, 순수 XP의 최종 회차 제외 및 후보 부족 시 복귀를 연결했다. 일반 회차 보정의 기본값은 비활성화다. XP 희귀도 공식, 시너지 기본 가중치, 선택 시간과 전체 경기 규칙을 유지했다.
+- Java 25 독립 회귀 PASS. 고정 시드로 각각 120,000개 선택지 세트를 비교했다. 최종 단일 역할은 989→426/20,000, 순수 XP 포함은 2,325→0/20,000이었다. 기본 1–5회차 후보와 재추첨 결과, 각 회차 희귀도 계수는 일치했다. 시너지 5종 및 증강별 출현·선택률은 [실험실 문서](docs/phase67-combat-lab-ko.md)에 기록했다.
+- 관리자 실험은 양쪽 권한, 전용 월드, 명시적 테스트 시작, 활성 참가자 및 경기 시계를 검사한다. 부여·제거·진행도·보고 명령은 기존 소유권·진화·공명 및 속성을 사용한다. 실험 경기 통계는 `mode=lab`로 표시한다. 클라이언트를 사용하는 명령의 실제 부여·제거, 공격, GUI 및 종료 복원은 `REAL_CLIENT_VERIFIED = NOT_RUN`이다.
+- 로컬 전체 Gradle은 Paper API 메타데이터 해석 시 Maven Central·Paper Maven DNS 오류로 차단됐다. Java 25 독립 회귀와 `git diff --check`는 통과했다.

@@ -32,6 +32,10 @@ arena:
     radius: 1
     max-candidate-attempts: 1
     surface-sample-step: 1
+dev:
+  combat-lab:
+    enabled: true
+    world: fixture_lab_unloaded
 YAML
 fi
 python3 - "$root" <<'PY'
@@ -67,9 +71,16 @@ with log.open("wb") as output:
             command("aw status")
             wait_for('경기 단계 WAITING', 15)
             command("aw admin test status")
-            wait_for("전투 실험실 사용 불가", 15)
-            command("aw admin test start")
-            wait_for("운영 월드와 다른 기존 테스트 월드를 지정하세요", 15)
+            if benchmark:
+                wait_for("전투 실험실 설정됨 (fixture_lab_unloaded)", 15)
+                command("aw admin test grant Missing steel_heart")
+                wait_for("진행 중이며 일시정지 상태가 아닌 테스트 경기에서만", 15)
+                command("aw admin test start")
+                wait_for("참가자가 최소 2명 필요합니다", 15)
+            else:
+                wait_for("전투 실험실 사용 불가", 15)
+                command("aw admin test start")
+                wait_for("운영 월드와 다른 기존 테스트 월드를 지정하세요", 15)
             if os.environ.get("AW_BORDER_PROBE") == "1":
                 wait_for("관리자 권한이 없습니다", 15)
                 wait_for("AW_BORDER_PROBE_PASS", 15)
