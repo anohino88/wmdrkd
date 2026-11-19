@@ -88,6 +88,35 @@ public final class Phase64Checks {
         require(claim.reserve(tie.id()), "failed delivery releases claim");
         claim.finish(tie.id(), true);
         require(!claim.reserve(near.id()), "successful delivery consumes once");
+        for (int size : new int[]{2, 8, 16}) load(size, match);
         System.out.println(count + " Phase 6.4 domain assertions passed");
+    }
+
+    private static void load(int size, UUID match) {
+        var players = new ArrayList<Tracker.Player>();
+        var histories = new ArrayList<CombatIntel.History>();
+        var tracker = new Tracker();
+        for (int index = 0; index < size; index++) {
+            players.add(new Tracker.Player(new UUID(1, index), "probe", match, "fixture", null, Tracker.Status.ACTIVE,
+                    index * 3, 64, index * 4));
+            histories.add(new CombatIntel.History(128, 10 * SECOND));
+        }
+        int cycles = 2_000;
+        long started = System.nanoTime();
+        int samples = 0;
+        for (int tick = 0; tick < cycles; tick++) {
+            long now = tick * 50_000_000L;
+            for (int index = 0; index < size; index++) {
+                var next = tracker.nearest(players.get(index), players).orElseThrow();
+                histories.get(index).add(new CombatIntel.Damage(now, next.id(), "probe", CombatIntel.Kind.MELEE,
+                        "ENTITY_ATTACK", null, null, 1, 0));
+                samples++;
+            }
+        }
+        double millis = (System.nanoTime() - started) / 1_000_000.0;
+        require(histories.stream().allMatch(history -> history.snapshot((cycles - 1) * 50_000_000L).size() == 128),
+                "bounded histories at " + size);
+        System.out.printf(java.util.Locale.ROOT, "SYNTHETIC_INTEL_DOMAIN players=%d cycles=%d samples=%d elapsed_ms=%.3f%n",
+                size, cycles, samples, millis);
     }
 }

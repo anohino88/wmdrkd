@@ -5,6 +5,7 @@ import io.github.augmentwild.domain.CombatIntel.Damage;
 import io.github.augmentwild.domain.CombatIntel.Kind;
 import io.github.augmentwild.domain.MatchSimulationClock;
 import io.github.augmentwild.domain.Tracker;
+import io.papermc.paper.event.player.PlayerStopUsingItemEvent;
 import java.util.*;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
@@ -183,8 +184,6 @@ final class PaperIntel implements Listener {
 
     void tick() {
         if (match == null) return;
-        scouts.values().removeIf(report -> !report.valid());
-        deaths.values().removeIf(report -> !report.valid());
         if (clock.get().isPaused()) {
             dwell.clear();
             return;
@@ -200,6 +199,11 @@ final class PaperIntel implements Listener {
             updateTrack(player, now);
             observe(player, now);
         }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void stopUsing(PlayerStopUsingItemEvent event) {
+        if (event.getItem().getType() == Material.SPYGLASS) dwell.remove(event.getPlayer().getUniqueId());
     }
 
     private void observe(Player player, long now) {
@@ -221,7 +225,7 @@ final class PaperIntel implements Listener {
         scoutCooldown.put(id, now + settings.scoutCooldown());
         var report = new Report("망원경 정찰", augments.scoutCards(target.getUniqueId()),
                 System.nanoTime() + settings.resultLifetime());
-        scouts.put(id, report);
+        retain(scouts, id, report);
         target.sendMessage(Component.text("누군가 당신의 증강을 분석했습니다.", NamedTextColor.YELLOW));
         open(player, report);
     }
@@ -307,7 +311,7 @@ final class PaperIntel implements Listener {
                     "출처 " + (hit.attackerName() == null ? hit.cause() : hit.attackerName()),
                     "체력 피해 " + points(hit.health()) + " · 흡수 " + points(hit.shield())));
         }
-        deaths.put(id, new Report("사망 분석", cards, System.nanoTime() + settings.deathDeliveryLifetime()));
+        retain(deaths, id, new Report("사망 분석", cards, System.nanoTime() + settings.deathDeliveryLifetime()));
         scouts.remove(id);
         dwell.remove(id);
         endTrack(id);
@@ -369,20 +373,25 @@ final class PaperIntel implements Listener {
         menu.inventory = plugin.getServer().createInventory(menu, 45, Component.text(report.title()));
         render(menu);
         player.openInventory(menu.inventory);
-        scheduleExpiry(player, menu);
     }
 
-    private void scheduleExpiry(Player player, Menu menu) {
-        var report = menu.report;
+    private void retain(Map<UUID, Report> reports, UUID owner, Report report) {
+        reports.put(owner, report);
+        scheduleExpiry(reports, owner, report);
+    }
+
+    private void scheduleExpiry(Map<UUID, Report> reports, UUID owner, Report report) {
         long ticks = Math.max(1, (report.deadline() - System.nanoTime() + 49_999_999L) / 50_000_000L);
         plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+            if (reports.get(owner) != report) return;
             if (report.valid()) {
-                scheduleExpiry(player, menu);
+                scheduleExpiry(reports, owner, report);
                 return;
             }
-            if (player.isOnline() && player.getOpenInventory().getTopInventory().getHolder() == menu) player.closeInventory();
-            scouts.remove(menu.owner, report);
-            deaths.remove(menu.owner, report);
+            reports.remove(owner, report);
+            Player player = plugin.getServer().getPlayer(owner);
+            if (player != null && player.getOpenInventory().getTopInventory().getHolder() instanceof Menu menu
+                    && menu.report == report) player.closeInventory();
         }, ticks);
     }
 
