@@ -17,3 +17,6 @@ java -Xmx256m -cp "$tmp" ResonanceChecks "$root"
 for scenario in A B C D E F G; do
     java -cp "$tmp" ScenarioChecks "$scenario"
 done
+if [ "${AW_PHASE63_SIMULATION:-0}" -gt 0 ]; then
+    java -Xmx256m -cp "$tmp" Phase63Simulation "$root" "$AW_PHASE63_SIMULATION"
+fi

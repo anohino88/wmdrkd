@@ -73,6 +73,22 @@ jobs:
         env:
           AW_BORDER_PROBE: '1'
         run: bash scripts/test-paper-smoke.sh
+      - name: Summarize synthetic combat measurements
+        if: always()
+        shell: bash
+        run: |
+          log="$RUNNER_TEMP/augmentwild-paper-smoke/server.log"
+          if test -f "$log"; then
+            while IFS= read -r line; do
+              printf '::notice title=Synthetic combat measurement::%s\n' "$line"
+            done < <(grep -F 'SYNTHETIC_LOAD_TEST' "$log")
+            if ! grep -Fq 'AW_COMBAT_LOAD_PASS' "$log"; then
+              diagnostic=$(grep -E 'ERROR|Exception|AssertionError|Caused by' -A 4 "$log" | tail -20)
+              diagnostic=${diagnostic//%/%25}
+              diagnostic=${diagnostic//$'\n'/%0A}
+              if test -n "$diagnostic"; then printf '::error title=Paper probe diagnostics::%s\n' "$diagnostic"; fi
+            fi
+          fi
       - name: Upload Paper smoke log
         if: always()
         uses: actions/upload-artifact@v4

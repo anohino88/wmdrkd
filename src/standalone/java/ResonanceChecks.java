@@ -24,7 +24,7 @@ import java.util.regex.Pattern;
 public final class ResonanceChecks {
     private static final long SECOND = 1_000_000_000L;
     private static final List<String> GROWTH = List.of("steel_heart", "blood_record", "mineral_addiction", "tank_engine", "wound_record");
-    private static final List<Set<String>> SYNERGIES = List.of(
+    static final List<Set<String>> SYNERGIES = List.of(
             Set.of("steel_heart", "stack_dinosaur", "heavy_fist"),
             Set.of("magic_missile", "eureka", "infinite_repeat"),
             Set.of("tank_engine", "calamity_giant", "berserk_engine"),
@@ -174,7 +174,7 @@ public final class ResonanceChecks {
         return complete;
     }
 
-    private static AugmentRegistry loadCatalog(Path root) throws Exception {
+    static AugmentRegistry loadCatalog(Path root) throws Exception {
         var registry = new AugmentRegistry();
         String official = Files.readString(root.resolve("src/main/resources/official-augments.yml"));
         var entries = Pattern.compile("(?m)^  ([a-z_]+):\\n    group: [^\\n]+\\n    rarity: ([A-Z]+)").matcher(official);

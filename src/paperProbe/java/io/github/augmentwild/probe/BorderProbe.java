@@ -89,6 +89,7 @@ public final class BorderProbe extends JavaPlugin implements Listener {
             testPig = null;
         }
         verifyResonanceShield(spawn);
+        new SyntheticCombatLoad(this, spawn).start();
         getLogger().info("AW_RESONANCE_PROBE_PASS: real damage, separate vanilla absorption, exact expiry and cleanup");
         getLogger().info("AW_BORDER_PROBE_PASS: virtual border, unchanged global border, Paper damage event and health delta");
     }
