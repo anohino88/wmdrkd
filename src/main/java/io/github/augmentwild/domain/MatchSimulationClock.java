@@ -52,6 +52,12 @@ public final class MatchSimulationClock {
     private long lastWall;
     public MatchSimulationClock(GameSession session, MatchRules rules, LongSupplier wall, long selectionSeconds,
                                 long normalSupplySecond, long premiumSupplySecond) {
+        this(session, rules, wall, selectionSeconds, List.of(new Timeline.Event("normal-supply",normalSupplySecond,1,false),
+                new Timeline.Event("premium-supply",premiumSupplySecond,1,false)));
+    }
+
+    public MatchSimulationClock(GameSession session, MatchRules rules, LongSupplier wall, long selectionSeconds,
+                                List<Timeline.Event> supplyEvents) {
         this.session=Objects.requireNonNull(session); this.wall=Objects.requireNonNull(wall);
         if (selectionSeconds<0 || rules.gatheringSeconds()%rules.selectionInterval()!=0) throw new IllegalArgumentException();
         selectionNanos=Math.multiplyExact(selectionSeconds,1_000_000_000L);
@@ -64,8 +70,7 @@ public final class MatchSimulationClock {
             events.add(new Timeline.Event("selection-"+round,time,0,true));
             if (time==rules.gatheringSeconds()) break;
         }
-        events.add(new Timeline.Event("normal-supply",normalSupplySecond,1,false));
-        events.add(new Timeline.Event("premium-supply",premiumSupplySecond,1,false));
+        events.addAll(supplyEvents);
         events.add(new Timeline.Event("pvp",rules.pvpStartSeconds(),2,false));
         events.add(new Timeline.Event("sudden-death",Math.addExact(rules.pvpStartSeconds(),rules.shrinkSeconds()),3,false));
         timeline=new Timeline(events);

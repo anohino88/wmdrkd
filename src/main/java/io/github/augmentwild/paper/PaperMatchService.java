@@ -56,6 +56,7 @@ public final class PaperMatchService implements Listener {
     private final PaperRespawnRestrictions restrictions;
     private final PaperAugments augments;
     private final PaperIntel intel;
+    private final PaperSupply supply;
 
     public PaperMatchService(JavaPlugin plugin, PaperMatchSettings settings, ArenaSearchService search) {
         this.plugin = plugin;
@@ -76,8 +77,18 @@ public final class PaperMatchService implements Listener {
                 () -> session.state(), this::insideAugmentArena, this::insideAugmentBorder, this::move, placement::protect, settings.rules().procDepth());
         intel = new PaperIntel(plugin, () -> clock, () -> session.participantIds(), this::augmentActive,
                 this::insideAugmentBorder, augments);
+        supply = new PaperSupply(plugin, SupplySettings.load(config, settings.rules().gatheringSeconds()),
+                this::augmentActive, this::insideAugmentBorder, this::notice);
     }
 
+    private void notice(String message) {
+        for (UUID id : session.participantIds()) {
+            Player player = plugin.getServer().getPlayer(id);
+            if (player != null) player.sendMessage(message);
+        }
+    }
+
+    public Listener supplyListener() { return supply; }
     public Listener intelListener() { return intel; }
     public String locate(Player player) { return intel.locate(player); }
     public String scout(Player player) { return intel.openScout(player); }
@@ -253,7 +264,7 @@ public final class PaperMatchService implements Listener {
         // Start timing only after the placement and history write have succeeded.
         long started = System.nanoTime();
         clock = new MatchSimulationClock(session, settings.rules(), () -> System.nanoTime() - started,
-                settings.selectionSeconds(), settings.normalSupplySecond(), settings.premiumSupplySecond());
+                settings.selectionSeconds(), supply.start(session.matchId(), context.spawns()));
         augments.start(session.matchId(), clock);
         intel.start(session.matchId());
         sender.sendMessage("경기가 시작됐습니다. 파밍 중 PvP 허용, 목숨 무제한.");
@@ -314,6 +325,7 @@ public final class PaperMatchService implements Listener {
         if (borderDisplay != null) borderDisplay.clear();
         borderDisplay = null;
         border = null;
+        supply.clear();
         intel.clear();
         augments.clear();
         regionCommitted = false;
@@ -344,6 +356,7 @@ public final class PaperMatchService implements Listener {
             long now = clock.elapsedNanos();
             awaitingNativeRespawn.removeAll(departures);
             for (UUID id : departures) {
+                supply.disconnect(id);
                 intel.remove(id);
                 augments.remove(id);
                 session.leave(id);
@@ -374,6 +387,7 @@ public final class PaperMatchService implements Listener {
             borderDisplay.update(frame.area());
             tickNumber++;
             intel.tick();
+            supply.tick(now, clock.isPaused());
             for (UUID id : activeSession.participantIds()) {
                 if (session != activeSession || task == null) return;
                 Player online = plugin.getServer().getPlayer(id);
@@ -464,6 +478,7 @@ public final class PaperMatchService implements Listener {
     @EventHandler public void onQuit(PlayerQuitEvent event) {
         UUID id = event.getPlayer().getUniqueId();
         if (!contains(id)) return;
+        supply.disconnect(id);
         intel.remove(id);
         if (borderDisplay != null) borderDisplay.detach(event.getPlayer());
         if (session.state() == MatchState.PREPARING) {
@@ -501,6 +516,7 @@ public final class PaperMatchService implements Listener {
                 && session.player(id).life().status() == LifeState.Status.ACTIVE && !deaths.containsKey(id)) {
             deaths.put(id, session.deathIntent(id, clock.elapsedNanos()));
             awaitingNativeRespawn.add(id);
+            supply.disconnect(id);
             intel.death(event.getEntity(), event.getDamageSource());
         }
     }

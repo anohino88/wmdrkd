@@ -4,7 +4,7 @@ import io.github.augmentwild.domain.MatchRules;
 import org.bukkit.configuration.file.FileConfiguration;
 
 public record PaperMatchSettings(MatchRules rules, int minimumPlayers, int maximumPlayers,
-                                 int selectionSeconds, int normalSupplySecond, int premiumSupplySecond, long placementTimeoutNanos, int borderDamageInterval, double borderDamagePoints) {
+                                 int selectionSeconds, long placementTimeoutNanos, int borderDamageInterval, double borderDamagePoints) {
     public static PaperMatchSettings load(FileConfiguration config) {
         if (!config.getBoolean("gathering.pvp-enabled")) {
             throw new IllegalArgumentException("gathering.pvp-enabled must be true");
@@ -15,12 +15,10 @@ public record PaperMatchSettings(MatchRules rules, int minimumPlayers, int maxim
         int interval = config.getInt("game.selection-interval-seconds");
         int selection = config.getInt("game.selection-duration-seconds");
         int grace = config.getInt("game.pvp-grace-seconds");
-        int normal = config.getInt("supply.normal.time-seconds");
-        int premium = config.getInt("supply.premium.time-seconds");
         if (minimum < 2 || maximum < minimum || gathering <= 0 || interval <= 0 || gathering % interval != 0
-                || selection < 0 || grace < 0 || normal < 0 || premium < normal || premium > gathering
+                || selection < 0 || grace < 0
                 || !config.getBoolean("game.pause-match-clock-during-selection")) {
-            throw new IllegalArgumentException("Invalid game, supply, or player limits in config.yml");
+            throw new IllegalArgumentException("Invalid game or player limits in config.yml");
         }
         int arenaSize = config.getInt("arena.width");
         if (arenaSize != config.getInt("arena.height") || arenaSize != config.getDouble("border.start-size")) {
@@ -42,7 +40,7 @@ public record PaperMatchSettings(MatchRules rules, int minimumPlayers, int maxim
                 config.getInt("augments.proc.max-depth"));
         int placementSeconds = config.getInt("arena.spawn.placement-timeout-seconds");
         if (placementSeconds < 1) throw new IllegalArgumentException("placement timeout must be positive");
-        return new PaperMatchSettings(rules, minimum, maximum, selection, normal, premium,
+        return new PaperMatchSettings(rules, minimum, maximum, selection,
                 java.util.concurrent.TimeUnit.SECONDS.toNanos(placementSeconds), damageInterval, damagePoints);
     }
 }

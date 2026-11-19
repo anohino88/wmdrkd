@@ -264,7 +264,8 @@ final class PaperIntel implements Listener {
         var effects = new TreeSet<String>();
         for (Damage hit : hits) {
             kindTotals.merge(hit.kind(), hit.health(), Double::sum);
-            causes.merge(hit.augment() == null ? hit.cause() : hit.augment(), hit.health(), Double::sum);
+            causes.merge(hit.augment() == null || hit.kind() == Kind.MELEE || hit.kind() == Kind.PROJECTILE
+                    ? hit.cause() : hit.augment(), hit.health(), Double::sum);
             if (hit.attacker() != null) {
                 contributors.put(hit.attacker(), hit.attackerName());
                 contributorDamage.merge(hit.attacker(), hit.health(), Double::sum);
