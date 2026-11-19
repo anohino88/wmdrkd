@@ -795,7 +795,9 @@ final class PaperOfficialCombat implements Listener {
                 state.progress.reset("split_charge");
                 double damage = event.getDamage();
                 afterDamage(attacker, () -> {
-                    for (int i = 0; i < catalog.count("split-extra-hits"); i++) syntheticHit(attacker, target, "split_attack", damage);
+                    for (int i = 0; i < catalog.count("split-extra-hits"); i++) {
+                        afterRecovery(attacker, target, () -> syntheticHit(attacker, target, "split_attack", damage));
+                    }
                 });
             } else if (every(state, "split_attack")) {
                 state.progress.add("split_charge", 1, 1);
@@ -835,10 +837,13 @@ final class PaperOfficialCombat implements Listener {
             if (state.thousandSwords) swords(attacker, state);
             if (owns(attacker, "draw_the_sword")) drawSword(attacker, state);
             if (owns(attacker, "dual_wielder") && offhand.equals(attacker.getInventory().getItemInOffHand())) {
-                offhand(attacker, target);
+                afterRecovery(attacker, target, () -> {
+                    if (offhand.equals(attacker.getInventory().getItemInOffHand())) offhand(attacker, target);
+                });
             }
             if (owns(attacker, "clone_hand") && every(state, "clone_hand") && ready(attacker, state, "clone_hand")) {
-                syntheticHit(attacker, target, "clone_hand", base * rule("clone_hand").amount());
+                afterRecovery(attacker, target,
+                        () -> syntheticHit(attacker, target, "clone_hand", base * rule("clone_hand").amount()));
             }
             if (state.king && maxHealth(attacker) >= catalog.synergies.getDouble("steel_king.minimum-health")) {
                 double radius = catalog.synergies.getDouble("steel_king.radius");
@@ -1288,6 +1293,18 @@ final class PaperOfficialCombat implements Listener {
         DamageChain.Root root = chain.currentRoot() != null ? chain.currentRoot() : originalHit;
         deferred.addLast(new Deferred(match, source, root == null ? new DamageChain.Root() : root, action));
         if (deferredTask == null) deferredTask = plugin.getServer().getScheduler().runTask(plugin, this::applyDeferred);
+    }
+
+    private void afterRecovery(Player source, LivingEntity target, Runnable action) {
+        afterRecovery(source, target, Bukkit.getCurrentTick() + resonance.followUpTicks(), action);
+    }
+
+    private void afterRecovery(Player source, LivingEntity target, int deadline, Runnable action) {
+        if (!valid(source) || !opponent(source, target)) return;
+        if (target.getNoDamageTicks() <= target.getMaximumNoDamageTicks() / 2) action.run();
+        else if (Bukkit.getCurrentTick() - deadline < 0) {
+            afterDamage(source, () -> afterRecovery(source, target, deadline, action));
+        }
     }
 
     private void applyDeferred() {

@@ -36,6 +36,7 @@ balance:
     measure: true
     pvp-ratio: 2.0
     minimum-points: 4.0
+    follow-up-max-ticks: 25
 late-growth:
   enabled: false
   fractions-by-minute: {"5": 0.0, "10": 0.0, "15": 0.10, "20": 0.20, "25": 0.35, "30": 0.35}

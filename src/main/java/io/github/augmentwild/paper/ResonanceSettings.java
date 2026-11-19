@@ -11,7 +11,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 record ResonanceSettings(AugmentResonance families, AugmentBalance balance, boolean includeSpent,
                          boolean announce, boolean sound, boolean particles, double oneWeight, double twoWeight,
-                         boolean enforceBudget, boolean measureBudget, double damageRatio, double minimumDamage,
+                         boolean enforceBudget, boolean measureBudget, double damageRatio, double minimumDamage, int followUpTicks,
                          boolean lateEnabled, boolean lateLog, Map<Integer, Double> lateFractions,
                          Map<String, Integer> referenceStacks) {
 
@@ -51,6 +51,8 @@ record ResonanceSettings(AugmentResonance families, AugmentBalance balance, bool
         if (one < 1 || two < one || two > 10 || ratio <= 0 || ratio > 10 || minimum < 0 || minimum > 100) {
             throw new IllegalArgumentException("selection weights or damage budget");
         }
+        int followUp = integer(budget, "follow-up-max-ticks");
+        if (followUp < 0 || followUp > 60) throw new IllegalArgumentException("follow-up-max-ticks");
         var late = section(config, "late-growth");
         var lateTimes = section(late, "fractions-by-minute");
         var fractions = new TreeMap<Integer, Double>();
@@ -71,7 +73,7 @@ record ResonanceSettings(AugmentResonance families, AugmentBalance balance, bool
         }
         return new ResonanceSettings(families, balance, flag(revival, "include-spent"), flag(announcement, "enabled"),
                 flag(announcement, "sound"), flag(announcement, "particles"), one, two,
-                flag(budget, "enforce"), flag(budget, "measure"), ratio, minimum,
+                flag(budget, "enforce"), flag(budget, "measure"), ratio, minimum, followUp,
                 flag(late, "enabled"), flag(late, "log"), Map.copyOf(fractions), Map.copyOf(refs));
     }
 

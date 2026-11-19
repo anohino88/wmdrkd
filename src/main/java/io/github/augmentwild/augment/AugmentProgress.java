@@ -23,7 +23,11 @@ public final class AugmentProgress {
     public int addPermanent(String key, int rawGain, int multiplier, int cap) {
         if (rawGain < 0 || multiplier < 0 || cap < 0) throw new IllegalArgumentException("Invalid permanent gain");
         int before = value(key);
-        if (before >= cap || rawGain == 0) return before;
+        if (before >= cap) {
+            remainder.remove(key);
+            return add(key, 0, cap);
+        }
+        if (rawGain == 0) return before;
         long credit = (long) rawGain * multiplier + remainder.getOrDefault(key, 0);
         int awarded = (int) Math.min(cap - before, credit / AugmentResonance.BASE);
         int after = add(key, awarded, cap);
