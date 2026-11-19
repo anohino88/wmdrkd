@@ -21,10 +21,14 @@ public final class PaperResonanceShield {
 
     /** Finds the raw value giving the desired post-mitigation damage with native modifiers recalculated. */
     public static Receipt protect(EntityDamageEvent event, ResonanceShield shield, long now) {
+        return reduce(event, shield.preview(now, event.getFinalDamage()));
+    }
+
+    static Receipt reduce(EntityDamageEvent event, double points) {
         double initial = event.getFinalDamage();
         double base = event.getDamage();
         if (event.isCancelled() || !Double.isFinite(initial) || !Double.isFinite(base) || base <= 0) return null;
-        double requested = shield.preview(now, initial);
+        double requested = Math.min(points, initial);
         if (requested <= 0) return null;
 
         double[] original = new double[MODIFIERS.length];

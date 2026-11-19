@@ -4,7 +4,7 @@ import java.util.EnumMap;
 
 /** Higher-priority layers hide lower layers until cleared or expired. */
 public final class HudMessages<T> {
-    public enum Layer { SELECTION, SHIELD, SUPPLY, SCOUT, PROC, TRACK }
+    public enum Layer { SELECTION, SHIELD, SUPPLY, SCOUT, PROC, TRACK, SKILL }
     private record Entry<T>(T message, long expiry) { }
     private final EnumMap<Layer, Entry<T>> entries = new EnumMap<>(Layer.class);
 

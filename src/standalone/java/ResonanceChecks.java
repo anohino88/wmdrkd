@@ -182,7 +182,7 @@ public final class ResonanceChecks {
         String extensions = Files.readString(root.resolve("src/main/java/io/github/augmentwild/paper/AugmentCatalog.java"));
         entries = Pattern.compile("add\\(registry, config, \"([a-z_]+)\", AugmentRarity\\.([A-Z]+)").matcher(extensions);
         while (entries.find()) register(registry, entries.group(1), entries.group(2));
-        require(registry.all().size() == 76, "production catalog inputs");
+        require(registry.all().size() == 84, "production catalog inputs");
         return registry;
     }
 

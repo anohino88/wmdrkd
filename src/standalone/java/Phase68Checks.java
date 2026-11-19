@@ -20,7 +20,7 @@ public final class Phase68Checks {
         }
         AugmentCombinations.PRESETS.forEach((name, members) ->
                 require(members.size() == 3 && members.stream().allMatch(id -> registry.get(id).selectable()), "preset " + name));
-        System.out.println("PHASE68_CODEX PASS catalog=76 synergies=5 evolutions=6 presets=6");
+        System.out.println("PHASE68_CODEX PASS catalog=84 synergies=5 evolutions=6 presets=6");
     }
 
     private static void require(boolean condition, String label) {

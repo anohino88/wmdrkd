@@ -18,20 +18,20 @@ public enum AugmentRole {
     private static Map<String, AugmentRole> roles() {
         Map<String, AugmentRole> roles = new HashMap<>();
         add(roles, ATTACK, """
-                heavy_fist sword_wind ultimate_hydra infernal_conductor magic_missile phantom_weapon giant_slayer
+                kinetic_reversal ricochet_arrow frost_bind delayed_blast triad_reactor heavy_fist sword_wind ultimate_hydra infernal_conductor magic_missile phantom_weapon giant_slayer
                 split_attack storm_chaser jeweled_gauntlet dual_wielder earthquake_mage center_of_universe final_judgment
                 chain_impact blood_trace frenzy_rhythm explosive_arrow storm_blade venom_swarm bounty_hunter split_bow
                 bomb_alchemy duel_contract void_lord rear berserk
                 """);
         add(roles, SURVIVAL, """
-                immortal_berserker russian_doll survival_instinct predator falling_shockwave counter_shield
+                ore_ward last_bastion immortal_berserker russian_doll survival_instinct predator falling_shockwave counter_shield
                 blood_crown immortal_armor phoenix_heart last_demon heal fall armor defense
                 """);
         add(roles, GROWTH, """
                 stack_dinosaur blood_record mineral_addiction overgrowth steel_heart tank_engine draw_the_sword
                 muscle_memory iron_stomach wound_record vein_overload heart_harvester mineral_devourer endless_evolution blood_god
                 """);
-        add(roles, MOBILITY, "berserk_engine reflex shadow_dash time_thief speed pursuit");
+        add(roles, MOBILITY, "berserk_engine reflex shadow_dash time_thief afterimage_stride speed pursuit");
         add(roles, ECONOMY, "xp_silver xp_gold xp_prism miner");
         add(roles, SPECIAL, """
                 eureka calamity_giant infinite_repeat mad_scientist forbidden_reconstruction time_rewind clone_hand

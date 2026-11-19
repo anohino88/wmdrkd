@@ -24,7 +24,8 @@ final class OfficialAugments {
             "heart_harvester", "blood_crown", "storm_blade", "endless_evolution", "blood_god", "mad_scientist", "draw_the_sword", "last_demon",
             "falling_shockwave", "vein_overload", "blood_trace", "counter_shield", "immortal_armor", "venom_swarm",
             "bounty_hunter", "split_bow", "time_thief", "reflex", "earthquake_mage", "final_judgment",
-            "shadow_dash", "time_rewind", "void_lord", "bomb_alchemy", "duel_contract", "world_erosion", "forbidden_reconstruction", "forbidden_deal");
+            "shadow_dash", "time_rewind", "void_lord", "bomb_alchemy", "duel_contract", "world_erosion", "forbidden_reconstruction", "forbidden_deal",
+            "kinetic_reversal", "ore_ward", "afterimage_stride", "ricochet_arrow", "frost_bind", "delayed_blast", "triad_reactor", "last_bastion");
 
     record Rule(AugmentDefinition definition, String group, int threshold, int cap) {
         double amount() { return definition.amount(); }
@@ -69,7 +70,7 @@ final class OfficialAugments {
             rules.put(id, new Rule(definition, group, threshold, cap));
             registry.register(definition);
         }
-        if (rules.size() != 64 || rules.values().stream().filter(r -> r.group().equals("CORE")).count() != 30
+        if (rules.size() != 72 || rules.values().stream().filter(r -> r.group().equals("CORE")).count() != 30
                 || !rules.keySet().containsAll(BOUND_EFFECTS)) throw new IllegalArgumentException("Official catalog incomplete");
         if (count("missile-active-cap") > 40 || count("particles-per-second") > 150
                 || count("missile-evolved-count") > count("missile-active-cap") || setting("missile-speed") <= 0
@@ -149,6 +150,7 @@ final class OfficialAugments {
         } catch (java.io.IOException | org.bukkit.configuration.InvalidConfigurationException failure) {
             throw new IllegalArgumentException("Could not load " + name, failure);
         }
+        yaml.options().copyDefaults(true);
         yaml.setDefaults(YamlConfiguration.loadConfiguration(new InputStreamReader(
                 Objects.requireNonNull(plugin.getResource(name)), StandardCharsets.UTF_8)));
         return yaml;

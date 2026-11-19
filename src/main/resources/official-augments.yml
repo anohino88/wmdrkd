@@ -768,6 +768,132 @@ augments:
     duration: 10
     cooldown: 3
     cap: 0
+  kinetic_reversal:
+    group: ADDITIONAL
+    rarity: SILVER
+    name: '반동 반격'
+    enabled: true
+    implemented: true
+    condition: '근접 피해를 견디면 다음 근접 공격으로 반격'
+    amount: 2
+    threshold: 6
+    duration: 4
+    cooldown: 16
+    cap: 0
+    push: 0.45
+    particles: true
+    sound: true
+  ore_ward:
+    group: ADDITIONAL
+    rarity: SILVER
+    name: '광맥 방벽'
+    enabled: true
+    implemented: true
+    condition: '자연 광석을 채굴해 다음 공격 피해를 막는 방벽 충전'
+    amount: 2
+    threshold: 8
+    duration: 0
+    cooldown: 10
+    cap: 2
+    particles: true
+    sound: true
+  afterimage_stride:
+    group: ADDITIONAL
+    rarity: SILVER
+    name: '잔상 질주'
+    enabled: true
+    implemented: true
+    condition: '수평 이동을 누적해 다음 근접 공격 강화 및 신속'
+    amount: 1.5
+    threshold: 24
+    duration: 6
+    cooldown: 14
+    cap: 0
+    window: 8
+    speed-ticks: 20
+    particles: true
+    sound: true
+  ricochet_arrow:
+    group: ADDITIONAL
+    rarity: GOLD
+    name: '도탄 화살'
+    enabled: true
+    implemented: true
+    condition: '직접 발사한 화살 명중 시 다른 적에게 도탄'
+    amount: 0.35
+    threshold: 0
+    duration: 0
+    cooldown: 12
+    cap: 4
+    radius: 6
+    particles: true
+    sound: true
+  frost_bind:
+    group: ADDITIONAL
+    rarity: GOLD
+    name: '서리 속박'
+    enabled: true
+    implemented: true
+    condition: '같은 적에게 직접 공격을 누적하면 추가 피해와 감속'
+    amount: 2
+    threshold: 3
+    duration: 2
+    cooldown: 14
+    cap: 0
+    window: 6
+    particles: true
+    sound: true
+  delayed_blast:
+    group: ADDITIONAL
+    rarity: GOLD
+    name: '지연 폭발'
+    enabled: true
+    implemented: true
+    condition: '직접 피해 누적 시 마지막 적중 위치에 폭발 예고'
+    amount: 4
+    threshold: 12
+    duration: 1
+    cooldown: 20
+    cap: 0
+    window: 8
+    radius: 2.5
+    particles: true
+    sound: true
+  triad_reactor:
+    group: ADDITIONAL
+    rarity: PRISMATIC
+    name: '삼중 반응로'
+    enabled: true
+    implemented: true
+    condition: '근접·원거리·증강 또는 방어 반응 후 다음 공격이 폭발'
+    amount: 6
+    threshold: 0
+    duration: 8
+    cooldown: 30
+    cap: 0
+    window: 8
+    radius: 3
+    splash: 3
+    particles: true
+    sound: true
+  last_bastion:
+    group: ADDITIONAL
+    rarity: PRISMATIC
+    name: '최후의 요새'
+    enabled: true
+    implemented: true
+    condition: '플레이어 직접 공격을 누적해서 방어 영역과 종료 충격파 발동'
+    amount: 0.2
+    threshold: 3
+    duration: 3
+    cooldown: 35
+    cap: 0
+    window: 6
+    radius: 3
+    pulse: 2
+    push: 0.6
+    particles: true
+    sound: true
 settings:
   ore-sites: 262144
   max-hits-per-target: 24
@@ -900,3 +1026,65 @@ settings:
   split-bow-gravity: 0.05
   venom-cloud-duration: 3
   max-deferred-effects: 512
+followups:
+  reflex:
+    enabled: true
+    description: 회피 후 다음 근접 공격 강화
+    particles: true
+    sound: true
+    duration: 3
+    ratio: 0.15
+  counter_shield:
+    enabled: true
+    description: 강화 공격에 추가 넉백
+    particles: true
+    sound: true
+    push: 0.4
+  blood_trace:
+    enabled: true
+    description: 표식 적중 시 지연 파열
+    particles: true
+    sound: true
+    delay: 0.5
+    damage: 2
+    cooldown: 14
+  magic_missile:
+    enabled: true
+    description: 동일 대상 미사일 누적 명중 시 폭발
+    particles: true
+    sound: true
+    window: 5
+    threshold: 3
+    damage: 3
+    cooldown: 14
+  sword_wind:
+    enabled: true
+    description: 서로 다른 적 둘 적중 시 다음 근접 공격 강화
+    particles: true
+    sound: true
+    duration: 5
+    damage: 2
+    cooldown: 15
+  predator:
+    enabled: true
+    description: 초과 회복 일부를 임시 흡수로 전환
+    particles: true
+    sound: true
+    ratio: 0.5
+    cap: 2
+    duration: 4
+  storm_chaser:
+    enabled: true
+    description: 낙뢰 적중 위치에 둔화 전기장 생성
+    particles: true
+    sound: true
+    duration: 2
+    radius: 2
+    cooldown: 12
+  frenzy_rhythm:
+    enabled: true
+    description: 최대 연속 타격 도달 시 신속
+    particles: true
+    sound: true
+    speed-ticks: 30
+    cooldown: 12

@@ -238,7 +238,7 @@ public final class BorderProbe extends JavaPlugin implements Listener {
         var yaml = YamlConfiguration.loadConfiguration(new InputStreamReader(
                 main.getResource("official-augments.yml"), StandardCharsets.UTF_8));
         var section = yaml.getConfigurationSection("augments");
-        require(section != null && section.getKeys(false).size() == 64, "official config loaded");
+        require(section != null && section.getKeys(false).size() == 72, "official config loaded");
         require(section.getKeys(false).stream().allMatch(id -> section.getBoolean(id + ".implemented")
                 && section.getBoolean(id + ".enabled")), "configured official effects");
     }

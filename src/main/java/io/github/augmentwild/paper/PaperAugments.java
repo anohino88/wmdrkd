@@ -173,6 +173,7 @@ final class PaperAugments implements Listener {
         return List.copyOf(cards);
     }
 
+    String skill(Player player, String[] args) { return official.skill(player, args); }
     String cast(Player player, String id) { return official.cast(player, id); }
 
     Listener officialListener() { return official; }

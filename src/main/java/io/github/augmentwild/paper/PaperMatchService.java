@@ -122,6 +122,7 @@ public final class PaperMatchService implements Listener {
                 && border.area(clock.elapsedSeconds()).contains(location.getX(), location.getZ(), 0);
     }
 
+    public String skill(Player player, String[] args) { return augments.skill(player, args); }
     public String castAugment(Player player, String id) { return augments.cast(player, id); }
     public String openAugments(Player player) { return augments.open(player); }
     public String openCodex(Player player) { return augments.openCodex(player); }
