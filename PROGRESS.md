@@ -285,3 +285,9 @@ PHASE 2B의 GitHub Actions #6에서 Java 버전 확인, `./gradlew clean build -
 - 관리자 실험은 양쪽 권한, 전용 월드, 명시적 테스트 시작, 활성 참가자 및 경기 시계를 검사한다. 부여·제거·진행도·보고 명령은 기존 소유권·진화·공명 및 속성을 사용한다. 실험 경기 통계는 `mode=lab`로 표시한다. 클라이언트를 사용하는 명령의 실제 부여·제거, 공격, GUI 및 종료 복원은 `REAL_CLIENT_VERIFIED = NOT_RUN`이다.
 - 로컬 전체 Gradle은 Paper API 메타데이터 해석 시 Maven Central·Paper Maven DNS 오류로 차단됐다. Java 25 독립 회귀와 `git diff --check`는 통과했다.
 - 최종 코드 `9997982418a4e5e8e6c0a23709172768b87b8a94` [CI](https://github.com/anohino88/wmdrkd/actions/runs/44517290832) PASS. Java 25 빌드·JUnit·독립 회귀·JAR 검사, Paper 26.3 명령 권한·비활성·대기 중 변경 차단, 기존 프로브·보급 복구·경기장 벤치마크가 통과했다. 증가된 Paper 합성 부하는 2·4·8·16 엔티티별 50틱 워밍업 및 300틱 측정을 두 차례 수행했다. 전체 측정 2,400틱에서 50ms 초과는 0회, 최대는 4.640ms였다. [서버 JAR](https://github.com/anohino88/wmdrkd/actions/runs/44517290832/artifacts/14526058164) · [증강별 결과](https://github.com/anohino88/wmdrkd/actions/runs/44517290832/artifacts/14525748362) · [합성 부하 로그](https://github.com/anohino88/wmdrkd/actions/runs/44517290832/artifacts/14527085136).
+
+## PHASE 6.8 최종 기능 구현 (2026-11-19)
+
+- 기준 원격 `83e3cd24e50edfa8f77e5ec74b39274416e0cb95`. `/aw augments`의 개인 도감에 증강 76종, 고유 시너지 5종의 구성과 진행, 진화 6종 원장과 달성 여부, 두 계열 공명을 연결했다. 전투 발동과 선택·보호막·보급·정보전의 액션바는 한 곳에서 우선순위를 적용한다.
+- 전투 실험실 프리셋 6종을 기존 권한 및 활성 테스트 경기 조건에 연결했다. 플러그인 GUI의 읽기 전용 클릭과 드래그 차단을 공유한다. 기본 경기 규칙과 초반 처치 보상 설정을 유지했다.
+- `FEATURE_COMPLETE = PASS`, `REAL_CLIENT_VERIFIED = NOT_RUN`. 코드 `ec4cb4c7083b90ed974aa619e9479ed0f5355f19`의 [CI](https://github.com/anohino88/wmdrkd/actions/runs/44521254301)에서 Java 25 Gradle/JUnit, 독립 회귀, JAR 검사와 Paper 26.3 프로브 전체를 통과했다. 로컬 독립 회귀와 `git diff --check`도 통과했다. 로컬 Gradle은 Paper Maven·Maven Central DNS 오류로 차단됐다. [사용법과 검증 범위](docs/phase68-feature-complete-ko.md) · [JAR](https://github.com/anohino88/wmdrkd/actions/runs/44521254301/artifacts/14527364496).
