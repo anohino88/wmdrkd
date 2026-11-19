@@ -156,10 +156,34 @@ public final class BorderProbe extends JavaPlugin implements Listener {
             }
             shield.clear();
             require(shield.remaining(shieldClock) == 0 && shieldPig.getAbsorptionAmount() == 2, "cleanup leaves native absorption");
+            verifyMitigatedShield(health);
         } finally {
             shieldPig.remove();
             shieldPig = null;
         }
+    }
+
+    private void verifyMitigatedShield(double maxHealth) {
+        lateDamage = LateDamage.NONE;
+        shieldPig.removePotionEffect(PotionEffectType.ABSORPTION);
+        shieldPig.setAbsorptionAmount(0);
+        var armor = shieldPig.getAttribute(Attribute.ARMOR);
+        require(armor != null, "native armor attribute");
+        armor.setBaseValue(8);
+        shieldPig.addPotionEffect(new PotionEffect(PotionEffectType.RESISTANCE, 200, 0));
+        shieldPig.setHealth(maxHealth);
+        shieldPig.setNoDamageTicks(0);
+        shieldPig.damage(7);
+        double mitigated = maxHealth - shieldPig.getHealth();
+        require(mitigated > 2 && mitigated < 7, "native armor and resistance reduce damage");
+
+        shieldPig.setHealth(maxHealth);
+        shieldPig.setNoDamageTicks(0);
+        shield.grant(shieldClock, 2, 6_000_000_000L);
+        shieldPig.damage(7);
+        require(Math.abs(maxHealth - shieldPig.getHealth() - (mitigated - 2)) < .00001,
+                "shield reduces final health damage by two points with armor and resistance");
+        require(shield.remaining(shieldClock) < 1e-7, "mitigated shield debited once");
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)

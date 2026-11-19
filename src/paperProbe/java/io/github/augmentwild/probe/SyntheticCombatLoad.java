@@ -100,7 +100,14 @@ final class SyntheticCombatLoad implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void countEvent(EntityDamageEvent event) {
-        if (chain.current() != null && pigs.contains(event.getEntity())) events++;
+        var context = chain.current();
+        if (context == null || !pigs.contains(event.getEntity())) return;
+        var cause = event.getDamageSource().getCausingEntity();
+        if (cause == null || !context.attacker().equals(cause.getUniqueId())
+                || !context.victim().equals(event.getEntity().getUniqueId())) {
+            throw new AssertionError("Synthetic damage was attributed to the wrong source or victim");
+        }
+        events++;
     }
 
     @EventHandler
