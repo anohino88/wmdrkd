@@ -492,6 +492,11 @@ final class PaperOfficialCombat implements Listener {
         return List.of();
     }
 
+    boolean showsShield(UUID player) {
+        var fighter = fighters.get(player);
+        return fighter != null && clock.get() != null && fighter.shield.remaining(clock.get().elapsedNanos()) > 0;
+    }
+
     private void updateShieldDisplay(Player player, Fighter state) {
         long elapsed = clock.get().elapsedNanos();
         double points = state.shield.remaining(elapsed);

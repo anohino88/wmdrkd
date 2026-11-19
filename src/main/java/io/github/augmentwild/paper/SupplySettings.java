@@ -15,7 +15,7 @@ import org.bukkit.potion.PotionType;
 
 record SupplySettings(List<SupplyPlan.Window> windows, long announceSeconds, long coordinateSeconds,
                       long openingNanos, double range, double movementTolerance, int separation,
-                      int minHeight, int maxHeight, List<List<Reward>> normal, List<List<Reward>> premium) {
+                      int minHeight, int maxHeight, double pvpRadius, List<List<Reward>> normal, List<List<Reward>> premium) {
     record Reward(Material material, int amount, PotionType potion, Enchantment enchantment, int level) {
         ItemStack create() {
             var item = new ItemStack(material, amount);
@@ -42,16 +42,17 @@ record SupplySettings(List<SupplyPlan.Window> windows, long announceSeconds, lon
         }).toList();
         long announce = config.getLong("supply.announce-seconds"), coordinates = config.getLong("supply.coordinates-seconds");
         double range = config.getDouble("supply.interaction-distance"), tolerance = config.getDouble("supply.movement-tolerance");
+        double pvpRadius = config.getDouble("supply.pvp-count-radius");
         int separation = config.getInt("supply.minimum-separation");
         int minHeight = config.getInt("supply.min-height"), maxHeight = config.getInt("supply.max-height");
         if (coordinates < 1 || announce <= coordinates || windows.getFirst().first() < announce
                 || windows.get(0).last() >= windows.get(1).first() || windows.get(1).last() >= windows.getLast().first()
                 || windows.getLast().last() > gathering || !(range > 0 && range <= 16)
-                || !(tolerance >= 0 && tolerance <= .5) || separation < 1 || minHeight > maxHeight) {
+                || !(tolerance >= 0 && tolerance <= .5) || separation < 1 || minHeight > maxHeight || !(pvpRadius > 0 && pvpRadius <= 64)) {
             throw new IllegalArgumentException("Invalid supply settings");
         }
         return new SupplySettings(windows, announce, coordinates, IntelSettings.time(config, "supply.opening-seconds"),
-                range, tolerance, separation, minHeight, maxHeight, rewards(config, "normal"), rewards(config, "premium"));
+                range, tolerance, separation, minHeight, maxHeight, pvpRadius, rewards(config, "normal"), rewards(config, "premium"));
     }
 
     private static List<List<Reward>> rewards(FileConfiguration config, String key) {

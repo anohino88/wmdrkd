@@ -60,6 +60,7 @@ scouting:
   aim-seconds: 2
   cooldown-seconds: 60
   result-seconds: 15
+  engagement-seconds: 30
 death-review:
   window-seconds: 10
   max-records: 128
@@ -100,6 +101,7 @@ supply:
   interaction-distance: 5.0
   movement-tolerance: 0.05
   minimum-separation: 24
+  pvp-count-radius: 12
   min-height: -16
   max-height: 180
   rewards:

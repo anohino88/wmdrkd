@@ -5,6 +5,9 @@ import io.github.augmentwild.domain.CombatIntel.Damage;
 import io.github.augmentwild.domain.CombatIntel.Kind;
 import io.github.augmentwild.domain.MatchSimulationClock;
 import io.github.augmentwild.domain.Tracker;
+import io.github.augmentwild.domain.MatchTelemetry;
+import io.github.augmentwild.domain.MatchTelemetry.Counter;
+import java.util.function.Consumer;
 import io.papermc.paper.event.player.PlayerStopUsingItemEvent;
 import java.util.*;
 import java.util.function.Predicate;
@@ -40,6 +43,12 @@ final class PaperIntel implements Listener {
     private final Predicate<Player> active;
     private final Predicate<Location> safe;
     private final PaperAugments augments;
+    private final MatchTelemetry stats;
+    private final Predicate<UUID> openingSupply;
+    private final Consumer<Location> nearbyPvp;
+    private enum Hud { TRACK, SCOUT }
+    private final Map<UUID, Hud> displayed = new HashMap<>();
+    private final Map<UUID, Integer> shownProgress = new HashMap<>();
     private final Tracker targetFinder = new Tracker();
     private final Map<UUID, CombatIntel.Tracking> tracks = new HashMap<>();
     private final Map<UUID, Long> trackUpdates = new HashMap<>();
@@ -76,13 +85,17 @@ final class PaperIntel implements Listener {
     }
 
     PaperIntel(JavaPlugin plugin, Supplier<MatchSimulationClock> clock, Supplier<Set<UUID>> participants,
-               Predicate<Player> active, Predicate<Location> safe, PaperAugments augments) {
+               Predicate<Player> active, Predicate<Location> safe, PaperAugments augments, MatchTelemetry stats,
+               Predicate<UUID> openingSupply, Consumer<Location> nearbyPvp) {
         this.plugin = plugin;
         this.clock = clock;
         this.participants = participants;
         this.active = active;
         this.safe = safe;
         this.augments = augments;
+        this.stats = stats;
+        this.openingSupply = openingSupply;
+        this.nearbyPvp = nearbyPvp;
         settings = IntelSettings.load(plugin.getConfig());
     }
 
@@ -120,10 +133,14 @@ final class PaperIntel implements Listener {
         var outcome = tracking.start(target.map(Tracker.Result::id).orElse(null), now, settings.trackDuration(), settings.trackCooldown(),
                 () -> spendDiamond(player));
         return switch (outcome) {
-            case NO_TARGET -> "안전 구역 안에서 추적할 상대를 찾지 못했습니다.";
+            case NO_TARGET -> {
+                stats.count(Counter.TRACK_NO_TARGET);
+                yield "안전 구역 안에서 추적할 상대를 찾지 못했습니다.";
+            }
             case NO_FUNDS -> "다이아몬드 " + settings.cost() + "개가 필요합니다.";
             case COOLDOWN -> "위치 추적 재사용 대기 중입니다.";
             case STARTED -> {
+                stats.count(Counter.TRACK_USES);
                 trackUpdates.remove(id);
                 updateTrack(player, now);
                 yield "가장 가까운 적의 방향을 추적합니다.";
@@ -151,10 +168,13 @@ final class PaperIntel implements Listener {
             endTrack(id);
             return;
         }
-        if (now >= trackUpdates.getOrDefault(id, 0L)) {
+        if (hudOccupied(id) || dwell.containsKey(id)) return;
+        if (displayed.get(id) != Hud.TRACK || now >= trackUpdates.getOrDefault(id, 0L)) {
             String label = settings.revealName() ? " · " + target.getName() : "";
-            player.sendActionBar(Component.text("적 방향 · " + direction(player.getLocation(), target.getLocation())
-                    + label, NamedTextColor.AQUA));
+            long seconds = (running.remaining(now) + 999_999_999) / 1_000_000_000L;
+            player.sendActionBar(Component.text("적 추적 · " + direction(player.getLocation(), target.getLocation())
+                    + label + " · 남은 시간 " + seconds + "초", NamedTextColor.AQUA));
+            displayed.put(id, Hud.TRACK);
             trackUpdates.put(id, now + settings.trackUpdate());
         }
     }
@@ -178,39 +198,60 @@ final class PaperIntel implements Listener {
         if (tracking == null || tracking.assigned() == null) return;
         tracking.stop();
         trackUpdates.remove(id);
+        clearHud(id, Hud.TRACK);
+    }
+
+    private boolean hudOccupied(UUID id) {
+        return clock.get() == null || clock.get().isPaused() || openingSupply.test(id) || augments.showsShield(id);
+    }
+
+    private void clearHud(UUID id, Hud layer) {
+        if (!displayed.remove(id, layer) || hudOccupied(id)) return;
         Player player = plugin.getServer().getPlayer(id);
         if (player != null) player.sendActionBar(Component.empty());
+    }
+
+    private void clearAim(UUID id) {
+        dwell.remove(id);
+        shownProgress.remove(id);
+        clearHud(id, Hud.SCOUT);
     }
 
     void tick() {
         if (match == null) return;
         if (clock.get().isPaused()) {
             dwell.clear();
+            displayed.clear();
+            shownProgress.clear();
             return;
         }
         long now = clock.get().elapsedNanos();
         for (UUID id : participants.get()) {
             Player player = plugin.getServer().getPlayer(id);
             if (!playable(player)) {
-                dwell.remove(id);
+                clearAim(id);
                 endTrack(id);
                 continue;
             }
-            updateTrack(player, now);
+            if (hudOccupied(id)) {
+                displayed.remove(id);
+                shownProgress.remove(id);
+            }
             observe(player, now);
+            updateTrack(player, now);
         }
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void stopUsing(PlayerStopUsingItemEvent event) {
-        if (event.getItem().getType() == Material.SPYGLASS) dwell.remove(event.getPlayer().getUniqueId());
+        if (event.getItem().getType() == Material.SPYGLASS) clearAim(event.getPlayer().getUniqueId());
     }
 
     private void observe(Player player, long now) {
         UUID id = player.getUniqueId();
         if (now < scoutCooldown.getOrDefault(id, 0L) || !player.isHandRaised()
                 || player.getActiveItem().getType() != Material.SPYGLASS) {
-            dwell.remove(id);
+            clearAim(id);
             return;
         }
         Location eye = player.getEyeLocation();
@@ -218,13 +259,33 @@ final class PaperIntel implements Listener {
                 true, 0, entity -> entity instanceof Player other && !other.equals(player));
         if (hit == null || !(hit.getHitEntity() instanceof Player target) || !enemy(player, target)
                 || player.getLocation().distanceSquared(target.getLocation()) > settings.scoutRange() * settings.scoutRange()) {
-            dwell.remove(id);
+            clearAim(id);
             return;
         }
-        if (!dwell.computeIfAbsent(id, ignored -> new CombatIntel.Dwell()).observe(target.getUniqueId(), now, settings.aim())) return;
-        dwell.remove(id);
+        var observation = dwell.computeIfAbsent(id, ignored -> new CombatIntel.Dwell());
+        if (!target.getUniqueId().equals(observation.target())) {
+            stats.count(Counter.SCOUT_ATTEMPTS);
+            shownProgress.remove(id);
+        }
+        if (!observation.observe(target.getUniqueId(), now, settings.aim())) {
+            int progress = observation.progress(now, settings.aim()) / 5 * 5;
+            if (!hudOccupied(id) && shownProgress.getOrDefault(id, -1) != progress) {
+                player.sendActionBar(Component.text("증강 분석 중 · " + progress + "%", NamedTextColor.AQUA));
+                shownProgress.put(id, progress);
+                displayed.put(id, Hud.SCOUT);
+            }
+            return;
+        }
+        clearAim(id);
+        stats.scout(id, target.getUniqueId(), now + settings.engagementWindow());
         scoutCooldown.put(id, now + settings.scoutCooldown());
-        var report = new Report("망원경 정찰", augments.scoutCards(target.getUniqueId()),
+        long second = now / 1_000_000_000L;
+        var cards = new ArrayList<Card>();
+        cards.add(card(Material.CLOCK, "정찰 스냅샷",
+                String.format(Locale.ROOT, "경기 %02d:%02d 분석", second / 60, second % 60),
+                "분석 당시의 증강과 활성 조합"));
+        cards.addAll(augments.scoutCards(target.getUniqueId()));
+        var report = new Report("망원경 정찰", cards,
                 System.nanoTime() + settings.resultLifetime());
         retain(scouts, id, report);
         target.sendMessage(Component.text("누군가 당신의 증강을 분석했습니다.", NamedTextColor.YELLOW));
@@ -250,16 +311,21 @@ final class PaperIntel implements Listener {
         double health = Math.min(player.getHealth(), Math.max(0, event.getFinalDamage()));
         double absorption = event.isApplicable(EntityDamageEvent.DamageModifier.ABSORPTION)
                 ? Math.max(0, -event.getDamage(EntityDamageEvent.DamageModifier.ABSORPTION)) : 0;
-        double shield = trace.shield() + absorption;
-        if (!Double.isFinite(health) || !Double.isFinite(shield) || health == 0 && shield == 0) return;
+        double shield = trace.shield();
+        if (!Double.isFinite(health) || !Double.isFinite(shield) || !Double.isFinite(absorption)
+                || health == 0 && shield == 0 && absorption == 0) return;
         var source = event.getDamageSource().getCausingEntity();
         Player attacker = source instanceof Player p ? p : source instanceof Projectile projectile
                 && projectile.getShooter() instanceof Player p ? p : null;
+        if (attacker != null && !attacker.equals(player) && playable(attacker)) {
+            stats.engage(attacker.getUniqueId(), player.getUniqueId(), clock.get().elapsedNanos());
+            nearbyPvp.accept(player.getLocation());
+        }
         Kind kind = classify(event, trace.synthetic(), trace.augment());
         histories.computeIfAbsent(player.getUniqueId(), id -> new CombatIntel.History(settings.historySize(), settings.historyWindow()))
                 .add(new Damage(clock.get().elapsedNanos(), attacker == null ? null : attacker.getUniqueId(),
                         attacker == null ? null : attacker.getName(), kind, event.getCause().name(),
-                        trace.augment(), trace.origin(), health, shield));
+                        trace.augment(), trace.origin(), health, shield, absorption));
     }
 
     private static Kind classify(EntityDamageEvent event, boolean synthetic, String augment) {
@@ -283,6 +349,7 @@ final class PaperIntel implements Listener {
         String killer = player.getKiller() == null ? "확인되지 않음" : player.getKiller().getName();
         double total = hits.stream().mapToDouble(Damage::health).sum();
         double shield = hits.stream().mapToDouble(Damage::shield).sum();
+        double vanilla = hits.stream().mapToDouble(Damage::absorption).sum();
         var kindTotals = new EnumMap<Kind, Double>(Kind.class);
         var causes = new TreeMap<String, Double>();
         var contributors = new LinkedHashMap<UUID, String>();
@@ -300,7 +367,8 @@ final class PaperIntel implements Listener {
         }
         String biggest = causes.entrySet().stream().max(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse("기록 없음");
         cards.add(card(Material.PAPER, "사망 요약", "최종 원인 " + finalSource.getDamageType().getKey(),
-                "처치자 " + killer, "최근 피해 " + points(total) + " · 흡수 " + points(shield), "최대 피해 원인 " + biggest));
+                "처치자 " + killer, "최근 체력 피해 " + points(total),
+                "생명의 잔향 " + points(shield) + " · 바닐라 흡수 " + points(vanilla), "최대 피해 원인 " + biggest));
         kindTotals.forEach((kind, damage) -> cards.add(card(Material.PAPER, kind.name(), "체력 피해 " + points(damage))));
         contributors.forEach((source, name) -> cards.add(card(Material.PLAYER_HEAD, name,
                 "체력 피해 기여 " + points(contributorDamage.get(source)))));
@@ -310,11 +378,11 @@ final class PaperIntel implements Listener {
             long elapsed = hit.time() / 1_000_000_000L;
             cards.add(card(Material.BOOK, String.format(Locale.ROOT, "%02d:%02d · %s", elapsed / 60, elapsed % 60, hit.kind()),
                     "출처 " + (hit.attackerName() == null ? hit.cause() : hit.attackerName()),
-                    "체력 피해 " + points(hit.health()) + " · 흡수 " + points(hit.shield())));
+                    "체력 피해 " + points(hit.health()) + " · 보호막 " + points(hit.shield()) + " · 흡수 " + points(hit.absorption())));
         }
         retain(deaths, id, new Report("사망 분석", cards, System.nanoTime() + settings.deathDeliveryLifetime()));
         scouts.remove(id);
-        dwell.remove(id);
+        clearAim(id);
         endTrack(id);
         for (UUID tracker : List.copyOf(tracks.keySet())) if (id.equals(tracks.get(tracker).assigned())) endTrack(tracker);
         player.sendMessage("사망 분석을 저장했습니다. 기본 리스폰 후 /aw death로 볼 수 있습니다.");
@@ -332,7 +400,7 @@ final class PaperIntel implements Listener {
     void remove(UUID id) {
         endTrack(id);
         for (UUID viewer : List.copyOf(tracks.keySet())) if (id.equals(tracks.get(viewer).assigned())) endTrack(viewer);
-        dwell.remove(id);
+        clearAim(id);
         scouts.remove(id);
         Player player = plugin.getServer().getPlayer(id);
         if (player != null && isReadOnly(player.getOpenInventory().getTopInventory())) player.closeInventory();
@@ -345,6 +413,9 @@ final class PaperIntel implements Listener {
             if (player != null && player.getOpenInventory().getTopInventory().getHolder() instanceof Menu menu
                     && menu.report == scouts.get(id)) player.closeInventory();
         }
+        for (UUID id : List.copyOf(dwell.keySet())) clearAim(id);
+        displayed.clear();
+        shownProgress.clear();
         tracks.clear();
         trackUpdates.clear();
         scoutCooldown.clear();
@@ -374,6 +445,9 @@ final class PaperIntel implements Listener {
         menu.inventory = plugin.getServer().createInventory(menu, 45, Component.text(report.title()));
         render(menu);
         player.openInventory(menu.inventory);
+        if (deaths.get(menu.owner) == report && player.getOpenInventory().getTopInventory().getHolder() == menu) {
+            stats.count(Counter.DEATH_VIEWS);
+        }
     }
 
     private void retain(Map<UUID, Report> reports, UUID owner, Report report) {

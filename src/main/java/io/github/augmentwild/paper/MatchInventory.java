@@ -32,6 +32,26 @@ public final class MatchInventory {
         return new Debit(result, remaining);
     }
 
+    public enum Write { DELIVERED, ROLLED_BACK, UNCERTAIN }
+
+    public static Write apply(ItemStack[] before, ItemStack[] after, java.util.function.Consumer<ItemStack[]> write,
+                              java.util.function.Consumer<RuntimeException> report) {
+        try {
+            write.accept(after);
+            return Write.DELIVERED;
+        } catch (RuntimeException failure) {
+            try {
+                write.accept(before);
+            } catch (RuntimeException rollback) {
+                failure.addSuppressed(rollback);
+                report.accept(failure);
+                return Write.UNCERTAIN;
+            }
+            report.accept(failure);
+            return Write.ROLLED_BACK;
+        }
+    }
+
     public static ItemStack[] fit(ItemStack[] storage, int inventoryLimit, List<ItemStack> reward) {
         var result = storage.clone();
         for (int slot = 0; slot < result.length; slot++) {

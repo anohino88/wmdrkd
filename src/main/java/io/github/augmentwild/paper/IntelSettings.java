@@ -4,7 +4,7 @@ import java.time.Duration;
 import org.bukkit.configuration.file.FileConfiguration;
 
 record IntelSettings(int cost, double trackerRange, long trackDuration, long trackCooldown, long trackUpdate,
-                     boolean revealName, double scoutRange, long aim, long scoutCooldown, long resultLifetime,
+                     boolean revealName, double scoutRange, long aim, long scoutCooldown, long resultLifetime, long engagementWindow,
                      int historySize, long historyWindow, long deathDeliveryLifetime) {
     static IntelSettings load(FileConfiguration config) {
         int cost = config.getInt("tracker.amount");
@@ -18,7 +18,7 @@ record IntelSettings(int cost, double trackerRange, long trackDuration, long tra
         return new IntelSettings(cost, range, time(config, "tracker.duration-seconds"),
                 time(config, "tracker.cooldown-seconds"), time(config, "tracker.update-seconds"), config.getBoolean("tracker.reveal-name"),
                 scout, time(config, "scouting.aim-seconds"), time(config, "scouting.cooldown-seconds"),
-                time(config, "scouting.result-seconds"), entries, time(config, "death-review.window-seconds"),
+                time(config, "scouting.result-seconds"), time(config, "scouting.engagement-seconds"), entries, time(config, "death-review.window-seconds"),
                 time(config, "death-review.delivery-seconds"));
     }
 

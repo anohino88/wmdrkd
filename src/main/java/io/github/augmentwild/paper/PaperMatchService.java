@@ -57,6 +57,7 @@ public final class PaperMatchService implements Listener {
     private final PaperAugments augments;
     private final PaperIntel intel;
     private final PaperSupply supply;
+    private final io.github.augmentwild.domain.MatchTelemetry telemetry = new io.github.augmentwild.domain.MatchTelemetry();
 
     public PaperMatchService(JavaPlugin plugin, PaperMatchSettings settings, ArenaSearchService search) {
         this.plugin = plugin;
@@ -75,10 +76,10 @@ public final class PaperMatchService implements Listener {
         augments = new PaperAugments(plugin, () -> clock, this::augmentMember, this::augmentActive,
                 player -> placement.protectedFromDamage(player.getUniqueId(), System.nanoTime()),
                 () -> session.state(), this::insideAugmentArena, this::insideAugmentBorder, this::move, placement::protect, settings.rules().procDepth());
-        intel = new PaperIntel(plugin, () -> clock, () -> session.participantIds(), this::augmentActive,
-                this::insideAugmentBorder, augments);
         supply = new PaperSupply(plugin, SupplySettings.load(config, settings.rules().gatheringSeconds()),
-                this::augmentActive, this::insideAugmentBorder, this::notice);
+                this::augmentActive, this::insideAugmentBorder, this::notice, telemetry);
+        intel = new PaperIntel(plugin, () -> clock, () -> session.participantIds(), this::augmentActive,
+                this::insideAugmentBorder, augments, telemetry, supply::isOpening, supply::nearbyPvp);
     }
 
     private void notice(String message) {
@@ -269,6 +270,7 @@ public final class PaperMatchService implements Listener {
         clock = new MatchSimulationClock(session, settings.rules(), () -> System.nanoTime() - started,
                 settings.selectionSeconds(), supply.start(session.matchId(), context.spawns()));
         augments.start(session.matchId(), clock);
+        telemetry.start();
         intel.start(session.matchId());
         sender.sendMessage("경기가 시작됐습니다. 파밍 중 PvP 허용, 목숨 무제한.");
         for (UUID id : players) {
@@ -329,6 +331,8 @@ public final class PaperMatchService implements Listener {
         borderDisplay = null;
         border = null;
         supply.clear();
+        var stats = telemetry.finish();
+        if (!stats.isEmpty()) plugin.getLogger().info("Match feature totals " + new java.util.TreeMap<>(stats));
         intel.clear();
         augments.clear();
         regionCommitted = false;
@@ -389,7 +393,6 @@ public final class PaperMatchService implements Listener {
             var frame = border.update(now, clock.isPaused());
             borderDisplay.update(frame.area());
             tickNumber++;
-            intel.tick();
             supply.tick(now, clock.isPaused());
             for (UUID id : activeSession.participantIds()) {
                 if (session != activeSession || task == null) return;
@@ -409,6 +412,7 @@ public final class PaperMatchService implements Listener {
                     }
                 }
             }
+            intel.tick();
         } catch (RuntimeException failure) {
             plugin.getLogger().log(Level.SEVERE, "Match tick failed", failure);
             clearMatch();

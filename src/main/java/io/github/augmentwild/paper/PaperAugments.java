@@ -126,6 +126,8 @@ final class PaperAugments implements Listener {
         guard = new ProcGuard(maxDepth);
     }
 
+    boolean showsShield(UUID player) { return official.showsShield(player); }
+
     String augmentName(String id) {
         var definition = registry.get(id);
         return definition == null ? id : definition.name();

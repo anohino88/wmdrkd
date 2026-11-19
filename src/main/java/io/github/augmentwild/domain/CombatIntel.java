@@ -28,6 +28,7 @@ public final class CombatIntel {
 
         public boolean busy(long now) { return target(now) != null || now < cooldown; }
         public UUID target(long now) { return now < expires ? target : null; }
+        public long remaining(long now) { return target(now) == null ? 0 : expires - now; }
         public UUID assigned() { return target; }
         public void stop() { target = null; }
     }
@@ -41,6 +42,12 @@ public final class CombatIntel {
         private UUID target;
         private long since;
 
+        public UUID target() { return target; }
+
+        public int progress(long now, long required) {
+            return target == null ? 0 : (int) Math.clamp((now - since) * 100 / required, 0, 100);
+        }
+
         public boolean observe(UUID visible, long now, long required) {
             if (visible == null || !Objects.equals(visible, target)) {
                 target = visible;
@@ -53,7 +60,12 @@ public final class CombatIntel {
     public enum Kind { MELEE, PROJECTILE, AUGMENT, PERIODIC, AREA, ENVIRONMENT }
 
     public record Damage(long time, UUID attacker, String attackerName, Kind kind, String cause,
-                         String augment, UUID origin, double health, double shield) { }
+                         String augment, UUID origin, double health, double shield, double absorption) {
+        public Damage(long time, UUID attacker, String attackerName, Kind kind, String cause,
+                      String augment, UUID origin, double health, double shield) {
+            this(time, attacker, attackerName, kind, cause, augment, origin, health, shield, 0);
+        }
+    }
 
     public static final class History {
         private final ArrayDeque<Damage> records = new ArrayDeque<>();

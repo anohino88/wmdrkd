@@ -1,6 +1,8 @@
 package io.github.augmentwild.paper;
 
 import io.github.augmentwild.domain.SupplyPlan;
+import io.github.augmentwild.domain.MatchTelemetry;
+import io.github.augmentwild.domain.MatchTelemetry.Counter;
 import io.github.augmentwild.domain.Timeline;
 import java.util.*;
 import java.util.function.Consumer;
@@ -42,6 +44,7 @@ final class PaperSupply implements Listener {
         Location position;
         List<ItemStack> loot = List.of();
         SupplyBlock block;
+        long arrived;
         boolean announced, published, attempted;
 
         Delivery(SupplyPlan.Drop plan) { this.plan = plan; }
@@ -54,6 +57,7 @@ final class PaperSupply implements Listener {
     private final Predicate<Location> safe;
     private final Consumer<String> notice;
     private final SupplyRecovery recovery;
+    private final MatchTelemetry stats;
     private final Map<Site, Delivery> spawned = new HashMap<>();
     private final Map<ChunkSite, Integer> tickets = new HashMap<>();
     private final Map<UUID, Opening> opening = new HashMap<>();
@@ -66,12 +70,13 @@ final class PaperSupply implements Listener {
     private long elapsed;
 
     PaperSupply(JavaPlugin plugin, SupplySettings settings, Predicate<Player> active, Predicate<Location> safe,
-                Consumer<String> notice) {
+                Consumer<String> notice, MatchTelemetry stats) {
         this.plugin = plugin;
         this.settings = settings;
         this.active = active;
         this.safe = safe;
         this.notice = notice;
+        this.stats = stats;
         recovery = new SupplyRecovery(plugin);
     }
 
@@ -101,18 +106,15 @@ final class PaperSupply implements Listener {
             long opensAt = delivery.plan.second();
             if (!delivery.announced && second >= delivery.plan.announceAt(settings.announceSeconds())) {
                 delivery.announced = true;
-                if (delivery.position == null) delivery.position = reserve(delivery);
+                validateReservation(delivery);
                 notice.accept(label(delivery) + " 예고 · 경기 시간 " + (opensAt / 60) + "분 " + (opensAt % 60) + "초");
             }
             if (!delivery.published && second >= delivery.plan.publishAt(settings.coordinateSeconds())) {
                 delivery.published = true;
-                if (delivery.position != null && !validTerrain(delivery.position)) {
-                    release(delivery.position);
-                    delivery.position = null;
-                }
-                if (delivery.position == null) delivery.position = reserve(delivery);
+                validateReservation(delivery);
                 if (delivery.position == null) {
                     delivery.attempted = true;
+                    stats.count(Counter.NO_POSITION);
                     notice.accept(label(delivery) + " · 안전한 위치를 확보하지 못해 취소됐습니다.");
                     continue;
                 }
@@ -138,6 +140,14 @@ final class PaperSupply implements Listener {
         }
     }
 
+    private void validateReservation(Delivery delivery) {
+        if (delivery.position != null && !validTerrain(delivery.position)) {
+            release(delivery.position);
+            delivery.position = null;
+        }
+        if (delivery.position == null) delivery.position = reserve(delivery);
+    }
+
     private Location reserve(Delivery subject) {
         for (Location location : candidates) {
             if (plans.stream().anyMatch(other -> other != subject && other.position != null
@@ -153,7 +163,8 @@ final class PaperSupply implements Listener {
 
     private boolean validTerrain(Location location) {
         if (location.getBlockY() < settings.minHeight() || location.getBlockY() > settings.maxHeight()
-                || !safe.test(location) || !SafeArenaSurface.valid(location)) return false;
+                || !safe.test(location) || plugin.getServer().getWorld(location.getWorld().getUID()) != location.getWorld()
+                || !SafeArenaSurface.valid(location)) return false;
         return !nearContainer(location.getBlock());
     }
 
@@ -171,7 +182,12 @@ final class PaperSupply implements Listener {
         Location location = delivery.position;
         if (location == null || !validTerrain(location) || !location.getBlock().isEmpty()) {
             release(delivery.position);
-            notice.accept(label(delivery) + " · 공개 위치가 변경되어 취소됐습니다.");
+            stats.count(Counter.CANCELLED_AFTER_PUBLICATION);
+            String reason = location == null ? "예약 없음"
+                    : !location.getWorld().isChunkLoaded(location.getBlockX() >> 4, location.getBlockZ() >> 4) ? "청크 미로드"
+                    : !safe.test(location) ? "경기장 또는 자기장 경계"
+                    : !location.getBlock().isEmpty() ? "상자 자리 점유" : "지표면 또는 개봉 공간 변경";
+            notice.accept(label(delivery) + " · " + reason + "으로 취소됐습니다.");
             return;
         }
         var loot = delivery.plan.premium() ? settings.premium() : settings.normal();
@@ -185,10 +201,13 @@ final class PaperSupply implements Listener {
         if (delivery.block == null) {
             release(location);
             delivery.loot = List.of();
-            notice.accept(label(delivery) + " · 상자를 생성하지 못했습니다.");
+            stats.count(Counter.CANCELLED_AFTER_PUBLICATION);
+            notice.accept(label(delivery) + " · 상자 또는 복구 기록을 생성하지 못해 취소됐습니다.");
             return;
         }
         spawned.put(Site.at(location), delivery);
+        delivery.arrived = elapsed;
+        stats.count(Counter.CREATED);
         notice.accept(label(delivery) + "이 도착했습니다.");
         location.getWorld().playSound(location, Sound.BLOCK_CHEST_OPEN, 1, .8f);
         location.getWorld().spawnParticle(Particle.END_ROD, location.clone().add(0, 1, 0), 15, .4, .3, .4, .02);
@@ -196,7 +215,7 @@ final class PaperSupply implements Listener {
 
     private boolean eligible(Player player, Delivery delivery) {
         if (player == null || !player.isOnline() || player.isDead() || player.getGameMode() == GameMode.SPECTATOR
-                || !active.test(player) || spawned.get(Site.at(delivery.position)) != delivery || !delivery.block.present()) return false;
+                || !active.test(player) || spawned.get(Site.at(delivery.position)) != delivery || !delivery.block.claimable()) return false;
         Location target = delivery.position.clone().add(0, .5, 0);
         return player.getWorld().equals(target.getWorld()) && safe.test(target)
                 && player.getEyeLocation().distanceSquared(target) <= square(settings.range())
@@ -215,29 +234,31 @@ final class PaperSupply implements Listener {
     private void claim(Player player, Delivery delivery) {
         UUID id = player.getUniqueId();
         if (!delivery.claim.reserve(id)) return;
-        boolean delivered = false;
+        var result = MatchInventory.Write.ROLLED_BACK;
         try {
             var inventory = player.getInventory();
             ItemStack[] before = inventory.getStorageContents();
-            ItemStack[] result = MatchInventory.fit(before, inventory.getMaxStackSize(), delivery.loot);
-            if (result == null) {
+            ItemStack[] after = MatchInventory.fit(before, inventory.getMaxStackSize(), delivery.loot);
+            if (after == null) {
+                stats.count(Counter.PAYOUT_FAILURES);
                 player.sendMessage("보급을 받을 인벤토리 공간이 필요합니다.");
                 return;
             }
-            try {
-                inventory.setStorageContents(result);
-                delivered = true;
-            } catch (RuntimeException failure) {
-                try {
-                    inventory.setStorageContents(before);
-                } catch (RuntimeException restoreFailure) {
-                    failure.addSuppressed(restoreFailure);
-                }
-                throw failure;
-            }
+            result = MatchInventory.apply(before, after, inventory::setStorageContents,
+                    failure -> plugin.getLogger().log(java.util.logging.Level.WARNING, "Supply reward write failed", failure));
         } finally {
-            delivery.claim.finish(id, delivered);
+            delivery.claim.finish(id, result != MatchInventory.Write.ROLLED_BACK);
         }
+        if (result != MatchInventory.Write.DELIVERED) {
+            stats.count(Counter.PAYOUT_FAILURES);
+            if (result == MatchInventory.Write.UNCERTAIN) {
+                remove(delivery);
+                notice.accept(label(delivery) + " 지급 상태를 확인할 수 없어 회수했습니다. 관리자에게 알려 주세요.");
+            } else player.sendMessage("보급 지급이 실패해 다시 시도할 수 있습니다.");
+            return;
+        }
+        stats.count(Counter.OPEN_SUCCESSES);
+        stats.add(Counter.CLAIM_DELAY_MS, (elapsed - delivery.arrived) / 1_000_000L);
         remove(delivery);
         notice.accept(player.getName() + " 님이 " + label(delivery) + "을 획득했습니다.");
         player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1, 1.2f);
@@ -282,6 +303,18 @@ final class PaperSupply implements Listener {
         match = null;
     }
 
+    boolean isOpening(UUID id) { return opening.containsKey(id); }
+
+    void nearbyPvp(Location victim) {
+        for (var delivery : spawned.values()) {
+            if (victim.getWorld().equals(delivery.position.getWorld())
+                    && victim.distanceSquared(delivery.position) <= square(settings.pvpRadius())) {
+                stats.count(Counter.SUPPLY_PVP);
+                return;
+            }
+        }
+    }
+
     void disconnect(UUID id) { opening.remove(id); }
 
     private void interrupt(UUID id, String reason) {
@@ -312,6 +345,7 @@ final class PaperSupply implements Listener {
         if (denied || event.getHand() != EquipmentSlot.HAND || paused || !eligible(player, delivery)) return;
         var id = player.getUniqueId();
         if (opening.containsKey(id)) return;
+        stats.count(Counter.OPEN_ATTEMPTS);
         opening.put(id, new Opening(delivery, player.getLocation(), elapsed + settings.openingNanos()));
         player.sendActionBar(Component.text("보급 개봉 중 · 이동하거나 피격되면 중단됩니다."));
     }
@@ -329,12 +363,20 @@ final class PaperSupply implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void damage(EntityDamageEvent event) {
-        if (event.getEntity() instanceof Player player && event.getDamage() > 0) interrupt(player.getUniqueId(), "피격됐습니다.");
+        if (event.getEntity() instanceof Player player && event.getDamage() > 0 && isOpening(player.getUniqueId())) {
+            stats.count(Counter.OPEN_HIT_CANCELS);
+            interrupt(player.getUniqueId(), "피격됐습니다.");
+        }
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void open(InventoryOpenEvent event) {
         if (protectedAt(event.getInventory().getLocation())) event.setCancelled(true);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void otherGui(InventoryOpenEvent event) {
+        if (!paused && event.getPlayer() instanceof Player player) interrupt(player.getUniqueId(), "다른 화면을 열었습니다.");
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)

@@ -48,6 +48,8 @@ public final class SupplyBlock {
                 && chest.getBlockInventory().isEmpty();
     }
 
+    public boolean claimable() { return recoverable(block, key, token); }
+
     public void remove() {
         if (recoverable(block, key, token)) block.setBlockData(previous, false);
     }
