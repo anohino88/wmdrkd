@@ -18,6 +18,15 @@ public record AugmentBalance(int steelFirstEnd, int steelSecondEnd, double steel
                 + Math.max(0, stacks - steelSecondEnd) * steelThirdPoints;
     }
 
+    public record AttackParts(double original, double repeat) { }
+
+    public static AttackParts attackParts(double base, double bonus, double flatOnce, double bonusSafetyCap,
+                                          double splitScale) {
+        double scaledBonus = Math.min(bonusSafetyCap, bonus);
+        double repeat = (base + scaledBonus) * splitScale;
+        return new AttackParts(repeat + Math.min(flatOnce, bonusSafetyCap - scaledBonus), repeat);
+    }
+
     public double heavyFist(double maxHealth, double ratio, boolean pvp) {
         double points = maxHealth * ratio;
         return pvp ? Math.min(points, heavyFistPvpCap) : points;

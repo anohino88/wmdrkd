@@ -96,6 +96,8 @@ public final class ResonanceChecks {
         require(balance.steelHealth(20, 2) == 40 && balance.steelHealth(50, 2) == 64
                 && balance.steelHealth(80, 2) == 70, "soft cap continuity");
         require(balance.heavyFist(200, .08, true) == 8 && balance.heavyFist(200, .08, false) == 16, "PvP-only flat cap");
+        var split = AugmentBalance.attackParts(10, 3, 8, 400, .75);
+        require(split.original() == 17.75 && split.repeat() == 9.75, "heavy fist bonus paid once across split hits");
         UUID primary = UUID.randomUUID(), secondary = UUID.randomUUID();
         var measured = new LinkedDamageBudget(12, false, primary, 2);
         require(measured.offer(primary, 14).allowed() == 14 && measured.offer(primary, 1).overBudget(), "measurement does not cap");

@@ -1,5 +1,6 @@
 package io.github.augmentwild.paper;
 
+import io.github.augmentwild.augment.AugmentBalance;
 import io.github.augmentwild.augment.AugmentProgress;
 import io.github.augmentwild.augment.AugmentResonance;
 import io.github.augmentwild.augment.ResonanceShield;
@@ -80,7 +81,7 @@ final class PaperOfficialCombat implements Listener {
     private final Deque<Deferred> deferred = new ArrayDeque<>();
     private BukkitTask deferredTask;
     private int expiredArrowsAt = Integer.MIN_VALUE;
-    private final Set<EntityDamageEvent> splitEvents = Collections.newSetFromMap(new WeakHashMap<>());
+    private final Map<EntityDamageEvent, Double> splitEvents = new WeakHashMap<>();
     private final Set<EntityDamageEvent> counted = Collections.newSetFromMap(new WeakHashMap<>());
     private final Set<EntityDeathEvent> countedKills = Collections.newSetFromMap(new WeakHashMap<>());
     private final Set<UUID> deadMobs = new HashSet<>();
@@ -690,11 +691,12 @@ final class PaperOfficialCombat implements Listener {
             if (ids.contains("gigantification")) ratio += catalog.setting("gigantification-damage");
         }
         boolean split = ids.contains("split_attack") && state.progress.value("split_charge") > 0;
-        if (split) splitEvents.add(event);
         double flat = melee && ids.contains("heavy_fist") ? resonance.balance().heavyFist(maxHealth(attacker), rule("heavy_fist").amount(), target instanceof Player) : 0;
         if (ratio > 0 || flat > 0 || split) {
-            double damage = base + Math.min(catalog.setting("max-extra-damage"), (base * ratio) + flat);
-            event.setDamage(split ? damage * rule("split_attack").amount() : damage);
+            var damage = AugmentBalance.attackParts(base, base * ratio, flat, catalog.setting("max-extra-damage"),
+                    split ? rule("split_attack").amount() : 1);
+            if (split) splitEvents.put(event, damage.repeat());
+            event.setDamage(damage.original());
         }
     }
 
@@ -795,9 +797,9 @@ final class PaperOfficialCombat implements Listener {
                     "explosive_arrow", rule("explosive_arrow").amount(), victim -> { }));
         }
         if (owns(attacker, "split_attack")) {
-            if (splitEvents.remove(event)) {
+            Double damage = splitEvents.remove(event);
+            if (damage != null) {
                 state.progress.reset("split_charge");
-                double damage = event.getDamage();
                 afterDamage(attacker, () -> {
                     for (int i = 0; i < catalog.count("split-extra-hits"); i++) {
                         afterRecovery(attacker, target, () -> syntheticHit(attacker, target, "split_attack", damage));
