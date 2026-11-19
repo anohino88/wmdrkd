@@ -236,12 +236,14 @@ final class PaperAugments implements Listener {
         profile.grantedRound = round;
         if (EXCHANGES.contains(definition.id())) {
             startExchange(profile, definition.id());
+            official.selected(id, definition.id(), "exchange_offer");
             return;
         }
         boolean added = profile.owned.add(definition.id());
-        if (added) official.acquired(id, definition.id());
-        plugin.getLogger().info("Augment " + choice.status() + " match=" + match + " player=" + id
-                + " round=" + round + " id=" + definition.id() + " added=" + added);
+        if (added) {
+            official.selected(id, definition.id(), choice.status().name());
+            official.acquired(id, definition.id());
+        }
         var player = plugin.getServer().getPlayer(id);
         if (player != null) {
             player.sendMessage(definition.name() + (added ? " 증강을 획득했습니다." : " 증강은 이미 활성화돼 있습니다."));
@@ -377,7 +379,10 @@ final class PaperAugments implements Listener {
             profile.timers.remove(lost);
             official.lost(player.getUniqueId(), lost);
         }
-        commit.get().awarded().forEach(gained -> official.acquired(player.getUniqueId(), gained));
+        commit.get().awarded().forEach(gained -> {
+            official.selected(player.getUniqueId(), gained, "exchange_reward");
+            official.acquired(player.getUniqueId(), gained);
+        });
         official.acquired(player.getUniqueId(), exchangeId);
         official.exchangeCommitted(player, exchangeId);
         player.sendMessage(registry.get(exchangeId).name() + " 완료");

@@ -81,3 +81,7 @@ supply:
     time-seconds: 900
   premium:
     time-seconds: 1500
+dev:
+  combat-audit:
+    enabled: false
+    max-events: 1000

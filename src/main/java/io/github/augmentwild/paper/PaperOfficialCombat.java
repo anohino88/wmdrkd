@@ -7,6 +7,8 @@ import io.github.augmentwild.augment.ResonanceShield;
 import io.github.augmentwild.augment.SynergyDraftWeights;
 import io.github.augmentwild.augment.AugmentRegistry;
 import io.github.augmentwild.augment.DamageChain;
+import io.github.augmentwild.augment.CombatAudit;
+import io.github.augmentwild.augment.CombatAudit.Metric;
 import io.github.augmentwild.augment.LinkedDamageBudget;
 import io.github.augmentwild.augment.NaturalOreTracker;
 import io.github.augmentwild.augment.MovementProgress;
@@ -73,6 +75,8 @@ final class PaperOfficialCombat implements Listener {
     private final BiConsumer<UUID, Integer> protection;
     private final Function<UUID, Set<String>> owned;
     private final DamageChain chain;
+    private final CombatAudit audit;
+    private final boolean auditEnabled;
     private final NaturalOreTracker ores;
     private final PaperErosion erosion;
     private final Map<UUID, Fighter> fighters = new HashMap<>();
@@ -162,11 +166,14 @@ final class PaperOfficialCombat implements Listener {
         dinosaurMultiplier = AugmentResonance.multiplier(Math.clamp(rule("stack_dinosaur").amount(), 1, 10));
         ores = new NaturalOreTracker(catalog.count("ore-sites"));
         erosion = new PaperErosion(plugin, catalog.setting("erosion-max-damage"));
+        auditEnabled = plugin.getConfig().getBoolean("dev.combat-audit.enabled");
+        audit = new CombatAudit(plugin.getConfig().getInt("dev.combat-audit.max-events"), plugin.getLogger()::info);
         chain = new DamageChain(depth, catalog.count("max-hits-per-target"));
     }
 
     void start(UUID id) {
         match = id;
+        if (auditEnabled) audit.start(id);
         budgetOffers = budgetOver = budgetHits = budgetReduced = budgetRoots = 0;
         budgetRaw = budgetFinal = 0;
         random = new Random(id.getMostSignificantBits() ^ id.getLeastSignificantBits());
@@ -175,6 +182,11 @@ final class PaperOfficialCombat implements Listener {
         return new SynergyDraftWeights(UNIQUE_SYNERGIES.entrySet().stream()
                 .filter(entry -> catalog.synergies.getBoolean(entry.getKey() + ".enabled"))
                 .map(Map.Entry::getValue).toList(), resonance.oneWeight(), resonance.twoWeight());
+    }
+
+    void selected(UUID player, String id, String kind) {
+        audit.add(id, Metric.SELECTED, 1);
+        if (audit.sampleAvailable()) audit.sample(now(), "select actor=" + audit.actor(player) + " effect=" + id + " kind=" + kind);
     }
 
     boolean synthetic() { return chain.current() != null; }
@@ -321,6 +333,7 @@ final class PaperOfficialCombat implements Listener {
             deferredTask = null;
         }
         countedKills.clear();
+        audit.finish();
         if (match != null && resonance.measureBudget()) {
             plugin.getLogger().info("linked-pvp-damage roots=" + budgetRoots + " offers=" + budgetOffers
                     + " over=" + budgetOver + " limited=" + budgetReduced + " hits=" + budgetHits
@@ -471,12 +484,21 @@ final class PaperOfficialCombat implements Listener {
         int rate = state.resonance.totalMultiplier();
         // Dinosaur still applies to permanent augments whose family membership was disabled.
         if (!settings.members().contains(id)) rate = state.resonance.dinosaurOnlyMultiplier();
-        return state.progress.addPermanent(key, raw, Math.max(AugmentResonance.BASE, rate), cap);
+        int previous = state.progress.value(key);
+        int updated = state.progress.addPermanent(key, raw, Math.max(AugmentResonance.BASE, rate), cap);
+        audit.add(id, Metric.STACKS, updated - previous);
+        return updated;
     }
 
     private double maxHealth(LivingEntity entity) {
         var attribute = entity.getAttribute(Attribute.MAX_HEALTH);
         return attribute == null ? entity.getHealth() : attribute.getValue();
+    }
+
+    private void gainHealth(Player player, double amount, String effect) {
+        double previous = player.getHealth();
+        player.setHealth(Math.min(maxHealth(player), previous + amount));
+        audit.add(effect, Metric.HEALED, player.getHealth() - previous);
     }
 
     private void modifier(Player player, Attribute attribute, String key, double amount, Operation operation) {
@@ -730,6 +752,12 @@ final class PaperOfficialCombat implements Listener {
                     resonance.enforceBudget(), target.getUniqueId(), Math.max(0, origin.extraDamage()));
         }
         originalHit = new DamageChain.Root(origin, budget);
+        if (audit.sampleAvailable()) audit.sample(now(), "root=" + originalHit.id()
+                + " attacker=" + audit.actor(attacker.getUniqueId())
+                + " victim=" + (target instanceof Player ? audit.actor(target.getUniqueId()) : target.getType())
+                + " base=" + base + " observed_bonus=" + origin.extraDamage() + " mitigation=" + origin.mitigation()
+                + " final_event_damage=" + event.getFinalDamage() + " health_before=" + target.getHealth()
+                + " owned=" + owned.apply(attacker.getUniqueId()).stream().sorted().toList());
         try {
             applyHitEffects(event, attacker, target, state);
         } finally {
@@ -767,7 +795,7 @@ final class PaperOfficialCombat implements Listener {
         if (owns(attacker, "immortal_berserker")) {
             if (state.immortalUntil > now()) {
                 double heal = Math.min(target.getHealth(), event.getFinalDamage()) * catalog.setting("immortal-berserker-lifesteal");
-                attacker.setHealth(Math.min(maxHealth(attacker), attacker.getHealth() + heal));
+                gainHealth(attacker, heal, "immortal_berserker");
             } else if (every(state, "immortal_berserker")) {
                 state.immortalUntil = now() + rule("immortal_berserker").duration();
             }
@@ -821,8 +849,10 @@ final class PaperOfficialCombat implements Listener {
                 : owns(attacker, "blood_crown") && ready(attacker, state, "blood_crown") ? rule("blood_crown").amount() : 0;
         if (owns(attacker, "last_demon") && state.lastDemonUntil > now()) lifesteal = Math.max(lifesteal, catalog.setting("last-demon-lifesteal"));
         if (lifesteal > 0) {
-            attacker.setHealth(Math.min(maxHealth(attacker), attacker.getHealth()
-                    + Math.min(event.getFinalDamage(), target.getHealth()) * lifesteal));
+            String effect = owns(attacker, "blood_god") ? "blood_god" : "blood_crown";
+            if (owns(attacker, "last_demon") && state.lastDemonUntil > now()
+                    && lifesteal == catalog.setting("last-demon-lifesteal")) effect = "last_demon";
+            gainHealth(attacker, Math.min(event.getFinalDamage(), target.getHealth()) * lifesteal, effect);
         }
         if (owns(attacker, "storm_blade") && every(state, "storm_blade") && ready(attacker, state, "storm_blade")) {
             Location center = target.getLocation();
@@ -1485,9 +1515,22 @@ final class PaperOfficialCombat implements Listener {
         boolean hit = chain.hit(match, source.getUniqueId(), victim.getUniqueId(), id, appliedPoints, crit, () -> {
             syntheticConfirmed = false;
             syntheticFinalDamage = 0;
-            victim.damage(appliedPoints, source);
-            return syntheticConfirmed;
+            try {
+                victim.damage(appliedPoints, source);
+                return syntheticConfirmed;
+            } finally {
+                if (audit.sampleAvailable()) audit.sample(now(), "root=" + chain.current().original()
+                        + " attacker=" + audit.actor(source.getUniqueId())
+                        + " victim=" + (victim instanceof Player ? audit.actor(victim.getUniqueId()) : victim.getType())
+                        + " effect=" + id + " depth=" + chain.current().depth() + " raw=" + appliedPoints
+                        + " confirmed=" + syntheticConfirmed + " final_event_damage=" + syntheticFinalDamage
+                        + " health_after=" + victim.getHealth());
+            }
         });
+        if (hit) {
+            audit.add(id, Metric.PROC, 1);
+            audit.add(id, Metric.DAMAGE, syntheticFinalDamage);
+        }
         if (budget != null) {
             if (hit) {
                 budgetHits++;
@@ -1498,6 +1541,7 @@ final class PaperOfficialCombat implements Listener {
     }
 
     private void announceSynergy(UUID id, String synergy) {
+        audit.add(synergy, Metric.SYNERGY, 1);
         Player player = plugin.getServer().getPlayer(id);
         if (player == null) return;
         String message = "시너지 활성화 · " + catalog.synergies.getString(synergy + ".name", synergy);
@@ -1732,7 +1776,11 @@ final class PaperOfficialCombat implements Listener {
         var state = fighters.get(player.getUniqueId());
         if (state == null || !countedWounds.add(event)) return;
         if (spent != null) {
-            state.shield.consume(clock.get().elapsedNanos(), spent.confirm(event));
+            double confirmed = spent.confirm(event);
+            state.shield.consume(clock.get().elapsedNanos(), confirmed);
+            audit.add("resonance_revival", Metric.SHIELDED, confirmed);
+            if (audit.sampleAvailable()) audit.sample(now(), "shield actor=" + audit.actor(player.getUniqueId())
+                    + " reserved=" + spent.reserved() + " absorbed=" + confirmed);
             updateShieldDisplay(player, state);
         }
         if (owns(player, "counter_shield") && event.isApplicable(EntityDamageEvent.DamageModifier.BLOCKING)
@@ -1827,6 +1875,9 @@ final class PaperOfficialCombat implements Listener {
             return player.getHealth() > 0;
         });
         if (applied == null) return;
+        audit.add(applied, Metric.REVIVED, 1);
+        if (audit.sampleAvailable()) audit.sample(now(), "revive actor=" + audit.actor(id) + " effect=" + applied
+                + " health_after=" + player.getHealth() + " shield_grant=" + shield.shieldPoints());
         event.setCancelled(true);
         shieldSpends.remove(event);
         if (shield.shieldPoints() > 0) {

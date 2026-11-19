@@ -38,6 +38,7 @@ public final class DamageChain {
             this.budget = budget;
         }
 
+        public UUID id() { return id; }
         public LinkedDamageBudget budget() { return budget; }
     }
 
