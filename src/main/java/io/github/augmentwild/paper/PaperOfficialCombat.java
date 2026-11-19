@@ -60,6 +60,7 @@ final class PaperOfficialCombat implements Listener {
     private final ResonanceSettings resonance;
     private final int dinosaurMultiplier;
     private final Map<EntityDamageEvent, Double> shieldSpends = new WeakHashMap<>();
+    private final Set<EntityDamageEvent> defended = Collections.newSetFromMap(new WeakHashMap<>());
     private final Set<EntityDamageEvent> countedWounds = Collections.newSetFromMap(new WeakHashMap<>());
     private final Set<PlayerMoveEvent> countedMovement = Collections.newSetFromMap(new WeakHashMap<>());
     private final Supplier<MatchSimulationClock> clock;
@@ -104,6 +105,7 @@ final class PaperOfficialCombat implements Listener {
         final Set<String> lateChecked = new HashSet<>();
         AugmentResonance.State resonance;
         long shieldShownAt = -1;
+        double shieldShownPoints;
         double overgrowthAward;
         long acquiredGrowth, lastBerserkHit = -1, lastSecond = -1;
         final MovementProgress movement = new MovementProgress();
@@ -204,7 +206,19 @@ final class PaperOfficialCombat implements Listener {
         }
         if (resonance.referenceStacks().containsKey(augment) && state.lateChecked.add(augment)) {
             int adjustment = resonance.lateGrant(augment, now());
-            if (resonance.lateEnabled() && adjustment > 0) state.progress.add(augment, adjustment, rule(augment).cap());
+            if (resonance.lateEnabled() && adjustment > 0) {
+                int old = state.progress.value(augment);
+                int updated = state.progress.add(augment, adjustment, rule(augment).cap());
+                Player player = plugin.getServer().getPlayer(id);
+                if (player != null && augment.equals("steel_heart")) {
+                    int threshold = catalog.count("steel-evolution-stacks");
+                    if (old < threshold && updated >= threshold) evolution(player, state, augment);
+                }
+                if (player != null && augment.equals("tank_engine")) {
+                    int threshold = catalog.count("tank-evolution-stacks");
+                    if (old < threshold && updated >= threshold) evolution(player, state, augment);
+                }
+            }
             if (resonance.lateLog()) plugin.getLogger().info("late-growth " + augment + " second=" + now()
                     + " proposed=" + adjustment + " enabled=" + resonance.lateEnabled());
         }
@@ -249,6 +263,11 @@ final class PaperOfficialCombat implements Listener {
         if (resonance.announce() && state.resonance.familyMultiplier() > previousGrowth) {
             announce(id, resonance.families().stacking().name() + " · 영구 중첩 획득량 +"
                     + percent(state.resonance.familyMultiplier() - AugmentResonance.BASE), resonance.sound());
+        }
+        double previousShield = previous == null ? 0 : previous.shieldPoints();
+        if (resonance.announce() && state.resonance.shieldPoints() > previousShield) {
+            announce(id, resonance.families().revival().name() + " · 치명 피해 방지 시 보호막 "
+                    + state.resonance.shieldPoints() / 2 + "하트", resonance.sound());
         }
         if (state.resonance.shieldPoints() == 0) state.shield.clear();
         boolean king = catalog.synergies.getBoolean("steel_king.enabled") && owned.apply(id).containsAll(STEEL_KING);
@@ -307,6 +326,7 @@ final class PaperOfficialCombat implements Listener {
                     + " requestedPoints=" + budgetRaw + " healthDamagePoints=" + budgetFinal);
         }
         shieldSpends.clear();
+        defended.clear();
         countedWounds.clear();
         countedMovement.clear();
         match = null;
@@ -422,8 +442,9 @@ final class PaperOfficialCombat implements Listener {
     private void updateShieldDisplay(Player player, Fighter state) {
         long elapsed = clock.get().elapsedNanos();
         double points = state.shield.remaining(elapsed);
-        if (points > 0 && state.shieldShownAt != now()) {
+        if (points > 0 && (state.shieldShownAt != now() || state.shieldShownPoints != points)) {
             state.shieldShownAt = now();
+            state.shieldShownPoints = points;
             player.sendActionBar(net.kyori.adventure.text.Component.text(resonance.families().revival().name()
                     + " · " + String.format(Locale.ROOT, "%.1f", points / 2) + "하트"));
         } else if (points <= 0 && state.shieldShownAt != -1) {
@@ -1619,10 +1640,10 @@ final class PaperOfficialCombat implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void defendAndRevive(EntityDamageEvent event) {
+        if (!(event.getEntity() instanceof Player player) || !valid(player) || !defended.add(event)) return;
         evadeOrResist(event);
         if (event.isCancelled()) return;
-        if (event.getEntity() instanceof Player player && valid(player)
-                && event.getDamageSource().getDamageType() != DamageType.OUTSIDE_BORDER
+        if (event.getDamageSource().getDamageType() != DamageType.OUTSIDE_BORDER
                 && event.getDamageSource().getDamageType() != DamageType.OUT_OF_WORLD) {
             var state = fighters.get(player.getUniqueId());
             if (state != null && !shieldSpends.containsKey(event)) {
@@ -1785,8 +1806,8 @@ final class PaperOfficialCombat implements Listener {
         if (shield.shieldPoints() > 0) {
             state.shield.grant(clock.get().elapsedNanos(), shield.shieldPoints(), shield.shieldNanos());
             updateShieldDisplay(player, state);
-            if (resonance.sound()) player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, .45f, 1.4f);
-            if (resonance.particles()) particle(player, state, Particle.END_ROD, player.getLocation().add(0, 1, 0));
+            if (resonance.announce() && resonance.sound()) player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, .45f, 1.4f);
+            if (resonance.announce() && resonance.particles()) particle(player, state, Particle.END_ROD, player.getLocation().add(0, 1, 0));
         }
         if (applied.equals("immortal_berserker")) {
             state.immortalUntil = Math.max(now(), state.immortalUntil) + catalog.count("immortal-berserker-revive-extension");

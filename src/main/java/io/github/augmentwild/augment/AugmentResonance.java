@@ -37,7 +37,7 @@ public record AugmentResonance(boolean enabled, Stacking stacking, Revival reviv
             members = Set.copyOf(members);
             if (name.isBlank() || !DEATH_PREVENTION.containsAll(members) || durationSeconds < 1
                     || durationSeconds > 300 || !(twoPoints >= 0 && twoPoints <= threePoints
-                    && threePoints <= maxPoints && maxPoints <= 100)) {
+                    && threePoints <= 100 && maxPoints >= 0 && maxPoints <= 100)) {
                 throw new IllegalArgumentException("Invalid resonance.revival");
             }
         }

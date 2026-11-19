@@ -53,6 +53,7 @@ public final class AugmentRoller {
 
     private AugmentDefinition pick(List<AugmentDefinition> tier, Set<String> owned) {
         double[] weights = tier.stream().mapToDouble(option -> weight.applyAsDouble(option.id(), owned)).toArray();
+        if (java.util.Arrays.stream(weights).allMatch(value -> value == 1)) return tier.get(random.nextInt(tier.size()));
         double total = java.util.Arrays.stream(weights).sum();
         if (!(total > 0 && Double.isFinite(total))) throw new IllegalArgumentException("Invalid tier weight");
         double draw = random.nextDouble(total);

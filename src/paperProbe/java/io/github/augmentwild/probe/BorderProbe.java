@@ -2,6 +2,11 @@ package io.github.augmentwild.probe;
 
 import io.github.augmentwild.domain.Arena;
 import io.github.augmentwild.augment.DamageChain;
+import io.github.augmentwild.augment.ResonanceShield;
+import io.github.augmentwild.paper.PaperResonanceShield;
+import org.bukkit.event.EventPriority;
+import org.bukkit.potion.PotionEffect;
+import org.bukkit.potion.PotionEffectType;
 import java.util.UUID;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
@@ -22,6 +27,10 @@ import org.bukkit.plugin.java.JavaPlugin;
 /** Test-only Paper plugin. This probe does not create or simulate a player connection. */
 public final class BorderProbe extends JavaPlugin implements Listener {
     private Pig testPig;
+    private Pig shieldPig;
+    private final ResonanceShield shield = new ResonanceShield();
+    private long shieldClock;
+    private double pendingShieldSpend;
     private boolean sawOutsideBorderDamage;
 
     @Override public void onEnable() {
@@ -64,6 +73,8 @@ public final class BorderProbe extends JavaPlugin implements Listener {
             testPig.remove();
             testPig = null;
         }
+        verifyResonanceShield(spawn);
+        getLogger().info("AW_RESONANCE_PROBE_PASS: real damage, separate vanilla absorption, exact expiry and cleanup");
         getLogger().info("AW_BORDER_PROBE_PASS: virtual border, unchanged global border, Paper damage event and health delta");
     }
 
@@ -94,6 +105,41 @@ public final class BorderProbe extends JavaPlugin implements Listener {
             }), "hit limit across event callbacks");
         });
         require(Math.abs(pig.getHealth() - (before - 2)) < .000001, "single real health delta");
+    }
+
+    private void verifyResonanceShield(Location spawn) {
+        shieldPig = spawn.getWorld().spawn(spawn, Pig.class);
+        try {
+            require(shieldPig.addPotionEffect(new PotionEffect(PotionEffectType.ABSORPTION, 200, 0)), "native absorption effect");
+            shieldPig.setAbsorptionAmount(2);
+            double health = shieldPig.getHealth();
+            shieldClock = 1_000_000_000L;
+            shield.grant(shieldClock, 4, 6_000_000_000L);
+            shieldPig.damage(7);
+            require(Math.abs(shieldPig.getHealth() - (health - 1)) < .000001, "virtual shield applies after native absorption");
+            require(shield.remaining(shieldClock) == 0 && shieldPig.getAbsorptionAmount() == 0, "both pools spend exactly once");
+            shieldPig.setAbsorptionAmount(2);
+            shield.grant(shieldClock, 8, 6_000_000_000L);
+            shieldClock += 6_000_000_000L;
+            require(shield.remaining(shieldClock) == 0, "shield expires at exact game time");
+            require(shieldPig.getAbsorptionAmount() == 2, "shield expiry leaves native absorption");
+            shield.grant(shieldClock, 4, 6_000_000_000L);
+            shield.clear();
+            require(shield.remaining(shieldClock) == 0 && shieldPig.getAbsorptionAmount() == 2, "cleanup leaves native absorption");
+        } finally {
+            shieldPig.remove();
+            shieldPig = null;
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void protectProbe(EntityDamageEvent event) {
+        if (event.getEntity().equals(shieldPig)) pendingShieldSpend = PaperResonanceShield.protect(event, shield, shieldClock);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void consumeProbe(EntityDamageEvent event) {
+        if (event.getEntity().equals(shieldPig)) shield.consume(shieldClock, pendingShieldSpend);
     }
 
     @EventHandler
