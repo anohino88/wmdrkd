@@ -175,9 +175,9 @@ final class PaperOfficialCombat implements Listener {
         chain = new DamageChain(depth, catalog.count("max-hits-per-target"));
     }
 
-    void start(UUID id) {
+    void start(UUID id, boolean experiment) {
         match = id;
-        if (auditEnabled) audit.start(id);
+        if (auditEnabled || experiment) audit.start(id);
         budgetOffers = budgetOver = budgetHits = budgetReduced = budgetRoots = 0;
         budgetRaw = budgetFinal = 0;
         random = new Random(id.getMostSignificantBits() ^ id.getLeastSignificantBits());
@@ -279,6 +279,11 @@ final class PaperOfficialCombat implements Listener {
         if (state == null) return;
         state.progress.reset(augment);
         state.progress.reset("hits:" + augment);
+        state.progress.reset("revive:" + augment);
+        state.progress.resetCooldown(augment);
+        state.lateChecked.remove(augment);
+        state.zones.removeIf(zone -> zone.augment().equals(augment));
+        deferred.removeIf(effect -> effect.player().getUniqueId().equals(id));
         if (augment.equals("blood_god")) state.progress.reset("blood_god_kills");
         if (augment.equals("tank_engine")) state.movement.reset();
         switch (augment) {
@@ -286,11 +291,90 @@ final class PaperOfficialCombat implements Listener {
             case "storm_chaser" -> state.stormDistance = 0;
             case "blood_trace" -> state.traceTarget = null;
             case "wound_record" -> state.woundDamage = 0;
+            case "magic_missile" -> {
+                state.progress.reset("missile_shots");
+                state.missiles.clear();
+            }
+            case "sword_wind" -> state.progress.reset("sword_hits");
+            case "infernal_conductor" -> {
+                state.burned = 0;
+                state.burns.clear();
+            }
+            case "berserk_engine" -> {
+                state.progress.reset("berserk_seconds");
+                state.lastBerserkHit = -1;
+            }
+            case "center_of_universe" -> state.progress.resetCooldown("orbit");
+            case "venom_swarm" -> {
+                state.poisonClouds.clear();
+                state.poisoned.clear();
+            }
+            case "split_bow" -> state.arrows.clear();
+            case "bomb_alchemy" -> removeBomb(state);
+            case "world_erosion" -> erosion.remove(id);
+            case "time_rewind" -> state.history.clear();
+            case "mad_scientist" -> state.transformedSmall = false;
+            case "immortal_berserker" -> state.immortalUntil = 0;
+            case "forbidden_reconstruction" -> state.naturalRegenBlockedUntil = 0;
+            case "shadow_dash" -> state.shadowUntil = 0;
+            case "duel_contract" -> state.duelTarget = null;
+            case "bounty_hunter" -> state.bountyTarget = null;
+            case "last_demon" -> state.lastDemonUntil = 0;
+            case "vein_overload" -> state.veinGranted = false;
+            case "mineral_devourer" -> state.apple = false;
             case "frenzy_rhythm" -> state.frenzyTarget = null;
             case "counter_shield" -> state.counterReady = false;
             default -> { }
         }
         refreshSynergies(id, state);
+    }
+
+    void refreshAttributes(Player player) {
+        var state = fighters.get(player.getUniqueId());
+        if (state != null) applyAttributes(player, state, now());
+    }
+
+    long labCooldown(UUID player, String id) {
+        var state = fighters.get(player);
+        String key = id.equals("center_of_universe") ? "orbit" : id;
+        return state == null ? 0 : state.progress.cooldownRemaining(key, now());
+    }
+
+    String labFightReport(UUID player) {
+        var state = fighters.get(player);
+        double shield = state == null ? 0 : state.shield.remaining(clock.get().elapsedNanos());
+        return audit.actor(player) + " · 생명의 잔향 보호막 " + shield;
+    }
+
+    String labProgress(Player player, String id, int value) {
+        var state = fighter(player.getUniqueId());
+        if (id.equals("infernal_conductor")) {
+            boolean evolved = burnEvolved(state);
+            state.burned = Math.min(value, catalog.setting("burn-evolution-damage"));
+            if (!evolved && burnEvolved(state)) evolution(player, state, id);
+            return player.getName() + " 진행도 " + id + "=" + state.burned;
+        }
+        String key = switch (id) {
+            case "magic_missile" -> "missile_shots";
+            case "sword_wind" -> "sword_hits";
+            case "berserk_engine" -> "berserk_seconds";
+            default -> id;
+        };
+        int threshold = switch (id) {
+            case "steel_heart" -> catalog.count("steel-evolution-stacks");
+            case "tank_engine" -> catalog.count("tank-evolution-stacks");
+            case "magic_missile" -> catalog.count("missile-evolution-shots");
+            case "sword_wind" -> catalog.count("sword-evolution-hits");
+            case "berserk_engine" -> catalog.count("berserk-evolution-seconds");
+            default -> 0;
+        };
+        boolean permanent = AugmentResonance.PERMANENT.contains(id);
+        if (!permanent && threshold == 0) return "진행도 설정을 지원하지 않는 증강입니다.";
+        int before = state.progress.value(key);
+        int after = state.progress.replace(key, value, permanent ? rule(id).cap() : threshold);
+        if (threshold > 0 && before < threshold && after >= threshold) evolution(player, state, id);
+        applyAttributes(player, state, now());
+        return player.getName() + " 진행도 " + id + "=" + after;
     }
 
     int exchangeCount(String id) { return rule(id).threshold(); }
@@ -338,6 +422,7 @@ final class PaperOfficialCombat implements Listener {
     }
 
     void remove(UUID id, Player player) {
+        deferred.removeIf(effect -> effect.player().getUniqueId().equals(id));
         if (player != null) resetAttributes(player);
         var state = fighters.remove(id);
         if (state != null) {

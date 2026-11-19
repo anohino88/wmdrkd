@@ -21,7 +21,7 @@ curl --fail --silent --show-error --max-time 60 "$url" -o paper.jar
 printf '%s  paper.jar\n' "$sha" | sha256sum -c -
 # Disposable CI server only.
 printf 'eula=true\n' > eula.txt
-printf 'server-ip=127.0.0.1\nserver-port=25565\nview-distance=3\nsimulation-distance=3\n' > server.properties
+printf 'server-ip=127.0.0.1\nserver-port=25565\nview-distance=3\nsimulation-distance=3\npause-when-empty-seconds=-1\n' > server.properties
 if [[ "${AW_ARENA_BENCHMARK:-0}" == 1 ]]; then
     printf 'level-type=minecraft:flat\n' >> server.properties
     mkdir -p plugins/AugmentWild
@@ -66,11 +66,16 @@ with log.open("wb") as output:
             wait_for('Enabling AugmentWild', 5)
             command("aw status")
             wait_for('경기 단계 WAITING', 15)
+            command("aw admin test status")
+            wait_for("전투 실험실 사용 불가", 15)
+            command("aw admin test start")
+            wait_for("운영 월드와 다른 기존 테스트 월드를 지정하세요", 15)
             if os.environ.get("AW_BORDER_PROBE") == "1":
+                wait_for("관리자 권한이 없습니다", 15)
                 wait_for("AW_BORDER_PROBE_PASS", 15)
                 wait_for("AW_AUGMENT_PROBE_PASS", 15)
                 wait_for("AW_RESONANCE_PROBE_PASS", 15)
-                wait_for("AW_COMBAT_LOAD_PASS", 30)
+                wait_for("AW_COMBAT_LOAD_PASS", 270 if os.environ.get("AW_EXTENDED_LOAD") == "1" else 30)
                 wait_for("AW_PHASE64_PROBE_PASS", 15)
             if benchmark:
                 commands = runpy.run_path(str(pathlib.Path(sys.argv[1]) / "scripts/paper-arena-benchmark.py"))

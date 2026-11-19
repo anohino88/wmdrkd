@@ -13,3 +13,5 @@ permissions:
     default: true
   augmentwild.admin:
     default: op
+  augmentwild.admin.test:
+    default: op

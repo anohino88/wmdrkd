@@ -40,15 +40,18 @@ import org.bukkit.event.player.PlayerSwapHandItemsEvent;
 final class PaperRespawnRestrictions implements Listener {
     private final Predicate<Player> restricted;
     private final Predicate<Player> choosing;
+    private final Predicate<Player> labParticipant;
 
     private final BiPredicate<Player, Location> outside;
     private final Predicate<PlayerTeleportEvent> internalTeleport;
     private final Predicate<Player> protectedPlayer;
 
     PaperRespawnRestrictions(Predicate<Player> restricted, BiPredicate<Player, Location> outside,
-                             Predicate<PlayerTeleportEvent> internalTeleport, Predicate<Player> protectedPlayer, Predicate<Player> choosing) {
+                             Predicate<PlayerTeleportEvent> internalTeleport, Predicate<Player> protectedPlayer, Predicate<Player> choosing,
+                             Predicate<Player> labParticipant) {
         this.restricted = restricted;
         this.choosing = choosing;
+        this.labParticipant = labParticipant;
         this.outside = outside;
         this.internalTeleport = internalTeleport;
         this.protectedPlayer = protectedPlayer;
@@ -176,7 +179,7 @@ final class PaperRespawnRestrictions implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void drop(PlayerDropItemEvent event) {
-        if (restricted.test(event.getPlayer())) event.setCancelled(true);
+        if (restricted.test(event.getPlayer()) || labParticipant.test(event.getPlayer())) event.setCancelled(true);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -186,8 +189,11 @@ final class PaperRespawnRestrictions implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void open(InventoryOpenEvent event) {
-        if (event.getPlayer() instanceof Player player && restricted.test(player)
-                && !PaperIntel.isReadOnly(event.getInventory())) event.setCancelled(true);
+        if (!(event.getPlayer() instanceof Player player)) return;
+        var inventory = event.getInventory();
+        if (restricted.test(player) && !PaperIntel.isReadOnly(inventory)
+                || labParticipant.test(player) && (inventory.getLocation() != null
+                || inventory.getType() == org.bukkit.event.inventory.InventoryType.ENDER_CHEST)) event.setCancelled(true);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)

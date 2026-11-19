@@ -51,6 +51,10 @@ public final class AugmentWildPlugin extends JavaPlugin {
             sender.sendMessage("경기 서비스를 사용할 수 없습니다.");
             return true;
         }
+        if (args.length >= 2 && args[0].equalsIgnoreCase("admin") && args[1].equalsIgnoreCase("test")) {
+            sender.sendMessage(matches.labCommand(sender, java.util.Arrays.copyOfRange(args, 2, args.length)));
+            return true;
+        }
         if (args.length == 3 && args[0].equalsIgnoreCase("admin") && args[1].equalsIgnoreCase("arena")
                 && args[2].equalsIgnoreCase("preview")) {
             sender.sendMessage(sender.hasPermission("augmentwild.admin")

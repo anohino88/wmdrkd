@@ -8,6 +8,8 @@ public final class AugmentTimers {
     private final Map<String, Long> expires = new HashMap<>();
     private final Map<String, Long> lastPeriodic = new HashMap<>();
 
+    public long remainingCooldown(String id, long now) { return Math.max(0, cooldowns.getOrDefault(id, now) - now); }
+
     public boolean ready(String id, long now) { return cooldowns.getOrDefault(id, 0L) <= now; }
 
     public void cooldown(String id, long now, int seconds) {

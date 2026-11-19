@@ -126,7 +126,12 @@ final class PaperAugments implements Listener {
                     var profile = profiles.get(player);
                     return profile == null ? Set.of() : profile.owned;
                 }, maxDepth, telemetry);
-        roller = new AugmentRoller(registry, random, official.draftWeights());
+        registry.all().stream().filter(a -> AugmentRole.of(a.id()) == AugmentRole.UNKNOWN).forEach(a ->
+                plugin.getLogger().warning("Unclassified augment draft role: " + a.id()));
+        roller = new AugmentRoller(registry, random, official.draftWeights(), new AugmentRoller.Quality(
+                config.getBoolean("augments.draft.earlier-diversity", false),
+                config.getBoolean("augments.draft.final-diversity", true),
+                config.getBoolean("augments.draft.exclude-final-xp", true)));
         guard = new ProcGuard(maxDepth);
     }
 
@@ -166,9 +171,9 @@ final class PaperAugments implements Listener {
 
     Listener officialListener() { return official; }
 
-    void start(UUID id, MatchSimulationClock timer) {
+    void start(UUID id, MatchSimulationClock timer, boolean experiment) {
         match = id;
-        official.start(id);
+        official.start(id, experiment);
         timer.setOfferProvider(this::offers);
     }
 
@@ -278,17 +283,112 @@ final class PaperAugments implements Listener {
             official.selected(id, definition.id(), "exchange_offer");
             return;
         }
-        boolean added = profile.owned.add(definition.id());
-        if (added) {
-            official.selected(id, definition.id(), choice.status().name());
-            official.acquired(id, definition.id());
-        }
+        boolean added = acquire(profile, id, definition, choice.status().name());
         var player = plugin.getServer().getPlayer(id);
         if (player != null) {
             player.sendMessage(definition.name() + (added ? " 증강을 획득했습니다." : " 증강은 이미 활성화돼 있습니다."));
             player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, .45f,
                     definition.rarity() == AugmentRarity.PRISMATIC ? 1.35f : 1f);
         }
+    }
+
+    private boolean acquire(Profile profile, UUID player, AugmentDefinition definition, String source) {
+        if (!profile.owned.add(definition.id())) return false;
+        official.selected(player, definition.id(), source);
+        official.acquired(player, definition.id());
+        return true;
+    }
+
+    String labGrant(Player player, String id) {
+        var definition = registry.get(id);
+        if (definition == null || !definition.selectable()) return "사용 가능한 증강 ID를 지정하세요.";
+        UUID playerId = player.getUniqueId();
+        var profile = profiles.computeIfAbsent(playerId, ignored -> new Profile());
+        if (profile.owned.contains(id)) return "이미 보유한 증강입니다.";
+        if (EXCHANGES.contains(id)) {
+            if (!canOffer(profile, id)) return "교환 자격을 충족하지 않았습니다.";
+            startExchange(profile, id);
+            showExchange(player, profile);
+            return "교환 선택 시작 " + id;
+        }
+        acquire(profile, playerId, definition, "LAB");
+        if (definition.effect() == Effect.SPEED) setModifier(player, profile, definition, Attribute.MOVEMENT_SPEED, true);
+        official.refreshAttributes(player);
+        refreshLabMenu(player, profile);
+        return player.getName() + " 부여 " + id;
+    }
+
+    String labRemove(Player player, String id) {
+        var profile = profiles.get(player.getUniqueId());
+        if (profile == null || !profile.owned.remove(id)) return "보유한 증강이 아닙니다.";
+        release(player, profile, id);
+        profile.exchange = null;
+        profile.exchangeId = null;
+        profile.exchangeShown = false;
+        official.refreshAttributes(player);
+        refreshLabMenu(player, profile);
+        return player.getName() + " 제거 " + id;
+    }
+
+    private void release(Player player, Profile profile, String id) {
+        var definition = registry.get(id);
+        if (profile.modifiers.contains(id)) setModifier(player, profile, definition, attribute(definition.effect()), false);
+        profile.timers.remove(id);
+        official.lost(player.getUniqueId(), id);
+    }
+
+    String labClear(Player player, boolean reset) {
+        UUID id = player.getUniqueId();
+        var old = profiles.get(id);
+        remove(id);
+        if (old != null) {
+            var updated = new Profile();
+            updated.grantedRound = old.grantedRound;
+            updated.lastKnownLevel = old.lastKnownLevel;
+            profiles.put(id, updated);
+        }
+        if (reset) {
+            player.setHealth(player.getAttribute(Attribute.MAX_HEALTH).getValue());
+            player.setAbsorptionAmount(0);
+            player.setFireTicks(0);
+            player.getActivePotionEffects().forEach(effect -> player.removePotionEffect(effect.getType()));
+        }
+        return player.getName() + (reset ? " 증강·전투 상태 초기화" : " 증강 전체 제거");
+    }
+
+    String labProgress(Player player, String id, int value) {
+        var profile = profiles.get(player.getUniqueId());
+        if (profile == null || !profile.owned.contains(id)) return "진행도를 설정할 증강을 먼저 부여하세요.";
+        String applied = official.labProgress(player, id, value);
+        refreshLabMenu(player, profile);
+        return applied;
+    }
+
+    String labReport(Player player, boolean detailed) {
+        UUID id = player.getUniqueId();
+        var profile = profiles.get(id);
+        var ids = profile == null ? Set.<String>of() : profile.owned;
+        if (!detailed) return player.getName() + " 보유 증강 " + ids;
+        var lines = new ArrayList<String>();
+        lines.add(String.format(Locale.ROOT, "%s · 체력 %.2f/%.2f · 흡수 %.2f · 이동속도 %.3f · 크기 %.3f · 경기 %d초",
+                player.getName(), player.getHealth(), player.getAttribute(Attribute.MAX_HEALTH).getValue(),
+                player.getAbsorptionAmount(), player.getAttribute(Attribute.MOVEMENT_SPEED).getValue(),
+                player.getAttribute(Attribute.SCALE).getValue(), clock.get().elapsedSeconds()));
+        lines.add("활성 조합 " + official.scoutingCombinations(id) + " · " + official.labFightReport(id));
+        for (String augment : ids) {
+            var progress = new ArrayList<>(official.details(id, augment));
+            progress.addAll(official.resonanceDetails(id, augment));
+            progress.add("쿨다운 " + Math.max(official.labCooldown(id, augment),
+                    profile.timers.remainingCooldown(augment, clock.get().elapsedSeconds())) + "초");
+            lines.add(augment + " " + String.join(" · ", progress));
+        }
+        return String.join("\n", lines);
+    }
+
+    private void refreshLabMenu(Player player, Profile profile) {
+        var holder = player.getOpenInventory().getTopInventory().getHolder();
+        if (holder instanceof SummaryMenu) showSummary(player, profile);
+        else if (holder instanceof ExchangeMenu && profile.exchange == null) player.closeInventory();
     }
 
     String open(Player player) {
@@ -337,7 +437,8 @@ final class PaperAugments implements Listener {
 
     private void showSummary(Player player, Profile profile) {
         var menu = new SummaryMenu();
-        menu.inventory = plugin.getServer().createInventory(menu, 27, Component.text("보유 증강"));
+        menu.inventory = plugin.getServer().createInventory(menu, Math.clamp((profile.owned.size() + 8) / 9 * 9, 27, 54),
+                Component.text("보유 증강"));
         int slot = 0;
         for (String id : profile.owned) {
             if (slot >= menu.inventory.getSize()) break;
@@ -359,7 +460,7 @@ final class PaperAugments implements Listener {
         };
         double shown = augment.unit().startsWith("%") ? augment.amount() * 100 : augment.amount();
         List<Component> lore = new ArrayList<>(List.of(
-                Component.text(augment.rarity().name(), color), Component.text("조건: " + augment.condition()),
+                Component.text(augment.rarity().name() + " · " + AugmentRole.of(augment.id()).label(), color), Component.text("조건: " + augment.condition()),
                 Component.text(String.format(Locale.ROOT, "효과: %.2f%s", shown, augment.unit())),
                 Component.text("지속 " + (augment.duration() == 0 ? "상시 또는 즉시" : augment.duration() + "초")
                         + " · 쿨다운 " + augment.cooldown() + "초"),
@@ -412,12 +513,7 @@ final class PaperAugments implements Listener {
         profile.owned.removeAll(commit.get().removed());
         profile.owned.addAll(commit.get().awarded());
         profile.owned.add(exchangeId);
-        for (String lost : commit.get().removed()) {
-            var definition = registry.get(lost);
-            if (profile.modifiers.contains(lost)) setModifier(player, profile, definition, attribute(definition.effect()), false);
-            profile.timers.remove(lost);
-            official.lost(player.getUniqueId(), lost);
-        }
+        for (String lost : commit.get().removed()) release(player, profile, lost);
         commit.get().awarded().forEach(gained -> {
             official.selected(player.getUniqueId(), gained, "exchange_reward");
             official.acquired(player.getUniqueId(), gained);

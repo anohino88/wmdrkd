@@ -51,23 +51,23 @@ public final class ArenaSearchService implements Listener {
     }
 
     public String preview(CommandSender sender, int players) {
-        return begin(sender, players, null, result -> { });
+        return begin(sender, players, null, plugin.getConfig().getString("arena.world", ""), result -> { });
     }
 
-    public String search(CommandSender sender, int players, UUID matchId, Consumer<ArenaContext> done) {
-        return begin(sender, players, matchId, done);
+    public String search(CommandSender sender, int players, UUID matchId, String worldName, Consumer<ArenaContext> done) {
+        return begin(sender, players, matchId, worldName, done);
     }
 
     public boolean busy() {
         return task != null || abandoned.stream().anyMatch(request -> !request.isDone());
     }
 
-    private String begin(CommandSender sender, int players, UUID matchId, Consumer<ArenaContext> done) {
+    private String begin(CommandSender sender, int players, UUID matchId, String worldName, Consumer<ArenaContext> done) {
         if (busy()) return "경기장 탐색 또는 청크 요청 정리가 진행 중입니다.";
         abandoned = List.of();
         var cfg = plugin.getConfig();
-        World world = plugin.getServer().getWorld(cfg.getString("arena.world", ""));
-        if (world == null || world.getEnvironment() != World.Environment.NORMAL) return "경기 월드 '" + cfg.getString("arena.world") + "'를 사용할 수 없습니다. "
+        World world = plugin.getServer().getWorld(worldName);
+        if (world == null || world.getEnvironment() != World.Environment.NORMAL) return "경기 월드 '" + worldName + "'를 사용할 수 없습니다. "
                 + "plugins/AugmentWild/config.yml의 arena.world를 서버에 로드된 기존 오버월드 이름으로 수정한 뒤 다시 시작하세요.";
         if (matchId != null && !world.getPVP()) return "경기 월드에서 PvP를 허용해야 합니다.";
         if (!"ZERO".equalsIgnoreCase(cfg.getString("arena.biome.ocean-policy"))) return "ZERO 검사 정책을 지정하세요.";

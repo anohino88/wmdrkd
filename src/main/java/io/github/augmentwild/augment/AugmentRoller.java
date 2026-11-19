@@ -8,17 +8,29 @@ import java.util.function.Predicate;
 import java.util.function.ToDoubleBiFunction;
 
 public final class AugmentRoller {
+    public record Quality(boolean earlierDiversity, boolean finalDiversity, boolean excludeFinalXp) {
+        public static final Quality LEGACY = new Quality(false, false, false);
+        public static final Quality DEFAULT = new Quality(false, true, true);
+    }
+
+    private static final Set<String> PURE_XP = Set.of("xp_silver", "xp_gold", "xp_prism");
     private final AugmentRegistry registry;
     private final RandomGenerator random;
     private final ToDoubleBiFunction<String, Set<String>> weight;
+    private final Quality quality;
 
     public AugmentRoller(AugmentRegistry registry, RandomGenerator random) {
         this(registry, random, (id, owned) -> 1);
     }
 
     public AugmentRoller(AugmentRegistry registry, RandomGenerator random, ToDoubleBiFunction<String, Set<String>> weight) {
+        this(registry, random, weight, Quality.LEGACY);
+    }
+
+    public AugmentRoller(AugmentRegistry registry, RandomGenerator random, ToDoubleBiFunction<String, Set<String>> weight, Quality quality) {
         this.registry = registry;
         this.weight = weight;
+        this.quality = quality;
         this.random = random;
     }
 
@@ -30,6 +42,13 @@ public final class AugmentRoller {
                                        Predicate<AugmentDefinition> eligible) {
         var pool = registry.selectable().stream()
                 .filter(a -> !finalRound || a.rarity() == AugmentRarity.PRISMATIC).filter(eligible).toList();
+        if (finalRound && quality.excludeFinalXp()) {
+            var withoutXp = pool.stream().filter(a -> a.effect() != AugmentDefinition.Effect.XP && !PURE_XP.contains(a.id())).toList();
+            long fresh = pool.stream().filter(a -> !owned.contains(a.id())).count();
+            long freshWithoutXp = withoutXp.stream().filter(a -> !owned.contains(a.id())).count();
+            if (withoutXp.size() >= 3 && (fresh < 3 || freshWithoutXp >= 3)) pool = withoutXp;
+        }
+        boolean diverse = finalRound ? quality.finalDiversity() : quality.earlierDiversity();
         int slots = Math.min(3, pool.size());
         var result = new ArrayList<AugmentDefinition>(3);
         for (int slot = 0; slot < slots; slot++) {
@@ -41,18 +60,26 @@ public final class AugmentRoller {
             if (!changed.isEmpty()) tier = changed;
             var fresh = tier.stream().filter(a -> !owned.contains(a.id())).toList();
             if (!fresh.isEmpty()) tier = fresh;
-            result.add(pick(tier, owned));
+            result.add(pick(tier, owned, result, diverse && (!finalRound || slot == 2)));
         }
         if (!result.isEmpty() && !previous.isEmpty() && result.stream().allMatch(a -> previous.contains(a.id()))) {
             var lastRarity = result.getLast().rarity();
             var alternatives = pool.stream().filter(a -> a.rarity() == lastRarity && !previous.contains(a.id())).toList();
-            if (!alternatives.isEmpty()) result.set(result.size() - 1, pick(alternatives, owned));
+            if (!alternatives.isEmpty()) result.set(result.size() - 1,
+                    pick(alternatives, owned, result.subList(0, result.size() - 1), diverse && (!finalRound || result.size() == 3)));
         }
         return List.copyOf(result);
     }
 
-    private AugmentDefinition pick(List<AugmentDefinition> tier, Set<String> owned) {
-        double[] weights = tier.stream().mapToDouble(option -> weight.applyAsDouble(option.id(), owned)).toArray();
+    private AugmentDefinition pick(List<AugmentDefinition> tier, Set<String> owned, List<AugmentDefinition> drawn, boolean diverse) {
+        var firstRole = drawn.isEmpty() ? AugmentRole.UNKNOWN : AugmentRole.of(drawn.getFirst().id());
+        boolean diversify = diverse && firstRole != AugmentRole.UNKNOWN
+                && drawn.stream().allMatch(option -> AugmentRole.of(option.id()) == firstRole);
+        double[] weights = tier.stream().mapToDouble(option -> {
+            double base = weight.applyAsDouble(option.id(), owned);
+            var role = AugmentRole.of(option.id());
+            return diversify && role != AugmentRole.UNKNOWN && role != firstRole ? base * 3 : base;
+        }).toArray();
         if (java.util.Arrays.stream(weights).allMatch(value -> value == 1)) return tier.get(random.nextInt(tier.size()));
         double total = java.util.Arrays.stream(weights).sum();
         if (!(total > 0 && Double.isFinite(total))) throw new IllegalArgumentException("Invalid tier weight");

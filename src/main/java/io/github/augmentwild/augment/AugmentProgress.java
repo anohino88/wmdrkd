@@ -36,9 +36,22 @@ public final class AugmentProgress {
         return after;
     }
 
+    /** Replace a measured counter and discard fractional credit from its earlier value. */
+    public int replace(String key, int value, int cap) {
+        if (value < 0 || cap < 0) throw new IllegalArgumentException("Negative augment progress");
+        reset(key);
+        return add(key, value, cap);
+    }
+
     public void reset(String key) {
         values.remove(key);
         remainder.remove(key);
+    }
+
+    public void resetCooldown(String key) { readyAt.remove(key); }
+
+    public long cooldownRemaining(String key, long now) {
+        return Math.max(0, readyAt.getOrDefault(key, now) - now);
     }
 
     public boolean ready(String key, long now) {

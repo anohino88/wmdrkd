@@ -35,6 +35,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 /** Test-only Paper plugin. This probe does not create or simulate a player connection. */
 public final class BorderProbe extends JavaPlugin implements Listener {
     private Pig testPig;
+    private SyntheticCombatLoad combatLoad;
     private Pig shieldPig;
     private final ResonanceShield shield = new ResonanceShield();
     private long shieldClock;
@@ -72,7 +73,19 @@ public final class BorderProbe extends JavaPlugin implements Listener {
         getServer().getScheduler().runTask(this, this::verify);
     }
 
+    @Override public void onDisable() {
+        if (combatLoad != null) combatLoad.close();
+    }
+
     private void verify() {
+        var console = getServer().getConsoleSender();
+        var permission = console.addAttachment(this, "augmentwild.admin.test", false);
+        try {
+            require(!console.hasPermission("augmentwild.admin.test"), "Paper honours explicit lab permission denial");
+            require(getServer().dispatchCommand(console, "aw admin test status"), "lab command routes to permission gate");
+        } finally {
+            console.removeAttachment(permission);
+        }
         var world = getServer().getWorlds().getFirst();
         var global = world.getWorldBorder();
         double originalSize = global.getSize();
@@ -110,7 +123,8 @@ public final class BorderProbe extends JavaPlugin implements Listener {
         verifyResonanceShield(spawn);
         verifyPhase64(spawn);
         getLogger().info("AW_PHASE64_PROBE_PASS: diamond debit, lossless reward preflight, marked chest lifecycle and obstructed ray");
-        new SyntheticCombatLoad(this, spawn).start();
+        combatLoad = new SyntheticCombatLoad(this, spawn);
+        combatLoad.start();
         getLogger().info("AW_RESONANCE_PROBE_PASS: real damage, separate vanilla absorption, exact expiry and cleanup");
         getLogger().info("AW_BORDER_PROBE_PASS: virtual border, unchanged global border, Paper damage event and health delta");
     }

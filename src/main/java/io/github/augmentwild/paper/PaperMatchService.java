@@ -3,6 +3,7 @@ package io.github.augmentwild.paper;
 import com.destroystokyo.paper.event.player.PlayerPostRespawnEvent;
 import com.destroystokyo.paper.event.server.ServerTickEndEvent;
 import io.github.augmentwild.domain.GameSession;
+import io.github.augmentwild.domain.CombatLab;
 import io.github.augmentwild.domain.MatchSimulationClock;
 import io.github.augmentwild.domain.MatchBorder;
 import io.github.augmentwild.domain.MatchTelemetry;
@@ -17,6 +18,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.logging.Level;
 import org.bukkit.Chunk;
+import org.bukkit.World;
 import org.bukkit.Location;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
@@ -52,6 +54,8 @@ public final class PaperMatchService implements Listener {
     private MatchBorder border;
     private PaperMatchBorder borderDisplay;
     private boolean regionCommitted;
+    private final CombatLab lab;
+    private UUID labWorld;
     private long matchStarted;
     private long lastSurvivorSample;
 
@@ -70,13 +74,16 @@ public final class PaperMatchService implements Listener {
         snapshots = new PlayerSnapshots(plugin);
         usedRegions = new UsedRegions(plugin);
         var config = plugin.getConfig();
+        lab = new CombatLab(config.getBoolean("dev.combat-lab.enabled"), config.getString("dev.combat-lab.world", ""),
+                config.getString("arena.world", ""));
         placement = new ArenaPlacement(config.getInt("respawn.border-margin"),
                 config.getInt("respawn.attempts-per-cycle"), config.getInt("respawn.retry-ticks"),
                 config.getInt("respawn.protection-seconds"), config.getInt("respawn.preferred-separation"));
         session = new GameSession(settings.rules());
         restrictions = new PaperRespawnRestrictions(this::isRestricted, this::outsideArena,
                 this::consumePermit, player -> placement.protectedFromDamage(player.getUniqueId(), System.nanoTime()),
-                player -> session.state() == MatchState.AUGMENT_SELECTION && augmentMember(player.getUniqueId()));
+                player -> session.state() == MatchState.AUGMENT_SELECTION && augmentMember(player.getUniqueId()),
+                this::labParticipant);
         augments = new PaperAugments(plugin, () -> clock, this::augmentMember, this::augmentActive,
                 player -> placement.protectedFromDamage(player.getUniqueId(), System.nanoTime()),
                 () -> session.state(), this::insideAugmentArena, this::insideAugmentBorder, this::move, placement::protect, settings.rules().procDepth(), telemetry);
@@ -177,7 +184,71 @@ public final class PaperMatchService implements Listener {
 
     public void recoverSupply() { supply.recover(); }
 
-    public String start(CommandSender sender) {
+    public String start(CommandSender sender) { return start(sender, false); }
+
+    private boolean labParticipant(Player player) {
+        return labWorld != null && contains(player.getUniqueId());
+    }
+
+    public String labCommand(CommandSender sender, String[] args) {
+        boolean authorised = sender.hasPermission("augmentwild.admin") && sender.hasPermission("augmentwild.admin.test");
+        if (!authorised) return "관리자 권한이 없습니다.";
+        String action = args.length == 0 ? "status" : args[0].toLowerCase(java.util.Locale.ROOT);
+        String result = labAction(sender, action, args);
+        plugin.getLogger().info("Combat lab command actor=" + sender.getName() + " action="
+                + (action.matches("[a-z]{1,12}") ? action : "invalid") + " match=" + session.matchId()
+                + " result=" + result.replace('\n', ' '));
+        return result;
+    }
+
+    private String labAction(CommandSender sender, String action, String[] args) {
+        if (action.equals("status") && args.length <= 1) {
+            return "전투 실험실 " + (lab.ready() ? "설정됨 (" + lab.world() + ")" : "사용 불가") + " · "
+                    + (labWorld != null ? "테스트 경기 " + session.state() : "테스트 경기 없음");
+        }
+        if (!lab.ready()) return "전투 실험실을 활성화하고 운영 월드와 다른 기존 테스트 월드를 지정하세요.";
+        if (action.equals("start") && args.length == 1) return start(sender, true);
+        if (!lab.allows(true, labWorld != null && task != null, clock == null || clock.isPaused())) {
+            return "증강 실험 명령은 진행 중이며 일시정지 상태가 아닌 테스트 경기에서만 사용할 수 있습니다.";
+        }
+        int length = switch (action) {
+            case "list", "clear", "report", "reset" -> 2;
+            case "grant", "remove", "health" -> 3;
+            case "progress" -> 4;
+            default -> 0;
+        };
+        if (length == 0 || args.length != length) return "사용법: /aw admin test <status|start|grant|remove|list|clear|progress|report|reset|health>";
+        Player player = plugin.getServer().getPlayerExact(args[1]);
+        if (player == null || !labParticipant(player) || !augmentActive(player)
+                || !labWorld.equals(player.getWorld().getUID())) return "살아 있는 테스트 참가자를 지정하세요.";
+        String id = args.length > 2 ? args[2].toLowerCase(java.util.Locale.ROOT) : "";
+        return switch (action) {
+            case "grant" -> augments.labGrant(player, id);
+            case "remove" -> augments.labRemove(player, id);
+            case "list", "report" -> augments.labReport(player, action.equals("report"));
+            case "clear", "reset" -> augments.labClear(player, action.equals("reset"));
+            case "progress" -> {
+                try {
+                    int value = Integer.parseInt(args[3]);
+                    yield value < 0 ? "진행도는 0 이상의 정수입니다." : augments.labProgress(player, id, value);
+                } catch (NumberFormatException failure) {
+                    yield "진행도는 0 이상의 정수입니다.";
+                }
+            }
+            case "health" -> {
+                double health;
+                try { health = Double.parseDouble(args[2]); }
+                catch (NumberFormatException failure) { yield "유효한 체력 포인트를 입력하세요."; }
+                double max = player.getAttribute(org.bukkit.attribute.Attribute.MAX_HEALTH).getValue();
+                if (!Double.isFinite(health) || health <= 0 || health > max) yield "체력 포인트는 0 초과, 최대 체력 이하여야 합니다.";
+                player.setHealth(health);
+                yield "실험 체력 " + health + "/" + max;
+            }
+            default -> throw new IllegalStateException(action);
+        };
+    }
+
+    private String start(CommandSender sender, boolean experiment) {
         if (session.state() != MatchState.WAITING) return "경기가 이미 준비 중이거나 진행 중입니다.";
         if (search.busy()) return "이전 경기장 탐색이 정리될 때까지 기다리세요.";
         if (!supply.recover()) return "미처리 보급 복구 기록이 있습니다. 서버 로그를 확인하세요.";
@@ -188,9 +259,23 @@ public final class PaperMatchService implements Listener {
         if (players.stream().anyMatch(id -> available(id) == null || snapshots.pending(id))) {
             return "모든 참가자가 접속하고 살아 있어야 하며 이전 복구 작업이 없어야 합니다.";
         }
+        String worldName = plugin.getConfig().getString("arena.world", "");
+        if (experiment) {
+            World world = plugin.getServer().getWorld(lab.world());
+            if (world == null || world.getEnvironment() != World.Environment.NORMAL
+                    || world.equals(plugin.getServer().getWorld(worldName))) {
+                return "운영 경기와 분리된 기존 테스트 오버월드를 로드하세요.";
+            }
+            if (players.stream().anyMatch(id -> !world.equals(available(id).getWorld()))
+                    || world.getPlayers().stream().anyMatch(player -> !players.contains(player.getUniqueId()))) {
+                return "모든 테스트 참가자가 테스트 월드에 있어야 하며 비참가자가 없어야 합니다.";
+            }
+            worldName = lab.world();
+            labWorld = world.getUID();
+        }
         UUID matchId = session.matchId();
         session.transition(MatchState.PREPARING);
-        String message = search.search(sender, players.size(), matchId, context -> {
+        String message = search.search(sender, players.size(), matchId, worldName, context -> {
             if (!matchId.equals(session.matchId()) || session.state() != MatchState.PREPARING) return;
             if (context == null) {
                 clearMatch();
@@ -257,7 +342,8 @@ public final class PaperMatchService implements Listener {
     private void activate(CommandSender sender, List<UUID> players, ArenaSearchService.ArenaContext context)
             throws java.io.IOException, org.bukkit.configuration.InvalidConfigurationException {
         var world = plugin.getServer().getWorld(context.worldId());
-        if (world == null || !world.getPVP() || players.stream().anyMatch(id -> !inside(context, available(id)))) {
+        if (world == null || !world.getPVP() || players.stream().anyMatch(id -> !inside(context, available(id)))
+                || labWorld != null && world.getPlayers().stream().anyMatch(player -> !players.contains(player.getUniqueId()))) {
             throw new IllegalStateException("Participant moved or arena settings changed before start");
         }
         border = new MatchBorder(context.area(), settings.rules(), settings.borderDamageInterval());
@@ -272,10 +358,14 @@ public final class PaperMatchService implements Listener {
         // Start timing only after the placement and history write have succeeded.
         long started = System.nanoTime();
         matchStarted = started;
+        if (labWorld != null) {
+            notice("관리자 전투 실험 경기입니다. 결과는 실험실에서만 사용됩니다.");
+            plugin.getLogger().info("Combat lab started match=" + session.matchId());
+        }
         lastSurvivorSample = Long.MIN_VALUE;
         clock = new MatchSimulationClock(session, settings.rules(), () -> System.nanoTime() - started,
                 settings.selectionSeconds(), supply.start(session.matchId(), context.spawns()));
-        augments.start(session.matchId(), clock);
+        augments.start(session.matchId(), clock, labWorld != null);
         telemetry.start(players);
         intel.start(session.matchId());
         sender.sendMessage("경기가 시작됐습니다. 파밍 중 PvP 허용, 목숨 무제한.");
@@ -344,6 +434,7 @@ public final class PaperMatchService implements Listener {
         intel.clear();
         augments.clear();
         regionCommitted = false;
+        labWorld = null;
         arena = null;
         clock = null;
         for (UUID id : captured) {
@@ -442,6 +533,8 @@ public final class PaperMatchService implements Listener {
     }
 
     private boolean outsideArena(Player player, Location destination) {
+        if (labWorld != null && !contains(player.getUniqueId()) && destination != null && destination.getWorld() != null
+                && labWorld.equals(destination.getWorld().getUID())) return true;
         return arena != null && contains(player.getUniqueId()) && (destination == null
                 || destination.getWorld() == null || !arena.worldId().equals(destination.getWorld().getUID())
                 || !arena.area().contains(destination.getX(), destination.getZ(), 0));
@@ -495,7 +588,13 @@ public final class PaperMatchService implements Listener {
 
     @EventHandler public void onJoin(PlayerJoinEvent event) {
         UUID id = event.getPlayer().getUniqueId();
-        if (!contains(id)) recover(event.getPlayer());
+        if (!contains(id)) {
+            recover(event.getPlayer());
+            if (labWorld != null && labWorld.equals(event.getPlayer().getWorld().getUID())) {
+                plugin.getLogger().warning("Closing combat lab after a nonparticipant joined its world");
+                clearMatch();
+            }
+        }
         if (contains(id) && !departures.contains(id)) {
             if (arena != null && !event.getPlayer().isDead() && outsideArena(event.getPlayer(), event.getPlayer().getLocation())
                     && session.player(id).life().status() == LifeState.Status.ACTIVE && !awaitingNativeRespawn.contains(id)) {

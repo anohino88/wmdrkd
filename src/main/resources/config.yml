@@ -67,6 +67,10 @@ death-review:
   delivery-seconds: 60
 augments:
   choices-per-round: 3
+  draft:
+    earlier-diversity: false
+    final-diversity: true
+    exclude-final-xp: true
   rarity:
     silver-weight: 80
     gold-weight: 18
@@ -114,6 +118,9 @@ supply:
       - [DIAMOND_CHESTPLATE:PROTECTION:2, BOOK:SHARPNESS:3, GOLDEN_APPLE*3, POTION:STRONG_REGENERATION]
       - [CROSSBOW:QUICK_CHARGE:2, BOOK:POWER:3, ARROW*32, DIAMOND*2, POTION:STRONG_SWIFTNESS]
 dev:
+  combat-lab:
+    enabled: false
+    world: ""
   combat-audit:
     enabled: false
     max-events: 1000
