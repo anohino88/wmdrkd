@@ -76,6 +76,8 @@ public final class Phase64Checks {
             }
         }
         require(valid && seen.size() > 200, "exact reward grades and random timing within all windows");
+        var fixed = new SupplyPlan.Drop("normal-supply-1", false, 480);
+        require(fixed.announceAt(120) == 360 && fixed.publishAt(60) == 420, "exact announce and coordinates boundaries");
         var claim = new SupplyPlan.Claim();
         require(claim.reserve(near.id()) && !claim.reserve(tie.id()), "concurrent opener cannot reserve");
         claim.finish(near.id(), false);

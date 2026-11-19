@@ -97,12 +97,12 @@ final class PaperSupply implements Listener {
         for (var delivery : plans) {
             if (delivery.attempted) continue;
             long opensAt = delivery.plan.second();
-            if (!delivery.announced && second >= opensAt - settings.announceSeconds()) {
+            if (!delivery.announced && second >= delivery.plan.announceAt(settings.announceSeconds())) {
                 delivery.announced = true;
                 if (delivery.position == null) delivery.position = reserve(delivery);
                 notice.accept(label(delivery) + " 예고 · 경기 시간 " + (opensAt / 60) + "분 " + (opensAt % 60) + "초");
             }
-            if (!delivery.published && second >= opensAt - settings.coordinateSeconds()) {
+            if (!delivery.published && second >= delivery.plan.publishAt(settings.coordinateSeconds())) {
                 delivery.published = true;
                 if (delivery.position != null && !validTerrain(delivery.position)) {
                     release(delivery.position);
@@ -211,13 +211,23 @@ final class PaperSupply implements Listener {
         boolean delivered = false;
         try {
             var inventory = player.getInventory();
-            ItemStack[] result = MatchInventory.fit(inventory.getStorageContents(), inventory.getMaxStackSize(), delivery.loot);
+            ItemStack[] before = inventory.getStorageContents();
+            ItemStack[] result = MatchInventory.fit(before, inventory.getMaxStackSize(), delivery.loot);
             if (result == null) {
                 player.sendMessage("보급을 받을 인벤토리 공간이 필요합니다.");
                 return;
             }
-            inventory.setStorageContents(result);
-            delivered = true;
+            try {
+                inventory.setStorageContents(result);
+                delivered = true;
+            } catch (RuntimeException failure) {
+                try {
+                    inventory.setStorageContents(before);
+                } catch (RuntimeException restoreFailure) {
+                    failure.addSuppressed(restoreFailure);
+                }
+                throw failure;
+            }
         } finally {
             delivery.claim.finish(id, delivered);
         }

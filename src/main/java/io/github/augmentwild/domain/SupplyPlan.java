@@ -15,7 +15,10 @@ public final class SupplyPlan {
         int pick(RandomGenerator random) { return random.nextInt(first, last + 1); }
     }
 
-    public record Drop(String id, boolean premium, int second) { }
+    public record Drop(String id, boolean premium, int second) {
+        public long announceAt(long lead) { return second - lead; }
+        public long publishAt(long lead) { return second - lead; }
+    }
 
     public static List<Drop> draw(List<Window> windows, RandomGenerator random) {
         if (windows.size() != 3) throw new IllegalArgumentException("Three supply windows required");

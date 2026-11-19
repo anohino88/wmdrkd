@@ -12,6 +12,14 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import org.bukkit.configuration.file.YamlConfiguration;
 import io.github.augmentwild.paper.PaperMatchBorder;
+import io.github.augmentwild.paper.MatchInventory;
+import io.github.augmentwild.paper.SupplyBlock;
+import java.util.List;
+import org.bukkit.FluidCollisionMode;
+import org.bukkit.Material;
+import org.bukkit.block.Chest;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.util.Vector;
 import io.github.augmentwild.paper.PaperAugmentAttribute;
 import org.bukkit.NamespacedKey;
 import org.bukkit.attribute.Attribute;
@@ -89,9 +97,71 @@ public final class BorderProbe extends JavaPlugin implements Listener {
             testPig = null;
         }
         verifyResonanceShield(spawn);
+        verifyPhase64(spawn);
+        getLogger().info("AW_PHASE64_PROBE_PASS: diamond debit, lossless reward preflight, marked chest lifecycle and obstructed ray");
         new SyntheticCombatLoad(this, spawn).start();
         getLogger().info("AW_RESONANCE_PROBE_PASS: real damage, separate vanilla absorption, exact expiry and cleanup");
         getLogger().info("AW_BORDER_PROBE_PASS: virtual border, unchanged global border, Paper damage event and health delta");
+    }
+
+    private void verifyPhase64(Location spawn) {
+        var diamond = new ItemStack(Material.DIAMOND, 2);
+        var compass = new ItemStack(Material.COMPASS);
+        var original = new ItemStack[]{diamond, compass, null};
+        var debit = MatchInventory.remove(original, new ItemStack(Material.AIR), Material.DIAMOND, 1);
+        require(debit != null && debit.storage()[0].getAmount() == 1 && diamond.getAmount() == 2
+                && debit.storage()[1].equals(compass), "exact cost, compass unchanged");
+        require(MatchInventory.remove(original, new ItemStack(Material.AIR), Material.DIAMOND, 3) == null
+                && diamond.getAmount() == 2, "failed cost leaves inventory intact");
+        var hand = new ItemStack(Material.DIAMOND, 1);
+        var offhand = MatchInventory.remove(new ItemStack[]{compass}, hand, Material.DIAMOND, 1);
+        require(offhand != null && offhand.offhand().getAmount() == 0 && hand.getAmount() == 1, "offhand debit");
+        var arrows = new ItemStack(Material.ARROW, 63);
+        var nearlyFull = new ItemStack[]{arrows, compass};
+        require(MatchInventory.fit(nearlyFull, 64, List.of(new ItemStack(Material.ARROW, 2))) == null
+                && arrows.getAmount() == 63, "failed supplies grant no partial items");
+        var fitted = MatchInventory.fit(new ItemStack[]{arrows, null}, 64, List.of(new ItemStack(Material.ARROW, 2)));
+        require(fitted != null && fitted[0].getAmount() == 64 && fitted[1].getAmount() == 1
+                && arrows.getAmount() == 63, "full reward fits without touching source");
+
+        var point = spawn.clone().add(.5, 24, .5);
+        var target = point.clone().add(5, 0, 0);
+        var obstacle = point.clone().add(2, 0, 0).getBlock();
+        var marker = point.clone().add(0, 3, 0).getBlock();
+        var oldObstacle = obstacle.getBlockData();
+        var oldMarker = marker.getBlockData();
+        Pig pig = null;
+        try {
+            marker.setType(Material.CAVE_AIR, false);
+            var block = SupplyBlock.place(marker, new NamespacedKey(this, "phase64"), "probe-chest");
+            require(block != null && block.present() && ((Chest) marker.getState()).getBlockInventory().isEmpty(),
+                    "physical marker contains no native loot");
+            block.remove();
+            require(marker.getType() == Material.CAVE_AIR && !block.present(), "marker cleanup restores original block");
+            var replacement = SupplyBlock.place(marker, new NamespacedKey(this, "phase64"), "replacement");
+            require(replacement != null, "second marker placed");
+            block.remove();
+            require(replacement.present(), "cleanup preserves a different owner token");
+            replacement.remove();
+
+            obstacle.setType(Material.AIR, false);
+            pig = point.getWorld().spawn(target, Pig.class);
+            pig.setGravity(false);
+            Pig visible = pig;
+            var eye = point.clone().add(0, .5, 0);
+            var east = new Vector(1, 0, 0);
+            var hit = point.getWorld().rayTrace(eye, east, 48, FluidCollisionMode.NEVER, true, 0, entity -> entity.equals(visible));
+            require(hit != null && visible.equals(hit.getHitEntity()), "unobstructed Paper ray");
+            var shortRay = point.getWorld().rayTrace(eye, east, 3, FluidCollisionMode.NEVER, true, 0, entity -> entity.equals(visible));
+            require(shortRay == null, "distance cap");
+            obstacle.setType(Material.STONE, false);
+            var blocked = point.getWorld().rayTrace(eye, east, 48, FluidCollisionMode.NEVER, true, 0, entity -> entity.equals(visible));
+            require(blocked != null && obstacle.equals(blocked.getHitBlock()) && blocked.getHitEntity() == null, "wall blocks sight");
+        } finally {
+            if (pig != null) pig.remove();
+            obstacle.setBlockData(oldObstacle, false);
+            marker.setBlockData(oldMarker, false);
+        }
     }
 
     private void verifyAugmentCatalog() {

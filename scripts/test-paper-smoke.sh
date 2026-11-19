@@ -71,6 +71,7 @@ with log.open("wb") as output:
                 wait_for("AW_AUGMENT_PROBE_PASS", 15)
                 wait_for("AW_RESONANCE_PROBE_PASS", 15)
                 wait_for("AW_COMBAT_LOAD_PASS", 30)
+                wait_for("AW_PHASE64_PROBE_PASS", 15)
             if benchmark:
                 commands = runpy.run_path(str(pathlib.Path(sys.argv[1]) / "scripts/paper-arena-benchmark.py"))
                 commands["benchmark_arena"](command, log, wait_for)

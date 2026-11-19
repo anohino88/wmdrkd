@@ -216,7 +216,7 @@ final class PaperOfficialCombat implements Listener {
         if (state.hellLord) list.add(catalog.synergies.getString("hell_lord.name"));
         if (state.thousandSwords) list.add(catalog.synergies.getString("thousand_swords.name"));
         var families = resonance.families();
-        if (state.resonance.familyMultiplier() > AugmentResonance.BASE) list.add(families.stacking().name());
+        if (state.resonance != null && state.resonance.familyMultiplier() > AugmentResonance.BASE) list.add(families.stacking().name());
         if (currentResonance(id, owned.apply(id)).shieldPoints() > 0) list.add(families.revival().name());
         return List.copyOf(list);
     }
