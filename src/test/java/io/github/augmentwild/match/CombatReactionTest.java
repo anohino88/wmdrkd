@@ -22,6 +22,22 @@ class CombatReactionTest {
         assertEquals(12000, charge.remaining(21000));
     }
 
+    @Test void nestedAndCancelledAttacksCannotConsumeOneChargeTwice() {
+        var reaction = new CombatReaction();
+        reaction.charge(0, 4000, 16000);
+        Object outer = new Object(), nested = new Object();
+        assertTrue(reaction.reserve(outer));
+        assertFalse(reaction.reserve(nested));
+        reaction.release(nested);
+        assertFalse(reaction.reserve(nested));
+        reaction.release(outer);
+        assertTrue(reaction.charged(2));
+        assertTrue(reaction.reserve(nested));
+        assertTrue(reaction.spend(2));
+        reaction.release(nested);
+        assertFalse(reaction.spend(2));
+    }
+
     @Test void oreWardCapsChargesAndNeverSpendsDuringLockout() {
         var ward = new CombatReaction();
         assertTrue(ward.store(2));

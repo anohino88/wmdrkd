@@ -85,6 +85,8 @@ final class PaperOfficialCombat implements Listener {
     private final NaturalOreTracker ores;
     private final PaperErosion erosion;
     private final Map<UUID, Fighter> fighters = new HashMap<>();
+    private final Map<EntityDamageByEntityEvent, Map<String, CombatReaction>> empowers = new WeakHashMap<>();
+    private final Map<EntityDamageEvent, CombatReaction> reservedWards = new WeakHashMap<>();
     private final Map<EntityDamageEvent, Double> rawDamage = new WeakHashMap<>();
     private final Map<UUID, Integer> splitArrows = new HashMap<>();
     private final Deque<Deferred> deferred = new ArrayDeque<>();
@@ -473,6 +475,8 @@ final class PaperOfficialCombat implements Listener {
                     + " over=" + budgetOver + " limited=" + budgetReduced + " hits=" + budgetHits
                     + " requestedPoints=" + budgetRaw + " healthDamagePoints=" + budgetFinal);
         }
+        empowers.clear();
+        reservedWards.clear();
         wardSpent.clear();
         shieldSpends.clear();
         reviewOrigins.clear();
@@ -924,6 +928,8 @@ final class PaperOfficialCombat implements Listener {
             for (String id : List.of("reflex", "sword_wind", "afterimage_stride", "kinetic_reversal", "triad_reactor")) {
                 var r = state.reactions.get(id);
                 if (r == null || !r.charged(millis()) || !directMelee && !id.equals("triad_reactor")) continue;
+                if (!r.reserve(event)) continue;
+                empowers.computeIfAbsent(event, ignored -> new LinkedHashMap<>()).put(id, r);
                 chargedBonus = true;
                 if (id.equals("reflex")) flat += base * option(id, "ratio");
                 else flat += id.equals("sword_wind") ? option(id, "damage") : rule(id).amount();
@@ -938,8 +944,17 @@ final class PaperOfficialCombat implements Listener {
         }
     }
 
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    @EventHandler(priority = EventPriority.MONITOR)
     public void hit(EntityDamageByEntityEvent event) {
+        try {
+            if (!event.isCancelled()) confirmedHit(event);
+        } finally {
+            var reserved = empowers.remove(event);
+            if (reserved != null) reserved.values().forEach(charge -> charge.release(event));
+        }
+    }
+
+    private void confirmedHit(EntityDamageByEntityEvent event) {
         if (synthetic()) {
             var context = chain.current();
             var cause = event.getDamageSource().getCausingEntity();
@@ -1197,10 +1212,10 @@ final class PaperOfficialCombat implements Listener {
         long t = millis();
         UUID target = victim.getUniqueId();
         double points = Math.min(event.getFinalDamage(), victim.getHealth());
-        for (String id : List.of("kinetic_reversal", "afterimage_stride", "sword_wind", "reflex", "triad_reactor")) {
-            CombatReaction r = state.reactions.get(id);
-            if (r == null || !r.charged(t) || !melee && !id.equals("triad_reactor")) continue;
-            r.spend(t);
+        for (var entry : empowers.getOrDefault(event, Map.of()).entrySet()) {
+            String id = entry.getKey();
+            var charge = entry.getValue();
+            if (state.reactions.get(id) != charge || !charge.spend(t)) continue;
             switch (id) {
                 case "kinetic_reversal" -> push(player, victim, option(id, "push"));
                 case "afterimage_stride" -> speed(player, id);
@@ -2283,7 +2298,8 @@ final class PaperOfficialCombat implements Listener {
                 if (bastion != null && bastion.charged(millis()))
                     PaperResonanceShield.reduce(event, event.getFinalDamage() * rule("last_bastion").amount());
                 var ward = state.reactions.get("ore_ward");
-                if (ward != null && ward.charges() > 0 && ward.ready(millis()) && event.getFinalDamage() > 0) {
+                if (ward != null && ward.charges() > 0 && ward.ready(millis()) && event.getFinalDamage() > 0 && ward.reserve(event)) {
+                    reservedWards.put(event, ward);
                     var reduced = PaperResonanceShield.reduce(event, rule("ore_ward").amount());
                     if (reduced != null) wardSpent.put(event, reduced.protectedBase());
                 }
@@ -2340,6 +2356,8 @@ final class PaperOfficialCombat implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void damageTaken(EntityDamageEvent event) {
+        var reserved = reservedWards.remove(event);
+        if (reserved != null) reserved.release(event);
         var spent = shieldSpends.remove(event);
         if (event.isCancelled()) return;
         if (!(event.getEntity() instanceof Player player) || !valid(player)) return;
@@ -2355,7 +2373,7 @@ final class PaperOfficialCombat implements Listener {
             updateShieldDisplay(player, state);
         }
         Double wardBase = wardSpent.remove(event);
-        if (wardBase != null && event.getDamage() == wardBase) {
+        if (wardBase != null && event.getDamage() == wardBase && state.reactions.get("ore_ward") == reserved) {
             var ward = reaction(state, "ore_ward");
             ward.spendWard(millis(), interval("ore_ward", "cooldown"));
             visual(player, state, "ore_ward", player.getLocation(), Particle.CRIT, Sound.ITEM_SHIELD_BLOCK);

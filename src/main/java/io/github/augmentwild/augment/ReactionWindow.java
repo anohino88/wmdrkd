@@ -24,7 +24,6 @@ public final class ReactionWindow {
     private void trim(long now, long interval) {
         while (!samples.isEmpty() && now - samples.getFirst().at() > interval) total -= samples.removeFirst().amount();
         if (samples.isEmpty()) total = 0;
-
     }
 
     public boolean expired(long now, long interval) {

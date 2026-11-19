@@ -12,6 +12,18 @@ public final class CombatReaction {
     private final long[] actions = {-1, -1, -1};
     private long chargedUntil, readyAt;
     private int charges;
+    private Object reservation;
+
+    /** Nested Bukkit damage events cannot borrow an outer event's empower or ward. */
+    public boolean reserve(Object event) {
+        if (reservation != null) return false;
+        reservation = event;
+        return true;
+    }
+
+    public void release(Object event) {
+        if (reservation == event) reservation = null;
+    }
 
     public boolean charged(long time) { return time < chargedUntil; }
     public boolean ready(long time) { return time >= readyAt && !charged(time); }
@@ -71,6 +83,7 @@ public final class CombatReaction {
     public void clearTransient() {
         chargedUntil = 0;
         charges = 0;
+        reservation = null;
         Arrays.fill(actions, -1);
         windows.clear();
     }
