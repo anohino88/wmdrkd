@@ -152,7 +152,7 @@ public final class BorderProbe extends JavaPlugin implements Listener {
                     require(shieldPig.getHealth() == health - 5 && shieldPig.getAbsorptionAmount() == 0,
                             "replacement keeps native absorption normal");
                 } else require(shieldPig.getHealth() == health && shieldPig.getAbsorptionAmount() == 2,
-                        "no damage or native absorption consumption");
+                        "late " + change + " health=" + shieldPig.getHealth() + " nativeAbsorption=" + shieldPig.getAbsorptionAmount());
             }
             shield.clear();
             require(shield.remaining(shieldClock) == 0 && shieldPig.getAbsorptionAmount() == 2, "cleanup leaves native absorption");
