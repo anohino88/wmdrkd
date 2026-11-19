@@ -267,3 +267,12 @@ PHASE 2B의 GitHub Actions #6에서 Java 버전 확인, `./gradlew clean build -
 - Java 25 독립 회귀와 신규 단언 14개 PASS. 합성 통계에서 정찰 시도 2·성공 2·유효 후속 교전 1을 검증했다. 기존 Paper 합성 전투는 계속 검증 범위에 있다. 로컬 전체 Gradle BLOCKED는 Paper Maven 403과 Maven Central PKIX다. `git diff --check` PASS.
 - `CRASH_RECOVERY_REAL = PASS`. 일회용 Paper 프로세스에 SIGKILL 후 두 번 기동했다. 생성 전·완료·미기록 전이·청크 저장 이전 상태 및 지급 후 마커 제거 경계의 복구, 다른 토큰과 내용물이 있는 상자 보호를 확인했다. 실제 참가자의 개봉·지급 중 강제 종료와 2·8·16인 플레이, 망원경 GUI·사망 UI의 `REAL_CLIENT_VERIFIED`는 NOT_RUN이다. [운영·검증 문서](docs/phase65-recovery-ko.md)
 - 최종 코드 `b28c8d5943af1b83b41f5bc8b411ca606c60431b`의 [GitHub Actions](https://github.com/anohino88/wmdrkd/actions/runs/44470056149) PASS. Java 25 Gradle/JUnit, 독립 회귀, JAR 구조 검사, Paper 26.3 프로브, 실제 프로세스 강제 종료 복구와 경기장 벤치마크가 통과했다. [서버 JAR](https://github.com/anohino88/wmdrkd/actions/runs/44470056149/artifacts/14504102405) · [강제 종료 및 재시작 로그](https://github.com/anohino88/wmdrkd/actions/runs/44470056149/artifacts/14503797799).
+
+## PHASE 6.6 경기 템포와 플레이테스트 (2026-11-19)
+
+- 기준 원격 `ea131bcce5e40369b4fd717fc01b59ea9a581592`. 기존 경기 규칙은 유지했다. 익명 경기 집계에 첫 PvP, 5분별 교전, 참가자별 처치·사망, 선택·재추첨, 고유 시너지, 진화 시각, 축소 중 생존 인원, Paper 틱 분포를 연결했다. 실전 로그와 자동 합성 로그의 결과를 분리한다.
+- Java 25 독립 검사 PASS. 2·4·8·16인 합성 경기가 모두 2,420 경기초·2,510 가상 현실초, 선택 6회와 보급 일정 3개를 거쳐 종료했다. 후보 비교는 12,000개 합성 표본에서 역할 분산과 최종 XP 후보 제외를 비교했다. 기본 XP 수치와 밸런스는 변경하지 않았다.
+- 부하 프로브에서 콜백 30회가 Paper 한 틱에 몰린 사실을 확인했다. 고정 1틱 반복 작업으로 바꾸고 실제 표본 30개를 검증하도록 수정했다. 이전 단일 틱 표본은 p95 근거로 사용하지 않는다.
+- 일회용 Paper 강제 종료 검사에 저장 경계를 추가했다. 분리된 Paper 인벤토리에 실제 보급 지급 함수를 적용해 저장한 보상 1개와 저장 전 중단된 보상 0개를 두 번의 재기동에서 확인했다. 실제 Minecraft playerdata는 이 검사의 대상이 아니다. 복제 위험을 줄이기 위해 기존 자동 재지급 금지를 유지했다.
+- 실제 접속 가능한 클라이언트를 확보하지 못해 `REAL_CLIENT_VERIFIED = NOT_RUN`. 실전 전투 조합별 피해·성장, 실제 경기 템포, 실제 재접속과 플레이어 저장 중 강제 종료는 미실행이다. [서버 준비, 단계, 기록지](docs/phase66-playtest-ko.md)
+- 로컬 전체 Gradle은 `:compileJava`의 Paper API 메타데이터 해석에서 Maven Central과 Paper Maven의 DNS 오류로 차단됐다. Java 25 독립 검사와 `git diff --check`는 통과했다.

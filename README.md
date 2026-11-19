@@ -23,4 +23,4 @@ Java 25에서 `scripts/test-domain.sh`로 Paper 없이 도메인 회귀 검사�
 
 다이아몬드 방향 추적, 망원경 정찰, 사망 분석, 보급의 명령과 설정은 [PHASE 6.4 운영 문서](docs/phase64-intel-supply-ko.md)에 있습니다.
 
-보급 마커 복구, 인벤토리 지급 실패 처리와 경기 통계는 [PHASE 6.5 운영 문서](docs/phase65-recovery-ko.md)에 있습니다.
+보급 마커 복구, 인벤토리 지급 실패 처리와 경기 통계는 [PHASE 6.5 운영 문서](docs/phase65-recovery-ko.md)에 있습니다. 실제 2·4·8·16인 경기 절차와 기록 양식은 [PHASE 6.6 플레이테스트](docs/phase66-playtest-ko.md)에 있습니다.

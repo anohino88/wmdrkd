@@ -16,6 +16,7 @@ import org.bukkit.event.HandlerList;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitTask;
 
 /** Bounded real-entity workload. There are no clients, inventories, or match participants. */
 final class SyntheticCombatLoad implements Listener {
@@ -28,6 +29,7 @@ final class SyntheticCombatLoad implements Listener {
     private final List<Pig> pigs = new ArrayList<>();
     private final List<Double> steps = new ArrayList<>();
     private final List<Double> serverTicks = new ArrayList<>();
+    private BukkitTask pulses;
     private int size = 2;
     private int rounds;
     private int attempted;
@@ -55,7 +57,7 @@ final class SyntheticCombatLoad implements Listener {
                 pig.setSilent(true);
                 pigs.add(pig);
             }
-            plugin.getServer().getScheduler().runTask(plugin, this::pulse);
+            pulses = plugin.getServer().getScheduler().runTaskTimer(plugin, this::pulse, 1L, 1L);
         } catch (RuntimeException | Error failure) {
             cleanup();
             throw failure;
@@ -80,7 +82,7 @@ final class SyntheticCombatLoad implements Listener {
             }
             steps.add((System.nanoTime() - time) / 1_000_000.0);
             rounds++;
-            if (rounds < TICKS) plugin.getServer().getScheduler().runTask(plugin, this::pulse);
+            if (rounds == TICKS) pulses.cancel();
         } catch (RuntimeException | Error failure) {
             cleanup();
             throw failure;
@@ -122,9 +124,9 @@ final class SyntheticCombatLoad implements Listener {
         var removed = List.copyOf(pigs);
         cleanup();
         long remaining = removed.stream().filter(Pig::isValid).count();
-        if (events < oldSize * TICKS || landed != oldSize * TICKS || remaining > 0) {
+        if (serverTicks.size() != TICKS || events < oldSize * TICKS || landed != oldSize * TICKS || remaining > 0) {
             throw new AssertionError("Unexpected native outcomes: events=" + events + " landed=" + landed
-                    + " expected=" + oldSize * TICKS + " remaining=" + remaining);
+                    + " expected=" + oldSize * TICKS + " remaining=" + remaining + " tick_samples=" + serverTicks.size());
         }
         plugin.getLogger().info(String.format(Locale.ROOT,
                 "SYNTHETIC_LOAD_TEST entities=%d ticks=%d attempts=%d events=%d landed=%d health_damage=%.1f callback_p95_ms=%.3f server_tick_p95_ms=%.3f server_tick_max_ms=%.3f server_ticks_over_50=%d/%d entities_remaining=%d",
@@ -144,6 +146,7 @@ final class SyntheticCombatLoad implements Listener {
     }
 
     private void cleanup() {
+        if (pulses != null) pulses.cancel();
         pigs.forEach(Pig::remove);
         pigs.clear();
     }
