@@ -68,6 +68,9 @@ final class SyntheticCombatLoad implements Listener {
             for (int source = 0; source < size; source++) {
                 Pig attacker = pigs.get(source);
                 Pig victim = pigs.get((source + 1) % size);
+                // Independent fixture origins start vulnerable even when an empty server does not tick the entity.
+                // The next six requests use normal immunity and never reset it within a chain.
+                victim.setNoDamageTicks(0);
                 var origin = new DamageChain.Origin(DamageChain.Attack.MELEE, 4, 0, 0);
                 var budget = new LinkedDamageBudget(8, false, victim.getUniqueId(), 0);
                 chain.root(new DamageChain.Root(origin, budget), () -> {
@@ -119,7 +122,10 @@ final class SyntheticCombatLoad implements Listener {
         var removed = List.copyOf(pigs);
         cleanup();
         long remaining = removed.stream().filter(Pig::isValid).count();
-        if (events <= 0 || landed <= 0 || remaining > 0) throw new AssertionError("Combat load probe did not complete");
+        if (events < oldSize * TICKS || landed != oldSize * TICKS || remaining > 0) {
+            throw new AssertionError("Unexpected native outcomes: events=" + events + " landed=" + landed
+                    + " expected=" + oldSize * TICKS + " remaining=" + remaining);
+        }
         plugin.getLogger().info(String.format(Locale.ROOT,
                 "SYNTHETIC_LOAD_TEST entities=%d ticks=%d attempts=%d events=%d landed=%d health_damage=%.1f callback_p95_ms=%.3f server_tick_p95_ms=%.3f server_tick_max_ms=%.3f entities_remaining=%d",
                 oldSize, TICKS, attempted, events, landed, healthDamage, percentile(steps), percentile(serverTicks),
