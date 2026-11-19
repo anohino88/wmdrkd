@@ -8,7 +8,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import org.bukkit.Chunk;
 import org.bukkit.Location;
+import org.bukkit.attribute.Attribute;
 import org.bukkit.entity.Pig;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -24,6 +26,7 @@ final class SyntheticCombatLoad implements Listener {
     private static final int REQUESTS_PER_ORIGIN = 6;
     private final JavaPlugin plugin;
     private final Location site;
+    private final Chunk chunk;
     private final UUID match = UUID.randomUUID();
     private final DamageChain chain = new DamageChain(2, 10);
     private final List<Pig> pigs = new ArrayList<>();
@@ -39,10 +42,13 @@ final class SyntheticCombatLoad implements Listener {
 
     SyntheticCombatLoad(JavaPlugin plugin, Location site) {
         this.plugin = plugin;
-        this.site = site;
+        this.site = new Location(site.getWorld(), (site.getBlockX() & ~15) + 5.5, site.getBlockY() + 24.0,
+                (site.getBlockZ() & ~15) + 5.5);
+        this.chunk = this.site.getChunk();
     }
 
     void start() {
+        if (!chunk.addPluginChunkTicket(plugin)) throw new AssertionError("Could not retain synthetic combat chunk");
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
         next();
     }
@@ -55,11 +61,14 @@ final class SyntheticCombatLoad implements Listener {
                 pig.setAI(false);
                 pig.setGravity(false);
                 pig.setSilent(true);
+                pig.setCollidable(false);
+                pig.setRemoveWhenFarAway(false);
+                pig.getAttribute(Attribute.KNOCKBACK_RESISTANCE).setBaseValue(1);
                 pigs.add(pig);
             }
             pulses = plugin.getServer().getScheduler().runTaskTimer(plugin, this::pulse, 1L, 1L);
         } catch (RuntimeException | Error failure) {
-            cleanup();
+            close();
             throw failure;
         }
     }
@@ -70,6 +79,7 @@ final class SyntheticCombatLoad implements Listener {
             for (int source = 0; source < size; source++) {
                 Pig attacker = pigs.get(source);
                 Pig victim = pigs.get((source + 1) % size);
+                if (!attacker.isValid() || !victim.isValid()) throw new AssertionError("Synthetic entity unavailable at pulse " + rounds);
                 // Independent fixture origins start vulnerable even when an empty server does not tick the entity.
                 // The next six requests use normal immunity and never reset it within a chain.
                 victim.setNoDamageTicks(0);
@@ -84,7 +94,7 @@ final class SyntheticCombatLoad implements Listener {
             rounds++;
             if (rounds == TICKS) pulses.cancel();
         } catch (RuntimeException | Error failure) {
-            cleanup();
+            close();
             throw failure;
         }
     }
@@ -125,6 +135,7 @@ final class SyntheticCombatLoad implements Listener {
         cleanup();
         long remaining = removed.stream().filter(Pig::isValid).count();
         if (serverTicks.size() != TICKS || events < oldSize * TICKS || landed != oldSize * TICKS || remaining > 0) {
+            close();
             throw new AssertionError("Unexpected native outcomes: events=" + events + " landed=" + landed
                     + " expected=" + oldSize * TICKS + " remaining=" + remaining + " tick_samples=" + serverTicks.size());
         }
@@ -133,7 +144,7 @@ final class SyntheticCombatLoad implements Listener {
                 oldSize, TICKS, attempted, events, landed, healthDamage, percentile(steps), percentile(serverTicks),
                 Collections.max(serverTicks), serverTicks.stream().filter(ms -> ms > 50).count(), serverTicks.size(), remaining));
         if (oldSize == 16) {
-            HandlerList.unregisterAll(this);
+            close();
             plugin.getLogger().info("AW_COMBAT_LOAD_PASS");
             return;
         }
@@ -143,6 +154,12 @@ final class SyntheticCombatLoad implements Listener {
         steps.clear();
         serverTicks.clear();
         plugin.getServer().getScheduler().runTask(plugin, this::next);
+    }
+
+    private void close() {
+        cleanup();
+        HandlerList.unregisterAll(this);
+        chunk.removePluginChunkTicket(plugin);
     }
 
     private void cleanup() {
