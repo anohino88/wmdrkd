@@ -274,14 +274,18 @@ final class PaperOfficialCombat implements Listener {
         refreshSynergies(id, state);
     }
 
-    void lost(UUID id, String augment) {
+    void lost(UUID id, String augment, boolean experiment) {
         var state = fighters.get(id);
         if (state == null) return;
         state.progress.reset(augment);
         state.progress.reset("hits:" + augment);
         state.progress.reset("revive:" + augment);
         state.progress.resetCooldown(augment);
-        state.lateChecked.remove(augment);
+        if (experiment) {
+            state.lateChecked.remove(augment);
+            if (augment.equals("vein_overload")) state.veinGranted = false;
+            if (augment.equals("mineral_devourer")) state.apple = false;
+        }
         state.zones.removeIf(zone -> zone.augment().equals(augment));
         deferred.removeIf(effect -> effect.player().getUniqueId().equals(id));
         if (augment.equals("blood_god")) state.progress.reset("blood_god_kills");
@@ -320,8 +324,6 @@ final class PaperOfficialCombat implements Listener {
             case "duel_contract" -> state.duelTarget = null;
             case "bounty_hunter" -> state.bountyTarget = null;
             case "last_demon" -> state.lastDemonUntil = 0;
-            case "vein_overload" -> state.veinGranted = false;
-            case "mineral_devourer" -> state.apple = false;
             case "frenzy_rhythm" -> state.frenzyTarget = null;
             case "counter_shield" -> state.counterReady = false;
             default -> { }

@@ -321,7 +321,7 @@ final class PaperAugments implements Listener {
     String labRemove(Player player, String id) {
         var profile = profiles.get(player.getUniqueId());
         if (profile == null || !profile.owned.remove(id)) return "보유한 증강이 아닙니다.";
-        release(player, profile, id);
+        release(player, profile, id, true);
         profile.exchange = null;
         profile.exchangeId = null;
         profile.exchangeShown = false;
@@ -330,11 +330,11 @@ final class PaperAugments implements Listener {
         return player.getName() + " 제거 " + id;
     }
 
-    private void release(Player player, Profile profile, String id) {
+    private void release(Player player, Profile profile, String id, boolean experiment) {
         var definition = registry.get(id);
         if (profile.modifiers.contains(id)) setModifier(player, profile, definition, attribute(definition.effect()), false);
         profile.timers.remove(id);
-        official.lost(player.getUniqueId(), id);
+        official.lost(player.getUniqueId(), id, experiment);
     }
 
     String labClear(Player player, boolean reset) {
@@ -513,7 +513,7 @@ final class PaperAugments implements Listener {
         profile.owned.removeAll(commit.get().removed());
         profile.owned.addAll(commit.get().awarded());
         profile.owned.add(exchangeId);
-        for (String lost : commit.get().removed()) release(player, profile, lost);
+        for (String lost : commit.get().removed()) release(player, profile, lost, false);
         commit.get().awarded().forEach(gained -> {
             official.selected(player.getUniqueId(), gained, "exchange_reward");
             official.acquired(player.getUniqueId(), gained);
