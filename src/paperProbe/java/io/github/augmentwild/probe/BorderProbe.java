@@ -44,6 +44,17 @@ public final class BorderProbe extends JavaPlugin implements Listener {
     private boolean sawOutsideBorderDamage;
 
     @Override public void onEnable() {
+        String recoveryStage = System.getenv("AW_SUPPLY_CRASH_PHASE");
+        if (recoveryStage != null) {
+            getServer().getScheduler().runTask(this, () -> {
+                try {
+                    SupplyCrashProbe.run(this, recoveryStage);
+                } catch (Exception | AssertionError failure) {
+                    getLogger().log(java.util.logging.Level.SEVERE, "Supply crash fixture failed", failure);
+                }
+            });
+            return;
+        }
         getServer().getPluginManager().registerEvents(this, this);
         getServer().getPluginManager().registerEvents(new Listener() {
             @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -123,6 +134,16 @@ public final class BorderProbe extends JavaPlugin implements Listener {
         var fitted = MatchInventory.fit(new ItemStack[]{arrows, null}, 64, List.of(new ItemStack(Material.ARROW, 2)));
         require(fitted != null && fitted[0].getAmount() == 64 && fitted[1].getAmount() == 1
                 && arrows.getAmount() == 63, "full reward fits without touching source");
+
+        var stored = new java.util.concurrent.atomic.AtomicReference<ItemStack[]>(nearlyFull);
+        var writes = new java.util.concurrent.atomic.AtomicInteger();
+        require(MatchInventory.apply(nearlyFull, fitted, contents -> {
+            stored.set(contents);
+            if (writes.getAndIncrement() == 0) throw new IllegalStateException("partial write fixture");
+        }, ignored -> { }) == MatchInventory.Write.ROLLED_BACK && stored.get() == nearlyFull, "retry after known rollback");
+        require(MatchInventory.apply(nearlyFull, fitted, contents -> {
+            throw new IllegalStateException("write and rollback fixture");
+        }, ignored -> { }) == MatchInventory.Write.UNCERTAIN, "unknown write outcome is quarantined");
 
         var point = new Location(spawn.getWorld(), spawn.getBlockX() + .5, spawn.getBlockY() + 24, spawn.getBlockZ() + .5);
         var target = point.clone().add(5, 0, 0);
