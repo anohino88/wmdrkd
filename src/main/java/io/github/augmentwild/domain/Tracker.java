@@ -23,7 +23,7 @@ public final class Tracker {
                         direction(p.x()-source.x(),p.z()-source.z())))
                 .min(Comparator.comparingDouble(Result::distance).thenComparing(Result::id));
     }
-    private static String direction(double dx, double dz) {
+    public static String direction(double dx, double dz) {
         if (dx==0 && dz==0) return "HERE";
         String[] directions={"S","SW","W","NW","N","NE","E","SE"};
         return directions[Math.floorMod((int)Math.round(Math.atan2(-dx,dz)/(Math.PI/4)),8)];

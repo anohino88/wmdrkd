@@ -1,7 +1,6 @@
 package io.github.augmentwild.domain;
 
 import java.util.ArrayDeque;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -9,28 +8,6 @@ import java.util.function.BooleanSupplier;
 
 public final class CombatIntel {
     private CombatIntel() { }
-
-    public record Position(UUID id, double x, double y, double z) { }
-
-    public static Position nearest(Position origin, List<Position> eligible, double range) {
-        return eligible.stream().filter(target -> !origin.id().equals(target.id()))
-                .filter(target -> range < 0 || distance(origin, target) <= range * range)
-                .min(Comparator.<Position>comparingDouble(target -> distance(origin, target)).thenComparing(Position::id))
-                .orElse(null);
-    }
-
-    private static double distance(Position a, Position b) {
-        double x = a.x() - b.x(), z = a.z() - b.z();
-        double y = a.y() - b.y();
-        return x * x + y * y + z * z;
-    }
-
-    public static String direction(Position origin, Position target) {
-        double x = target.x() - origin.x(), z = target.z() - origin.z();
-        if (x == 0 && z == 0) return "방향 미정";
-        String[] directions = {"북", "북동", "동", "남동", "남", "남서", "서", "북서"};
-        return directions[Math.floorMod(Math.round(Math.atan2(x, -z) / (Math.PI / 4)), directions.length)];
-    }
 
     public static final class Tracking {
         public enum Start { STARTED, COOLDOWN, NO_TARGET, NO_FUNDS }

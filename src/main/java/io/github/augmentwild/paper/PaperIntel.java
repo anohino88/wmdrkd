@@ -4,6 +4,7 @@ import io.github.augmentwild.domain.CombatIntel;
 import io.github.augmentwild.domain.CombatIntel.Damage;
 import io.github.augmentwild.domain.CombatIntel.Kind;
 import io.github.augmentwild.domain.MatchSimulationClock;
+import io.github.augmentwild.domain.Tracker;
 import java.util.*;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
@@ -38,6 +39,7 @@ final class PaperIntel implements Listener {
     private final Predicate<Player> active;
     private final Predicate<Location> safe;
     private final PaperAugments augments;
+    private final Tracker targetFinder = new Tracker();
     private final Map<UUID, CombatIntel.Tracking> tracks = new HashMap<>();
     private final Map<UUID, Long> trackUpdates = new HashMap<>();
     private final Map<UUID, Long> scoutCooldown = new HashMap<>();
@@ -98,9 +100,10 @@ final class PaperIntel implements Listener {
                 && safe.test(player.getLocation()) && player.getWorld().getWorldBorder().isInside(player.getLocation());
     }
 
-    private static CombatIntel.Position position(Player player) {
+    private Tracker.Player position(Player player) {
         var location = player.getLocation();
-        return new CombatIntel.Position(player.getUniqueId(), location.getX(), location.getY(), location.getZ());
+        return new Tracker.Player(player.getUniqueId(), player.getName(), match, player.getWorld().getUID().toString(),
+                null, Tracker.Status.ACTIVE, location.getX(), location.getY(), location.getZ());
     }
 
     String locate(Player player) {
@@ -110,9 +113,10 @@ final class PaperIntel implements Listener {
         var tracking = tracks.computeIfAbsent(id, ignored -> new CombatIntel.Tracking());
         if (tracking.busy(now)) return "위치 추적 재사용 대기 중입니다.";
         var eligible = participants.get().stream().map(plugin.getServer()::getPlayer)
-                .filter(other -> enemy(player, other)).map(PaperIntel::position).toList();
-        var target = CombatIntel.nearest(position(player), eligible, settings.trackerRange());
-        var outcome = tracking.start(target == null ? null : target.id(), now, settings.trackDuration(), settings.trackCooldown(),
+                .filter(other -> enemy(player, other)).map(this::position).toList();
+        var target = targetFinder.nearest(position(player), eligible)
+                .filter(nearest -> settings.trackerRange() < 0 || nearest.distance() <= settings.trackerRange());
+        var outcome = tracking.start(target.map(Tracker.Result::id).orElse(null), now, settings.trackDuration(), settings.trackCooldown(),
                 () -> spendDiamond(player));
         return switch (outcome) {
             case NO_TARGET -> "안전 구역 안에서 추적할 상대를 찾지 못했습니다.";
@@ -148,10 +152,24 @@ final class PaperIntel implements Listener {
         }
         if (now >= trackUpdates.getOrDefault(id, 0L)) {
             String label = settings.revealName() ? " · " + target.getName() : "";
-            player.sendActionBar(Component.text("적 방향 · " + CombatIntel.direction(position(player), position(target))
+            player.sendActionBar(Component.text("적 방향 · " + direction(player.getLocation(), target.getLocation())
                     + label, NamedTextColor.AQUA));
             trackUpdates.put(id, now + settings.trackUpdate());
         }
+    }
+
+    private static String direction(Location source, Location target) {
+        return switch (Tracker.direction(target.getX() - source.getX(), target.getZ() - source.getZ())) {
+            case "N" -> "북";
+            case "NE" -> "북동";
+            case "E" -> "동";
+            case "SE" -> "남동";
+            case "S" -> "남";
+            case "SW" -> "남서";
+            case "W" -> "서";
+            case "NW" -> "북서";
+            default -> "방향 미정";
+        };
     }
 
     private void endTrack(UUID id) {
@@ -351,9 +369,18 @@ final class PaperIntel implements Listener {
         menu.inventory = plugin.getServer().createInventory(menu, 45, Component.text(report.title()));
         render(menu);
         player.openInventory(menu.inventory);
+        scheduleExpiry(player, menu);
+    }
+
+    private void scheduleExpiry(Player player, Menu menu) {
+        var report = menu.report;
         long ticks = Math.max(1, (report.deadline() - System.nanoTime() + 49_999_999L) / 50_000_000L);
         plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
-            if (player.getOpenInventory().getTopInventory().getHolder() == menu) player.closeInventory();
+            if (report.valid()) {
+                scheduleExpiry(player, menu);
+                return;
+            }
+            if (player.isOnline() && player.getOpenInventory().getTopInventory().getHolder() == menu) player.closeInventory();
             scouts.remove(menu.owner, report);
             deaths.remove(menu.owner, report);
         }, ticks);

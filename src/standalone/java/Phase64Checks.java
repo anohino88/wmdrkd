@@ -1,5 +1,6 @@
 import io.github.augmentwild.domain.CombatIntel;
 import io.github.augmentwild.domain.SupplyPlan;
+import io.github.augmentwild.domain.Tracker;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
@@ -16,14 +17,17 @@ public final class Phase64Checks {
     }
 
     public static void main(String[] args) {
-        var origin = new CombatIntel.Position(new UUID(0, 0), 0, 64, 0);
-        var near = new CombatIntel.Position(new UUID(0, 1), 3, 64, 0);
-        var tie = new CombatIntel.Position(new UUID(0, 2), -3, 64, 0);
-        var high = new CombatIntel.Position(new UUID(0, 3), 0, 100, 0);
-        require(CombatIntel.nearest(origin, List.of(high, tie, origin, near), -1).equals(near), "distance and deterministic tie");
-        require(CombatIntel.nearest(origin, List.of(origin, high), 35) == null, "exclude self and out-of-range");
-        require(CombatIntel.direction(origin, near).equals("동") && CombatIntel.direction(origin, tie).equals("서")
-                && CombatIntel.direction(origin, high).equals("방향 미정"), "only directional output");
+        UUID match = new UUID(1, 0);
+        var origin = new Tracker.Player(new UUID(0, 0), "origin", match, "world", null, Tracker.Status.ACTIVE, 0, 64, 0);
+        var near = new Tracker.Player(new UUID(0, 1), "near", match, "world", null, Tracker.Status.ACTIVE, 3, 64, 0);
+        var tie = new Tracker.Player(new UUID(0, 2), "tie", match, "world", null, Tracker.Status.ACTIVE, -3, 64, 0);
+        var high = new Tracker.Player(new UUID(0, 3), "high", match, "world", null, Tracker.Status.ACTIVE, 0, 100, 0);
+        var tracker = new Tracker();
+        require(tracker.nearest(origin, List.of(high, tie, origin, near)).orElseThrow().id().equals(near.id()), "distance and deterministic tie");
+        require(tracker.nearest(origin, List.of(origin, high)).filter(target -> target.distance() <= 35).isEmpty(),
+                "exclude self and out-of-range");
+        require(Tracker.direction(3, 0).equals("E") && Tracker.direction(-3, 0).equals("W")
+                && Tracker.direction(0, 0).equals("HERE"), "only directional output");
         var track = new CombatIntel.Tracking();
         var debits = new AtomicInteger();
         java.util.function.BooleanSupplier pay = () -> debits.incrementAndGet() > 0;
