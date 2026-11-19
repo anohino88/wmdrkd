@@ -13,6 +13,7 @@ public final class MatchTelemetry {
     private final Map<Pair, Long> lastCombat = new HashMap<>();
     private final Map<Long, Integer> engagements = new TreeMap<>();
     private final Map<Long, Integer> survivors = new TreeMap<>();
+    private final Map<String, Long> claimDelays = new TreeMap<>();
     private final Map<String, Integer> synergies = new TreeMap<>();
     private final Map<String, Long> evolutions = new TreeMap<>();
     private final Set<String> completedSynergies = new HashSet<>();
@@ -40,6 +41,7 @@ public final class MatchTelemetry {
         lastCombat.clear();
         engagements.clear();
         survivors.clear();
+        claimDelays.clear();
         synergies.clear();
         evolutions.clear();
         completedSynergies.clear();
@@ -84,6 +86,12 @@ public final class MatchTelemetry {
         }
     }
 
+    public void supplyClaim(String drop, long millis) {
+        if (!active || claimDelays.putIfAbsent(drop, millis) != null) return;
+        count(Counter.OPEN_SUCCESSES);
+        add(Counter.CLAIM_DELAY_MS, millis);
+    }
+
     public void death(UUID victim, UUID killer) {
         if (!active || !players.containsKey(victim)) return;
         deaths[players.get(victim)]++;
@@ -119,10 +127,10 @@ public final class MatchTelemetry {
         long cumulative = tickBuckets[0];
         long rank = ticks - ticks / 20;
         while (cumulative < rank && bucket + 1 < tickBuckets.length) cumulative += tickBuckets[++bucket];
-        String p95 = ticks == 0 ? "NA" : bucket == 1000 ? ">=999" : Integer.toString(bucket);
+        String p95 = ticks == 0 ? "NA" : bucket == 1000 ? ">999" : Integer.toString(bucket);
         return "game_s=" + gameSeconds + " wall_s=" + wallSeconds + " first_pvp_s=" + firstPvpSecond
                 + " engagements_by_5m=" + engagements + " kills_deaths=" + scores + " survivors_by_game_s=" + survivors
-                + " synergies=" + synergies + " evolutions_s=" + evolutions + " tick_samples=" + ticks
+                + " supply_claim_ms=" + claimDelays + " synergies=" + synergies + " evolutions_s=" + evolutions + " tick_samples=" + ticks
                 + " tick_p95_ms=" + p95 + " tick_max_ms=" + (ticks == 0 ? "NA" : String.format(Locale.ROOT, "%.3f", maxTick))
                 + " tick_over_50=" + slowTicks + "/" + ticks;
     }

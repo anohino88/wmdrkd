@@ -72,7 +72,7 @@ match,mode,players,game_s,wall_s,phase,combo,attacker_alias,victim_alias,gear,or
 match,commit,paper,java,clients,mode,host,first_pvp_s,pvp_per_5m,kills_deaths,supply_pvp,claim_delays_s,track_uses,scout_attempts,scout_successes,scout_engagements,drafts,manual,automatic,rerolls,synergies,evolutions,game_s,wall_s,survivors_by_shrink,server_tick_samples,p95_ms,max_ms,over50,total_ticks,restore,verdict,notes
 ```
 
-`Match tempo`와 `Match feature totals`는 경기 ID로 조인한다. 피해나 흡수가 있었던 양방향 참가자 쌍은 10 경기초 이상 조용했던 뒤 새 교전으로 집계한다. 구간 키는 0부터 시작하며 1은 5:00–9:59다. 축소 시작과 이후 경기 시간 1분마다 탈락하지 않은 인원을 관측 시각으로 기록하며 부활 대기 및 연결 종료 상태를 포함한다. 준비 구간을 제외한 Paper 서버 틱에 대해 p95는 1ms 버킷 상한, 최댓값은 ms, 50ms 초과는 건수/표본 수를 출력한다. 경기 중 `/spark profiler`로 추가 진단했다면 별도 경기에서 수집한 값으로 표시한다. 합성 데이터는 CI 로그 또는 `playtest-results/synthetic/`에 보관한다.
+`Match tempo`와 `Match feature totals`는 경기 ID로 조인한다. 피해나 흡수가 있었던 양방향 참가자 쌍은 10 경기초 이상 조용했던 뒤 새 교전으로 집계한다. 구간 키는 0부터 시작하며 1은 5:00–9:59다. 보급별 등장부터 획득까지의 경기 시간은 `supply_claim_ms`로 확인한다. 축소 시작과 이후 경기 시간 1분마다 탈락하지 않은 인원을 관측 시각으로 기록하며 부활 대기 및 연결 종료 상태를 포함한다. 준비 구간을 제외한 Paper 서버 틱에 대해 p95는 1ms 버킷 상한, 최댓값은 ms, 50ms 초과는 건수/표본 수를 출력한다. 경기 중 `/spark profiler`로 추가 진단했다면 별도 경기에서 수집한 값으로 표시한다. 합성 데이터는 CI 로그 또는 `playtest-results/synthetic/`에 보관한다.
 
 ## 보급 장애와 후보 평가
 

@@ -274,8 +274,7 @@ final class PaperSupply implements Listener {
             } else player.sendMessage("보급 지급이 실패해 다시 시도할 수 있습니다.");
             return;
         }
-        stats.count(Counter.OPEN_SUCCESSES);
-        stats.add(Counter.CLAIM_DELAY_MS, (elapsed - delivery.arrived) / 1_000_000L);
+        stats.supplyClaim(delivery.plan.id(), (elapsed - delivery.arrived) / 1_000_000L);
         remove(delivery);
         notice.accept(player.getName() + " 님이 " + label(delivery) + "을 획득했습니다.");
         player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1, 1.2f);

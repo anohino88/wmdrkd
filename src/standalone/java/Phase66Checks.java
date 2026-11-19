@@ -27,6 +27,9 @@ public final class Phase66Checks {
         stats.evolution(a, "steel_heart", 750);
         stats.evolution(a, "steel_heart", 760);
         stats.survivors(1820, 2);
+        stats.supplyClaim("normal-supply-1", 3200);
+        stats.supplyClaim("normal-supply-1", 4100);
+        stats.supplyClaim("premium-supply", 5000);
         stats.count(Counter.DRAFTS);
         stats.count(Counter.MANUAL_PICKS);
         stats.count(Counter.REROLLS);
@@ -37,11 +40,12 @@ public final class Phase66Checks {
         String report = stats.tempo(2420, 2495);
         for (String expected : List.of("first_pvp_s=290", "engagements_by_5m={0=1, 1=1}", "kills_deaths=[P1=0/1, P2=1/1]",
                 "synergies={steel_king=2}", "evolutions_s={P1/steel_heart=750}", "survivors_by_game_s={1820=2}",
-                "tick_samples=20", "tick_p95_ms=50", "tick_max_ms=73.250", "tick_over_50=1/20")) {
+                "supply_claim_ms={normal-supply-1=3200, premium-supply=5000}", "tick_samples=20", "tick_p95_ms=50", "tick_max_ms=73.250", "tick_over_50=1/20")) {
             require(report.contains(expected), expected + " in " + report);
         }
         require(!report.contains(a.toString()), "no personal identifier in aggregate");
-        require(stats.finish().equals(Map.of(Counter.DRAFTS, 1L, Counter.MANUAL_PICKS, 1L, Counter.REROLLS, 1L)), "draft counts");
+        require(stats.finish().equals(Map.of(Counter.DRAFTS, 1L, Counter.MANUAL_PICKS, 1L, Counter.REROLLS, 1L,
+                Counter.OPEN_SUCCESSES, 2L, Counter.CLAIM_DELAY_MS, 8200L)), "draft and supply counts");
         stats.start(List.of(b));
         require(stats.tempo(0, 0).contains("first_pvp_s=-1 engagements_by_5m={} kills_deaths=[P1=0/0]")
                 && stats.tempo(0, 0).contains("tick_p95_ms=NA"), "next match starts clean");
