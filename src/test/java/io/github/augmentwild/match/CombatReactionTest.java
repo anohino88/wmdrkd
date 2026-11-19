@@ -153,4 +153,57 @@ class CombatReactionTest {
         assertFalse(ReactionRules.reachedMaximum(3, 4, 5));
         assertFalse(ReactionRules.reachedMaximum(5, 5, 5));
     }
+
+    @Test void steelGrowthAndHeavyFistIgnoreOreCharges() {
+        var permanent = new AugmentProgress();
+        var ward = new CombatReaction();
+        var balance = new AugmentBalance(20, 40, 1, .5, 6);
+        permanent.addPermanent("steel_heart", 2, AugmentResonance.BASE, 100);
+        ward.store(2);
+        double maximum = 20 + balance.steelHealth(permanent.value("steel_heart"), 2);
+        assertTrue(ward.spendWard(0, 10000));
+        assertEquals(maximum * .08, balance.heavyFist(maximum, .08, true));
+        assertEquals(2, permanent.value("steel_heart"));
+        assertFalse(AugmentResonance.PERMANENT.contains("ore_ward"));
+    }
+
+    @Test void bladeFlowDoesNotMultiplyOnHydraAndSplitDescendants() {
+        var blade = new CombatReaction();
+        blade.charge(0, 5000, 15000);
+        var parts = AugmentBalance.attackParts(8, 0, 2, 20, .5);
+        assertTrue(blade.spend(20));
+        assertEquals(6, parts.original());
+        assertEquals(4, parts.repeat());
+        assertFalse(blade.spend(21));
+        assertFalse(blade.ready(21));
+    }
+
+    @Test void delayedBlastAndSplitShareTheOriginalPvpBudget() {
+        var budget = new LinkedDamageBudget(6, true, target, 0);
+        assertEquals(4, budget.offer(target, 4).allowed());
+        assertEquals(2, budget.offer(target, 4).allowed());
+        budget.refund(target, 2);
+        assertEquals(2, budget.offer(target, 4).allowed());
+    }
+
+    @Test void ricochetCriticalStillUsesSecondaryVictimBudget() {
+        double base = ReactionRules.ricochet(20, .35, 4);
+        var budget = new LinkedDamageBudget(5, true, owner, 3);
+        assertEquals(5, budget.offer(target, base * 2).allowed());
+        assertEquals(2, budget.offer(owner, base * 2).allowed());
+    }
+
+    @Test void bastionAndLifeEchoKeepIndependentClocksAndPools() {
+        var bastion = new CombatReaction();
+        var echo = new ResonanceShield();
+        bastion.charge(0, 3000, 35000);
+        echo.grant(0, 4, 6_000_000_000L);
+        assertTrue(bastion.charged(2999));
+        double reduced = 10 * (1 - .20);
+        double absorbed = echo.preview(2_999_000_000L, reduced);
+        assertEquals(4, reduced - absorbed);
+        echo.consume(2_999_000_000L, absorbed);
+        assertEquals(0, echo.remaining(3_000_000_000L));
+        assertFalse(bastion.charged(3000));
+    }
 }

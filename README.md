@@ -24,3 +24,5 @@ Java 25에서 `scripts/test-domain.sh`로 Paper 없이 도메인 회귀 검사�
 다이아몬드 방향 추적, 망원경 정찰, 사망 분석, 보급의 명령과 설정은 [PHASE 6.4 운영 문서](docs/phase64-intel-supply-ko.md)에 있습니다.
 
 보급 마커 복구, 인벤토리 지급 실패 처리와 경기 통계는 [PHASE 6.5 운영 문서](docs/phase65-recovery-ko.md)에 있습니다. 실제 2·4·8·16인 경기 절차는 [플레이테스트](docs/phase66-playtest-ko.md), 관리자 실험 명령과 선택 결과는 [전투 실험실](docs/phase67-combat-lab-ko.md)에 있습니다. 본인 도감과 프리셋은 [최종 기능 문서](docs/phase68-feature-complete-ko.md)에 정리되어 있습니다.
+
+84종 증강의 신규 전투 반응, 웅크리기 + F 스킬 지정과 희귀도별 후보 변화는 [전투 반응 및 조작 안내](docs/phase68-combat-reactions-ko.md)에 있습니다.

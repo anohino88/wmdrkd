@@ -50,6 +50,15 @@ public final class CombatReaction {
         return true;
     }
 
+    public double progress(UUID key, long now, long interval) {
+        var window = windows.get(key);
+        return window == null ? 0 : window.total(now, interval);
+    }
+
+    public int actionCount(long now, long interval) {
+        return (int) Arrays.stream(actions).filter(at -> at >= 0 && now - at <= interval).count();
+    }
+
     public boolean accumulate(UUID key, long now, long interval, double amount, double threshold) {
         if (!ready(now)) return false;
         windows.values().removeIf(window -> window.expired(now, interval));

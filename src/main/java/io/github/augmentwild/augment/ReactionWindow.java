@@ -9,12 +9,22 @@ public final class ReactionWindow {
     private double total;
 
     public double add(long now, long interval, double amount) {
-        while (!samples.isEmpty() && now - samples.getFirst().at() > interval) total -= samples.removeFirst().amount();
-        if (samples.isEmpty()) total = 0;
+        trim(now, interval);
         total += amount;
         if (!samples.isEmpty() && samples.getLast().at() == now) amount += samples.removeLast().amount();
         samples.addLast(new Sample(now, amount));
         return total;
+    }
+
+    public double total(long now, long interval) {
+        trim(now, interval);
+        return total;
+    }
+
+    private void trim(long now, long interval) {
+        while (!samples.isEmpty() && now - samples.getFirst().at() > interval) total -= samples.removeFirst().amount();
+        if (samples.isEmpty()) total = 0;
+
     }
 
     public boolean expired(long now, long interval) {

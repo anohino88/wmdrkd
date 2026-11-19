@@ -81,6 +81,7 @@ final class PaperOfficialCombat implements Listener {
     private final DamageChain chain;
     private final CombatAudit audit;
     private final boolean auditEnabled;
+    private final ReactionPotions reactionPotions = new ReactionPotions();
     private final NaturalOreTracker ores;
     private final PaperErosion erosion;
     private final Map<UUID, Fighter> fighters = new HashMap<>();
@@ -242,7 +243,7 @@ final class PaperOfficialCombat implements Listener {
     private OfficialAugments.Rule rule(String id) { return catalog.rule(id); }
     private boolean owns(Player player, String id) { return owned.apply(player.getUniqueId()).contains(id); }
     private boolean valid(Player player) {
-        return match != null && player.isOnline() && active.test(player) && !protectedPlayer.test(player) && !clock.get().isPaused();
+        return match != null && player.isOnline() && !player.isDead() && active.test(player) && !protectedPlayer.test(player) && !clock.get().isPaused();
     }
     private boolean opponent(Player player, LivingEntity target) {
         if (target.equals(player) || target.isDead() || !target.getWorld().equals(player.getWorld())) return false;
@@ -288,6 +289,7 @@ final class PaperOfficialCombat implements Listener {
     void lost(UUID id, String augment, boolean experiment) {
         var state = fighters.get(id);
         if (state == null) return;
+        reactionPotions.clear(id, augment);
         state.reactions.remove(augment);
         state.pending.removeIf(task -> task.id().equals(augment));
         if (augment.equals(state.skill)) {
@@ -432,6 +434,7 @@ final class PaperOfficialCombat implements Listener {
     }
 
     void remove(UUID id, Player player) {
+        reactionPotions.clear(id, null);
         deferred.removeIf(effect -> effect.player().getUniqueId().equals(id));
         if (player != null) resetAttributes(player);
         var state = fighters.remove(id);
@@ -445,6 +448,7 @@ final class PaperOfficialCombat implements Listener {
     }
 
     void clear() {
+        reactionPotions.clear(null, null);
         for (UUID id : fighters.keySet()) {
             Player player = plugin.getServer().getPlayer(id);
             if (player != null) resetAttributes(player);
@@ -520,6 +524,8 @@ final class PaperOfficialCombat implements Listener {
             if (r != null) {
                 if (augment.equals("ore_ward")) lines.add("방벽 충전 " + r.charges() + "/" + cap);
                 if (r.charged(millis())) lines.add("충전 활성");
+                String progress = reactionProgress(id, augment, r);
+                if (progress != null) lines.add(progress);
                 if (r.remaining(millis()) > 0) lines.add("반응 대기 " + (r.remaining(millis()) + 999) / 1000 + "초");
             }
             if (follow(augment)) {
@@ -527,7 +533,7 @@ final class PaperOfficialCombat implements Listener {
                 lines.add("추가 발동 대기 " + (state.progress.cooldownRemaining("follow:" + augment, millis()) + 999) / 1000 + "초");
             }
         }
-        if (cap > 0) lines.add("중첩 " + stacks + "/" + cap);
+        if (cap > 0 && !augment.equals("ore_ward") && !augment.equals("ricochet_arrow")) lines.add("중첩 " + stacks + "/" + cap);
         if (Set.of("immortal_berserker", "phoenix_heart", "russian_doll").contains(augment)) {
             int limit = augment.equals("immortal_berserker") ? rule.cap() : rule.threshold();
             int used = state == null ? 0 : state.progress.value("revive:" + augment);
@@ -703,6 +709,7 @@ final class PaperOfficialCombat implements Listener {
     }
 
     private void clearReactions(Player player, Fighter state) {
+        reactionPotions.clear(player.getUniqueId(), null);
         state.pending.clear();
         state.hudSecond = -1;
         state.reactions.values().forEach(CombatReaction::clearTransient);
@@ -978,6 +985,8 @@ final class PaperOfficialCombat implements Listener {
     }
 
     private void applyHitEffects(EntityDamageByEntityEvent event, Player attacker, LivingEntity target, Fighter state) {
+        boolean direct = event.getCause() == EntityDamageEvent.DamageCause.ENTITY_ATTACK
+                || event.getCause() == EntityDamageEvent.DamageCause.PROJECTILE;
         if (owns(attacker, "frenzy_rhythm")) {
             if (!target.getUniqueId().equals(state.frenzyTarget) || now() - state.frenzyAt >= rule("frenzy_rhythm").duration()) {
                 state.progress.reset("frenzy_rhythm");
@@ -986,7 +995,7 @@ final class PaperOfficialCombat implements Listener {
             state.frenzyAt = now();
             int cap = rule("frenzy_rhythm").cap();
             int before = state.progress.value("frenzy_rhythm");
-            if (ReactionRules.reachedMaximum(before, state.progress.add("frenzy_rhythm", 1, cap), cap) && followReady(state, "frenzy_rhythm")) {
+            if (ReactionRules.reachedMaximum(before, state.progress.add("frenzy_rhythm", 1, cap), cap) && direct && followReady(state, "frenzy_rhythm")) {
                 speed(attacker, "frenzy_rhythm");
                 visual(attacker, state, "frenzy_rhythm", attacker.getLocation(), Particle.CLOUD, Sound.BLOCK_AMETHYST_BLOCK_CHIME);
                 announceProc(attacker, "frenzy_rhythm");
@@ -1000,7 +1009,7 @@ final class PaperOfficialCombat implements Listener {
         if (owns(attacker, "time_thief") && ready(attacker, state, "time_thief")) stealTime(attacker, target);
         if (owns(attacker, "blood_trace")) {
             if (ReactionRules.marked(target.getUniqueId(), state.traceTarget, now(), state.traceUntil)) {
-                if (followReady(state, "blood_trace")) later(state, "blood_trace", interval("blood_trace", "delay"),
+                if (direct && followReady(state, "blood_trace")) later(state, "blood_trace", interval("blood_trace", "delay"),
                         () -> afterRecovery(attacker, target, () -> followHit(attacker, target, state, "blood_trace")));
                 state.traceTarget = null;
             } else if (ready(attacker, state, "blood_trace")) {
@@ -1043,7 +1052,7 @@ final class PaperOfficialCombat implements Listener {
                         later(state, "storm_chaser", pulse * 1000L, () -> {
                             visual(attacker, state, "storm_chaser", center, Particle.ELECTRIC_SPARK, Sound.BLOCK_AMETHYST_BLOCK_CHIME);
                             for (var enemy : opponents(attacker, center, option("storm_chaser", "radius")))
-                                enemy.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, 20, 0));
+                                reactionPotions.apply(attacker.getUniqueId(), "storm_chaser", enemy, new PotionEffect(PotionEffectType.SLOWNESS, 20, 0));
                         });
                 }
             });
@@ -1158,8 +1167,8 @@ final class PaperOfficialCombat implements Listener {
     private void tickReactions(Player player, Fighter state) {
         for (var task : List.copyOf(state.pending)) {
             if (millis() < task.due()) continue;
-            state.pending.remove(task);
-            if (owns(player, task.id())) chain.root(task.origin(), task.action());
+            if (!state.pending.remove(task)) continue;
+            if (valid(player) && owns(player, task.id())) chain.root(task.origin(), task.action());
         }
         var bastion = state.reactions.get("last_bastion");
         if (bastion != null && bastion.charged(millis()) && state.bastionVisualSecond != now()) {
@@ -1172,84 +1181,84 @@ final class PaperOfficialCombat implements Listener {
         var vector = victim.getLocation().toVector().subtract(source.getLocation().toVector()).setY(0);
         if (vector.lengthSquared() > 0) victim.setVelocity(vector.normalize().multiply(strength).setY(.2));
     }
-    private void triad(Player p, Fighter s, Action type) {
+    private void triad(Player player, Fighter state, Action type) {
         String id = "triad_reactor";
-        if (!owns(p, id)) return;
-        CombatReaction r = reaction(s, id);
+        if (!owns(player, id)) return;
+        CombatReaction r = reaction(state, id);
         long time = millis();
         if (!r.action(type, time, interval(id, "window"))) return;
-        charge(p, s, id);
+        charge(player, state, id);
     }
 
-    private void attackReactions(EntityDamageByEntityEvent event, Player p, LivingEntity victim, Fighter s) {
-        boolean melee = event.getCause() == EntityDamageEvent.DamageCause.ENTITY_ATTACK && event.getDamager().equals(p);
+    private void attackReactions(EntityDamageByEntityEvent event, Player player, LivingEntity victim, Fighter state) {
+        boolean melee = event.getCause() == EntityDamageEvent.DamageCause.ENTITY_ATTACK && event.getDamager().equals(player);
         boolean ranged = event.getDamager() instanceof Projectile && event.getCause() == EntityDamageEvent.DamageCause.PROJECTILE;
         if (!melee && !ranged) return;
         long t = millis();
         UUID target = victim.getUniqueId();
         double points = Math.min(event.getFinalDamage(), victim.getHealth());
         for (String id : List.of("kinetic_reversal", "afterimage_stride", "sword_wind", "reflex", "triad_reactor")) {
-            CombatReaction r = s.reactions.get(id);
+            CombatReaction r = state.reactions.get(id);
             if (r == null || !r.charged(t) || !melee && !id.equals("triad_reactor")) continue;
             r.spend(t);
             switch (id) {
-                case "kinetic_reversal" -> push(p, victim, option(id, "push"));
-                case "afterimage_stride" -> speed(p, id);
+                case "kinetic_reversal" -> push(player, victim, option(id, "push"));
+                case "afterimage_stride" -> speed(player, id);
                 case "triad_reactor" -> {
-                    visual(p, s, id, victim.getLocation(), Particle.EXPLOSION, Sound.ENTITY_GENERIC_EXPLODE);
+                    visual(player, state, id, victim.getLocation(), Particle.EXPLOSION, Sound.ENTITY_GENERIC_EXPLODE);
                     var center = victim.getLocation();
-                    later(s, id, 0, () -> {
-                        for (var other : opponents(p, center, option(id, "radius")))
-                            if (!other.equals(victim)) syntheticHit(p, other, id, option(id, "splash"));
+                    later(state, id, 0, () -> {
+                        for (var other : opponents(player, center, option(id, "radius")))
+                            if (!other.equals(victim)) syntheticHit(player, other, id, option(id, "splash"));
                     });
                 }
                 default -> { }
             }
         }
-        triad(p, s, melee ? Action.MELEE : Action.PROJECTILE);
-        if (melee && s.counterReady && follow("counter_shield")) {
-            push(p, victim, option("counter_shield", "push"));
-            visual(p, s, "counter_shield", victim.getLocation(), Particle.CRIT, Sound.ITEM_SHIELD_BLOCK);
+        triad(player, state, melee ? Action.MELEE : Action.PROJECTILE);
+        if (melee && state.counterReady && follow("counter_shield")) {
+            push(player, victim, option("counter_shield", "push"));
+            visual(player, state, "counter_shield", victim.getLocation(), Particle.CRIT, Sound.ITEM_SHIELD_BLOCK);
         }
         String arrow = "ricochet_arrow";
-        if (event.getDamager() instanceof org.bukkit.entity.Arrow && owns(p, arrow)
-                && s.progress.ready(arrow, now())) {
+        if (event.getDamager() instanceof org.bukkit.entity.Arrow && owns(player, arrow)
+                && state.progress.ready(arrow, now())) {
             var center = victim.getLocation();
-            var next = opponents(p, center, option(arrow, "radius")).stream().filter(other -> !other.equals(victim))
+            var next = opponents(player, center, option(arrow, "radius")).stream().filter(other -> !other.equals(victim))
                     .min(Comparator.comparingDouble(other -> other.getLocation().distanceSquared(center)));
-            if (next.isPresent() && ready(p, s, arrow)) {
-                later(s, arrow, 0, () -> {
-                    if (syntheticHit(p, next.get(), arrow, ReactionRules.ricochet(points, rule(arrow).amount(), rule(arrow).cap())))
-                        visual(p, s, arrow, next.get().getLocation(), Particle.CRIT, Sound.ENTITY_ARROW_HIT);
+            if (next.isPresent() && ready(player, state, arrow)) {
+                later(state, arrow, 0, () -> {
+                    if (syntheticHit(player, next.get(), arrow, ReactionRules.ricochet(points, rule(arrow).amount(), rule(arrow).cap())))
+                        visual(player, state, arrow, next.get().getLocation(), Particle.CRIT, Sound.ENTITY_ARROW_HIT);
                 });
             }
         }
         for (String id : List.of("frost_bind", "delayed_blast")) {
-            if (!owns(p, id) || !s.progress.ready(id, now())) continue;
+            if (!owns(player, id) || !state.progress.ready(id, now())) continue;
             boolean frost = id.equals("frost_bind");
-            if (!reaction(s, id).accumulate(frost ? target : p.getUniqueId(), t, interval(id, "window"),
+            if (!reaction(state, id).accumulate(frost ? target : player.getUniqueId(), t, interval(id, "window"),
                     frost ? 1 : points, rule(id).threshold())) continue;
-            ready(p, s, id);
+            ready(player, state, id);
             var center = victim.getLocation();
             if (frost) {
-                later(s, id, 0, () -> afterRecovery(p, victim, () -> {
-                    if (syntheticHit(p, victim, id, rule(id).amount())) {
-                        victim.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, rule(id).duration() * 20, 0));
-                        visual(p, s, id, victim.getLocation(), Particle.SNOWFLAKE, Sound.BLOCK_GLASS_BREAK);
+                later(state, id, 0, () -> afterRecovery(player, victim, () -> {
+                    if (syntheticHit(player, victim, id, rule(id).amount())) {
+                        reactionPotions.apply(player.getUniqueId(), id, victim, new PotionEffect(PotionEffectType.SLOWNESS, rule(id).duration() * 20, 0));
+                        visual(player, state, id, victim.getLocation(), Particle.SNOWFLAKE, Sound.BLOCK_GLASS_BREAK);
                     }
                 }));
             } else {
-                visual(p, s, id, center, Particle.FLAME, Sound.ENTITY_TNT_PRIMED);
+                visual(player, state, id, center, Particle.FLAME, Sound.ENTITY_TNT_PRIMED);
                 if (catalog.config.getBoolean(path(id) + "particles")) {
                     for (int i = 0; i < 12; i++) {
                         double angle = i * Math.PI / 6;
                         double radius = option(id, "radius");
-                        particle(p, s, Particle.FLAME, center.clone().add(radius * Math.cos(angle), .1, radius * Math.sin(angle)));
+                        particle(player, state, Particle.FLAME, center.clone().add(radius * Math.cos(angle), .1, radius * Math.sin(angle)));
                     }
                 }
-                later(s, id, interval(id, "duration"), () -> {
-                    visual(p, s, id, center, Particle.EXPLOSION, Sound.ENTITY_GENERIC_EXPLODE);
-                    area(p, center, option(id, "radius"), id, rule(id).amount(), other -> {});
+                later(state, id, interval(id, "duration"), () -> {
+                    visual(player, state, id, center, Particle.EXPLOSION, Sound.ENTITY_GENERIC_EXPLODE);
+                    area(player, center, option(id, "radius"), id, rule(id).amount(), other -> {});
                 });
             }
         }
@@ -1265,7 +1274,7 @@ final class PaperOfficialCombat implements Listener {
     }
 
     private void speed(Player player, String id) {
-        player.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, (int) option(id, "speed-ticks"), 0));
+        reactionPotions.apply(player.getUniqueId(), id, player, new PotionEffect(PotionEffectType.SPEED, (int) option(id, "speed-ticks"), 0));
     }
 
     String skill(Player player, String[] args) {
@@ -1305,12 +1314,24 @@ final class PaperOfficialCombat implements Listener {
             for (var entry : state.reactions.entrySet()) {
                 var r = entry.getValue();
                 if (r.charged(millis())) lines.add(rule(entry.getKey()).definition().name() + " 충전");
+                else if (entry.getKey().equals("triad_reactor") || entry.getKey().equals("afterimage_stride")) {
+                    String progress = reactionProgress(player.getUniqueId(), entry.getKey(), r);
+                    if (progress != null) lines.add(progress);
+                }
                 if (entry.getKey().equals("ore_ward")) lines.add("광맥 방벽 " + r.charges() + "/" + rule("ore_ward").cap()
                         + " · 광석 " + state.progress.value("hits:ore_ward") + "/" + rule("ore_ward").threshold());
             }
         }
         if (lines.isEmpty()) hud.remove(player.getUniqueId(), Layer.SKILL);
         else hud.set(player.getUniqueId(), Layer.SKILL, net.kyori.adventure.text.Component.text(String.join(" · ", lines)));
+    }
+
+    private String reactionProgress(UUID owner, String id, CombatReaction state) {
+        if (id.equals("triad_reactor")) return "전투 행동 " + state.actionCount(millis(), interval(id, "window")) + "/3";
+        if (Set.of("afterimage_stride", "last_bastion", "delayed_blast").contains(id))
+            return String.format(Locale.ROOT, "%s %.1f/%d", rule(id).definition().name(),
+                    state.progress(owner, millis(), interval(id, "window")), rule(id).threshold());
+        return null;
     }
 
     private String skillStatus(Player player, Fighter state) {
@@ -1349,9 +1370,8 @@ final class PaperOfficialCombat implements Listener {
             case "time_rewind" -> rewind(player, state);
             case "calamity_giant" -> {
                 if (!player.isOnGround()) yield false;
-                afterDamage(player, () -> area(player, player.getLocation(), catalog.setting("calamity-slam-radius"),
+                yield afterDamage(player, () -> area(player, player.getLocation(), catalog.setting("calamity-slam-radius"),
                         id, catalog.setting("calamity-slam-damage"), target -> { }));
-                yield true;
             }
             case "duel_contract" -> {
                 var eye = player.getEyeLocation();
@@ -1510,6 +1530,12 @@ final class PaperOfficialCombat implements Listener {
         player.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, rule("time_thief").duration() * 20, 1));
     }
 
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void potionChanged(EntityPotionEffectEvent event) {
+        if (event.getAction() != EntityPotionEffectEvent.Action.CHANGED || event.isOverride())
+            reactionPotions.changed(event.getEntity().getUniqueId(), event.getModifiedType());
+    }
+
     private void applyVenom(Fighter state, LivingEntity target) {
         long now = now();
         state.poisoned.values().removeIf(until -> until <= now);
@@ -1587,7 +1613,7 @@ final class PaperOfficialCombat implements Listener {
             attacker.setHealth(Math.min(maxHealth(attacker), healed));
             if (follow("predator") && extra > 0 && attacker.getAbsorptionAmount() == 0
                     && !attacker.hasPotionEffect(PotionEffectType.ABSORPTION)) {
-                if (attacker.addPotionEffect(new PotionEffect(PotionEffectType.ABSORPTION,
+                if (reactionPotions.apply(attacker.getUniqueId(), "predator", attacker, new PotionEffect(PotionEffectType.ABSORPTION,
                         (int) (option("predator", "duration") * 20), (int) Math.ceil(extra / 4) - 1))) {
                     attacker.setAbsorptionAmount(extra);
                     visual(attacker, state, "predator", attacker.getLocation(), Particle.HEART, Sound.BLOCK_AMETHYST_BLOCK_CHIME);
@@ -1785,11 +1811,12 @@ final class PaperOfficialCombat implements Listener {
         return true;
     }
 
-    private void afterDamage(Player source, Runnable action) {
-        if (deferred.size() >= catalog.count("max-deferred-effects")) return;
+    private boolean afterDamage(Player source, Runnable action) {
+        if (deferred.size() >= catalog.count("max-deferred-effects")) return false;
         DamageChain.Root root = chain.currentRoot() != null ? chain.currentRoot() : originalHit;
         deferred.addLast(new Deferred(match, source, root == null ? new DamageChain.Root() : root, action));
         if (deferredTask == null) deferredTask = plugin.getServer().getScheduler().runTask(plugin, this::applyDeferred);
+        return true;
     }
 
     private void afterRecovery(Player source, LivingEntity target, Runnable action) {

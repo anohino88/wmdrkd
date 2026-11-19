@@ -291,3 +291,9 @@ PHASE 2B의 GitHub Actions #6에서 Java 버전 확인, `./gradlew clean build -
 - 기준 원격 `83e3cd24e50edfa8f77e5ec74b39274416e0cb95`. `/aw augments`의 개인 도감에 증강 76종, 고유 시너지 5종의 구성과 진행, 진화 6종 원장과 달성 여부, 두 계열 공명을 연결했다. 전투 발동과 선택·보호막·보급·정보전의 액션바는 한 곳에서 우선순위를 적용한다.
 - 전투 실험실 프리셋 6종을 기존 권한 및 활성 테스트 경기 조건에 연결했다. 플러그인 GUI의 읽기 전용 클릭과 드래그 차단을 공유한다. 기본 경기 규칙과 초반 처치 보상 설정을 유지했다.
 - `FEATURE_COMPLETE = PASS`, `REAL_CLIENT_VERIFIED = NOT_RUN`. 코드 `ec4cb4c7083b90ed974aa619e9479ed0f5355f19`의 [CI](https://github.com/anohino88/wmdrkd/actions/runs/44521254301)에서 Java 25 Gradle/JUnit, 독립 회귀, JAR 검사와 Paper 26.3 프로브 전체를 통과했다. 로컬 독립 회귀와 `git diff --check`도 통과했다. 로컬 Gradle은 Paper Maven·Maven Central DNS 오류로 차단됐다. [사용법과 검증 범위](docs/phase68-feature-complete-ko.md) · [JAR](https://github.com/anohino88/wmdrkd/actions/runs/44521254301/artifacts/14527364496).
+
+## PHASE 6.8 전투 반응 확장
+
+- 시작 원격 `fcd3cd97890a66c73649003b634d8b82cd5485ce`. 76종 유지 및 신규 8종, 기존 8종 후속 반응, 기존 발동형 7종의 지정과 단축키, 도감·HUD·연출을 연결했다.
+- Java 25 독립 회귀와 A–G 통과. 고정 시드 XP 25에서 신규 증강의 일반 슬롯 점유율 5,970/60,000, 최종 프리즘 슬롯 점유율 4,640/60,000. [규칙과 실험 조건](docs/phase68-combat-reactions-ko.md)
+- 로컬 Gradle은 Maven Central·Paper Maven 호스트 DNS 실패로 compileClasspath 해석이 차단됐다. `REAL_CLIENT_VERIFIED = NOT_RUN`.
