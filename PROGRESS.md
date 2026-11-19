@@ -240,3 +240,12 @@ PHASE 2B의 GitHub Actions #6에서 Java 버전 확인, `./gradlew clean build -
 - 로컬 `./gradlew clean build --stacktrace` BLOCKED. Paper Maven 메타데이터 GET 403 및 Maven Central Java PKIX에서 중단됐다. [선행 코드 검증](https://github.com/anohino88/wmdrkd/actions/runs/44432253916)에서는 Java 25 빌드·JUnit, Paper 기동·종료, 실제 엔티티에서 별도 보호막과 기존 흡수 체력의 피해 처리 및 정리가 통과했다.
 - `REAL_CLIENT_VERIFIED = NOT_RUN`. 실제 클라이언트 2·8·16인 경기, 강철의 왕과 누적의 공명의 실전 합산 피해, 참가자 단위 리스폰·재접속·정리 및 실제 전투 성능은 확인이 필요하다.
 - 최종 코드 `637b0a1`의 [GitHub Actions](https://github.com/anohino88/wmdrkd/actions/runs/44432667326) PASS. Java 25 전체 빌드, JUnit, JAR 구성 검사, Paper 26.3 기동·종료, 속성·자기장·보호막 프로브 및 경기장 벤치마크가 완료됐다. [서버 JAR](https://github.com/anohino88/wmdrkd/actions/runs/44432667326/artifacts/14485949938).
+
+## PHASE 6.3 전투 감사 및 검증 (2026-11-19)
+
+- 기준 `50d16b49d5c3af55195a430952d0f1e1ecf01750`에서 증강 76종의 설정·호출 경로를 [감사표](docs/phase63-audit-ko.md)에 정리했다. 선택 중 일반 위치 이동·공격이 허용되는 경로를 수정했으며 GUI와 관리 이동은 기존 검사 경로를 유지한다.
+- 실제 Paper 재현에서 선행 보호막 적용 후 후속 리스너가 피해 BASE를 0으로 바꾸면 테스트 엔티티의 바닐라 흡수 체력이 2→4로 증가했다. 피해 보정치가 정상적으로 다시 계산되는 방식으로 변경해 같은 경우를 재검증했다. 취소·BASE 교체·갑옷·저항, 흡수 체력 및 보호막 정리를 프로브에 포함했다.
+- 합성 타격은 원인·대상 일치 여부로 확인한다. 선택·원본·연쇄·피해·보호막·성장 등을 경기 로컬 별칭으로 기록하는 선택형 진단을 추가했다. 강철심장 성장 곡선, 육중한 주먹 PvP 상한, 부활 수치, 시너지 가중치와 피해 예산 기본 설정을 유지했다.
+- Java 25 독립 회귀 PASS. 신규 PHASE 6.3 도메인 단언 126개에 13개 영구 원장, 진화 6종 경계, 고유 시너지 구성, 연쇄 ID 및 진단의 상한·정리를 포함했다. `git diff --check` PASS. 로컬 Gradle은 Paper Maven 403과 Java PKIX로 BLOCKED다.
+- 6가지 선택 전략 × 재추첨 유무, 총 120만 경기의 시뮬레이션과 강철심장 후보 곡선을 비교했다. 실제 Paper의 2·8·16개 테스트 엔티티 부하에서 피해 이벤트 60·240·480건을 관찰했고 임시 엔티티 잔여는 모두 0이었다. 실제 FFA 성능과 증강별 실효과, 실제 GUI·재접속은 NOT_RUN이다. 결과와 재현 절차는 [검증 기록](docs/phase63-validation-ko.md)에 있다.
+- 최종 코드 `411fc16`의 [GitHub Actions](https://github.com/anohino88/wmdrkd/actions/runs/44436414303) PASS. Java 25 빌드, JUnit, 독립 검사, JAR 구성, Paper 26.3 기동·종료, 자기장·보호막·합성 전투 프로브, 경기장 벤치마크가 통과했다. [서버 JAR](https://github.com/anohino88/wmdrkd/actions/runs/44436414303/artifacts/14489227747).
