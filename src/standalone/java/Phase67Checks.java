@@ -118,6 +118,11 @@ public final class Phase67Checks {
                 "insufficient prisms never add invalid or silver choices");
         Set<String> owned = Set.of("xp_prism", "defense", "phoenix_heart");
         require(tiny.roll(50, true, owned, owned).stream().map(AugmentDefinition::id).distinct().count() == 3, "owned fallback unique");
+        small.register(full.get("berserk"));
+        var first = tiny.roll(50, true, Set.of(), Set.of()).stream().map(AugmentDefinition::id).toList();
+        require(first.size() == 3 && !first.contains("xp_prism"), "three non-XP prisms suffice");
+        require(tiny.roll(50, true, Set.of(), Set.copyOf(first)).stream().anyMatch(a -> a.id().equals("xp_prism")),
+                "XP fallback preserves a reroll on a minimal pool");
         var optional = new AugmentRoller(full, new Random(30), (id, set) -> 1, new AugmentRoller.Quality(true, true, false));
         for (int i = 0; i < 1_000; i++) {
             require(optional.roll(25, false, Set.of(), Set.of(), a -> !EXCHANGES.contains(a.id())).stream()

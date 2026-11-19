@@ -46,7 +46,8 @@ public final class AugmentRoller {
             var withoutXp = pool.stream().filter(a -> a.effect() != AugmentDefinition.Effect.XP && !PURE_XP.contains(a.id())).toList();
             long fresh = pool.stream().filter(a -> !owned.contains(a.id())).count();
             long freshWithoutXp = withoutXp.stream().filter(a -> !owned.contains(a.id())).count();
-            if (withoutXp.size() >= 3 && (fresh < 3 || freshWithoutXp >= 3)) pool = withoutXp;
+            boolean changed = previous.isEmpty() || withoutXp.stream().anyMatch(a -> !previous.contains(a.id()));
+            if (changed && withoutXp.size() >= 3 && (fresh < 3 || freshWithoutXp >= 3)) pool = withoutXp;
         }
         boolean diverse = finalRound ? quality.finalDiversity() : quality.earlierDiversity();
         int slots = Math.min(3, pool.size());
