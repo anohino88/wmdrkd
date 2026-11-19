@@ -81,3 +81,20 @@ dev:
 ./gradlew clean build paperProbeJar --stacktrace
 AW_BORDER_PROBE=1 AW_EXTENDED_LOAD=1 RUNNER_TEMP="$(mktemp -d)" bash scripts/test-paper-smoke.sh
 ```
+
+### Paper 실행 결과
+
+클라이언트 0대에서 2,400틱을 측정했다. 각 구간의 워밍업 50틱은 제외했다. 모든 구간에서 예상한 피해 이벤트 수를 확인했고 잔여 엔티티는 0개였다.
+
+| 엔티티 | 반복 | p50 (ms) | p95 (ms) | p99 (ms) | 최대 (ms) | 50ms 초과 |
+|---:|---:|---:|---:|---:|---:|---:|
+| 2 | 1 | 1.317 | 1.984 | 2.862 | 4.640 | 0/300 |
+| 2 | 2 | 0.341 | 0.422 | 0.536 | 1.861 | 0/300 |
+| 4 | 1 | 0.571 | 0.849 | 0.990 | 1.533 | 0/300 |
+| 4 | 2 | 0.330 | 0.429 | 0.668 | 0.895 | 0/300 |
+| 8 | 1 | 0.672 | 0.866 | 1.094 | 2.119 | 0/300 |
+| 8 | 2 | 0.351 | 0.417 | 0.553 | 0.777 | 0/300 |
+| 16 | 1 | 0.575 | 0.744 | 0.846 | 1.061 | 0/300 |
+| 16 | 2 | 0.393 | 0.486 | 0.734 | 0.843 | 0/300 |
+
+Java 25 Gradle/JUnit, 독립 회귀, JAR 구조, Paper 명령 권한 거부·설정 비활성화·대기 중 변경 거부, 기존 Paper 프로브와 보급 SIGKILL 복구가 통과했다. 실제 플레이어 부여·제거, 공격·GUI 및 참가자 상태 복구는 미실행이다. [CI](https://github.com/anohino88/wmdrkd/actions/runs/44517290832) · [JAR](https://github.com/anohino88/wmdrkd/actions/runs/44517290832/artifacts/14526058164) · [증강별 표](https://github.com/anohino88/wmdrkd/actions/runs/44517290832/artifacts/14525748362) · [Paper 부하 로그](https://github.com/anohino88/wmdrkd/actions/runs/44517290832/artifacts/14527085136)
