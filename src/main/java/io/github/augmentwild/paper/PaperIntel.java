@@ -216,7 +216,8 @@ final class PaperIntel implements Listener {
         Location eye = player.getEyeLocation();
         var hit = player.getWorld().rayTrace(eye, eye.getDirection(), settings.scoutRange(), FluidCollisionMode.NEVER,
                 true, 0, entity -> entity instanceof Player other && !other.equals(player));
-        if (hit == null || !(hit.getHitEntity() instanceof Player target) || !enemy(player, target)) {
+        if (hit == null || !(hit.getHitEntity() instanceof Player target) || !enemy(player, target)
+                || player.getLocation().distanceSquared(target.getLocation()) > settings.scoutRange() * settings.scoutRange()) {
             dwell.remove(id);
             return;
         }
@@ -383,15 +384,15 @@ final class PaperIntel implements Listener {
     private void scheduleExpiry(Map<UUID, Report> reports, UUID owner, Report report) {
         long ticks = Math.max(1, (report.deadline() - System.nanoTime() + 49_999_999L) / 50_000_000L);
         plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
-            if (reports.get(owner) != report) return;
+            Player player = plugin.getServer().getPlayer(owner);
+            boolean displayed = player != null && player.getOpenInventory().getTopInventory().getHolder() instanceof Menu menu
+                    && menu.report == report;
             if (report.valid()) {
-                scheduleExpiry(reports, owner, report);
+                if (reports.get(owner) == report || displayed) scheduleExpiry(reports, owner, report);
                 return;
             }
             reports.remove(owner, report);
-            Player player = plugin.getServer().getPlayer(owner);
-            if (player != null && player.getOpenInventory().getTopInventory().getHolder() instanceof Menu menu
-                    && menu.report == report) player.closeInventory();
+            if (displayed) player.closeInventory();
         }, ticks);
     }
 
