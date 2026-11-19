@@ -170,9 +170,12 @@ public final class PaperMatchService implements Listener {
         return "경기에서 나갔습니다.";
     }
 
+    public void recoverSupply() { supply.recover(); }
+
     public String start(CommandSender sender) {
         if (session.state() != MatchState.WAITING) return "경기가 이미 준비 중이거나 진행 중입니다.";
         if (search.busy()) return "이전 경기장 탐색이 정리될 때까지 기다리세요.";
+        if (!supply.recover()) return "미처리 보급 복구 기록이 있습니다. 서버 로그를 확인하세요.";
         var players = session.participantIds().stream().sorted().toList();
         if (players.size() < settings.minimumPlayers()) {
             return "참가자가 최소 " + settings.minimumPlayers() + "명 필요합니다.";

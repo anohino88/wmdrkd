@@ -39,7 +39,16 @@ public final class SupplyBlock {
                 && token.equals(chest.getPersistentDataContainer().get(key, PersistentDataType.STRING));
     }
 
+    static boolean recoverable(Block block, NamespacedKey key, String token) {
+        return block.getType() == Material.CHEST
+                && block.getBlockData() instanceof org.bukkit.block.data.type.Chest shape
+                && shape.getType() == org.bukkit.block.data.type.Chest.Type.SINGLE
+                && block.getState() instanceof Chest chest
+                && token.equals(chest.getPersistentDataContainer().get(key, PersistentDataType.STRING))
+                && chest.getBlockInventory().isEmpty();
+    }
+
     public void remove() {
-        if (present()) block.setBlockData(previous, false);
+        if (recoverable(block, key, token)) block.setBlockData(previous, false);
     }
 }

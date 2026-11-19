@@ -28,6 +28,7 @@ public final class AugmentWildPlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(matches.officialAugmentListener(), this);
         getServer().getPluginManager().registerEvents(matches.intelListener(), this);
         getServer().getPluginManager().registerEvents(matches.supplyListener(), this);
+        matches.recoverSupply();
         matches.recoverOnlinePlayers();
     }
 

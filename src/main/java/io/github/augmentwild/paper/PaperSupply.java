@@ -53,7 +53,7 @@ final class PaperSupply implements Listener {
     private final Predicate<Player> active;
     private final Predicate<Location> safe;
     private final Consumer<String> notice;
-    private final NamespacedKey tag;
+    private final SupplyRecovery recovery;
     private final Map<Site, Delivery> spawned = new HashMap<>();
     private final Map<ChunkSite, Integer> tickets = new HashMap<>();
     private final Map<UUID, Opening> opening = new HashMap<>();
@@ -72,8 +72,10 @@ final class PaperSupply implements Listener {
         this.active = active;
         this.safe = safe;
         this.notice = notice;
-        tag = new NamespacedKey(plugin, "supply_delivery");
+        recovery = new SupplyRecovery(plugin);
     }
+
+    boolean recover() { return recovery.recover(); }
 
     List<Timeline.Event> start(UUID id, List<Location> positions) {
         match = id;
@@ -174,7 +176,12 @@ final class PaperSupply implements Listener {
         }
         var loot = delivery.plan.premium() ? settings.premium() : settings.normal();
         delivery.loot = loot.get(random.nextInt(loot.size())).stream().map(SupplySettings.Reward::create).toList();
-        delivery.block = SupplyBlock.place(location.getBlock(), tag, marker(delivery));
+        try {
+            var entry = recovery.plan(match, location.getBlock());
+            delivery.block = recovery.place(entry, location.getBlock());
+        } catch (java.io.IOException | RuntimeException failure) {
+            plugin.getLogger().log(java.util.logging.Level.WARNING, "Supply journal or placement failed", failure);
+        }
         if (delivery.block == null) {
             release(location);
             delivery.loot = List.of();
@@ -246,8 +253,6 @@ final class PaperSupply implements Listener {
         delivery.loot = List.of();
     }
 
-    private String marker(Delivery delivery) { return match + ":" + delivery.plan.id(); }
-
     private void release(Location location) {
         if (location == null) return;
         var key = ChunkSite.at(location);
@@ -273,6 +278,7 @@ final class PaperSupply implements Listener {
         elapsed = 0;
         paused = false;
         prepared = false;
+        if (match != null) recovery.recover();
         match = null;
     }
 
