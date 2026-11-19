@@ -55,6 +55,7 @@ public final class PaperMatchService implements Listener {
     private int loggedEvents;
     private final PaperRespawnRestrictions restrictions;
     private final PaperAugments augments;
+    private final PaperIntel intel;
 
     public PaperMatchService(JavaPlugin plugin, PaperMatchSettings settings, ArenaSearchService search) {
         this.plugin = plugin;
@@ -73,7 +74,14 @@ public final class PaperMatchService implements Listener {
         augments = new PaperAugments(plugin, () -> clock, this::augmentMember, this::augmentActive,
                 player -> placement.protectedFromDamage(player.getUniqueId(), System.nanoTime()),
                 () -> session.state(), this::insideAugmentArena, this::insideAugmentBorder, this::move, placement::protect, settings.rules().procDepth());
+        intel = new PaperIntel(plugin, () -> clock, () -> session.participantIds(), this::augmentActive,
+                this::insideAugmentBorder, augments);
     }
+
+    public Listener intelListener() { return intel; }
+    public String locate(Player player) { return intel.locate(player); }
+    public String scout(Player player) { return intel.openScout(player); }
+    public String deathReport(Player player) { return intel.openDeath(player); }
 
     public Listener restrictions() { return restrictions; }
     public Listener augmentListener() { return augments; }
@@ -247,6 +255,7 @@ public final class PaperMatchService implements Listener {
         clock = new MatchSimulationClock(session, settings.rules(), () -> System.nanoTime() - started,
                 settings.selectionSeconds(), settings.normalSupplySecond(), settings.premiumSupplySecond());
         augments.start(session.matchId(), clock);
+        intel.start(session.matchId());
         sender.sendMessage("경기가 시작됐습니다. 파밍 중 PvP 허용, 목숨 무제한.");
         for (UUID id : players) {
             Player player = available(id);
@@ -276,6 +285,7 @@ public final class PaperMatchService implements Listener {
 
     public void shutdown() {
         clearMatch();
+        intel.shutdown();
     }
 
     private void clearMatch() {
@@ -304,6 +314,7 @@ public final class PaperMatchService implements Listener {
         if (borderDisplay != null) borderDisplay.clear();
         borderDisplay = null;
         border = null;
+        intel.clear();
         augments.clear();
         regionCommitted = false;
         arena = null;
@@ -333,6 +344,7 @@ public final class PaperMatchService implements Listener {
             long now = clock.elapsedNanos();
             awaitingNativeRespawn.removeAll(departures);
             for (UUID id : departures) {
+                intel.remove(id);
                 augments.remove(id);
                 session.leave(id);
                 placement.forget(id);
@@ -361,6 +373,7 @@ public final class PaperMatchService implements Listener {
             var frame = border.update(now, clock.isPaused());
             borderDisplay.update(frame.area());
             tickNumber++;
+            intel.tick();
             for (UUID id : activeSession.participantIds()) {
                 if (session != activeSession || task == null) return;
                 Player online = plugin.getServer().getPlayer(id);
@@ -451,6 +464,7 @@ public final class PaperMatchService implements Listener {
     @EventHandler public void onQuit(PlayerQuitEvent event) {
         UUID id = event.getPlayer().getUniqueId();
         if (!contains(id)) return;
+        intel.remove(id);
         if (borderDisplay != null) borderDisplay.detach(event.getPlayer());
         if (session.state() == MatchState.PREPARING) {
             clearMatch();
@@ -487,12 +501,14 @@ public final class PaperMatchService implements Listener {
                 && session.player(id).life().status() == LifeState.Status.ACTIVE && !deaths.containsKey(id)) {
             deaths.put(id, session.deathIntent(id, clock.elapsedNanos()));
             awaitingNativeRespawn.add(id);
+            intel.death(event.getEntity(), event.getDamageSource());
         }
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onRespawn(PlayerPostRespawnEvent event) {
         Player player = event.getPlayer();
+        intel.onRespawn(player);
         UUID id = player.getUniqueId();
         if (!contains(id)) {
             recover(player);

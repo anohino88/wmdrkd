@@ -51,6 +51,19 @@ border:
 tracker:
   amount: 1
   maximum-distance: -1
+  duration-seconds: 10
+  cooldown-seconds: 60
+  update-seconds: 1
+  reveal-name: false
+scouting:
+  maximum-distance: 48
+  aim-seconds: 2
+  cooldown-seconds: 60
+  result-seconds: 15
+death-review:
+  window-seconds: 10
+  max-records: 128
+  delivery-seconds: 60
 augments:
   choices-per-round: 3
   rarity:
@@ -77,10 +90,27 @@ augments:
     defense: {enabled: true, amount: 0.35, duration: 0, cooldown: 25}
     pursuit: {enabled: true, amount: 0.2, duration: 4, cooldown: 12}
 supply:
-  normal:
-    time-seconds: 900
-  premium:
-    time-seconds: 1500
+  windows:
+    first-normal: {min-seconds: 360, max-seconds: 600}
+    second-normal: {min-seconds: 840, max-seconds: 1200}
+    premium: {min-seconds: 1380, max-seconds: 1680}
+  announce-seconds: 120
+  coordinates-seconds: 60
+  opening-seconds: 3
+  interaction-distance: 5.0
+  movement-tolerance: 0.05
+  minimum-separation: 24
+  min-height: -16
+  max-height: 180
+  rewards:
+    normal:
+      - [IRON_SWORD, ARROW*16, GOLDEN_APPLE, POTION:STRENGTH, EXPERIENCE_BOTTLE*8]
+      - [IRON_CHESTPLATE, ARROW*24, GOLDEN_APPLE, POTION:SWIFTNESS, EXPERIENCE_BOTTLE*12]
+      - [BOW, ARROW*32, GOLDEN_APPLE*2, POTION:REGENERATION, EXPERIENCE_BOTTLE*6]
+    premium:
+      - [DIAMOND_SWORD:SHARPNESS:2, BOOK:PROTECTION:3, GOLDEN_APPLE*2, POTION:STRONG_STRENGTH]
+      - [DIAMOND_CHESTPLATE:PROTECTION:2, BOOK:SHARPNESS:3, GOLDEN_APPLE*3, POTION:STRONG_REGENERATION]
+      - [CROSSBOW:QUICK_CHARGE:2, BOOK:POWER:3, ARROW*32, DIAMOND*2, POTION:STRONG_SWIFTNESS]
 dev:
   combat-audit:
     enabled: false

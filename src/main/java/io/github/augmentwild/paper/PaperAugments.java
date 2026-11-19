@@ -126,6 +126,36 @@ final class PaperAugments implements Listener {
         guard = new ProcGuard(maxDepth);
     }
 
+    String augmentName(String id) {
+        var definition = registry.get(id);
+        return definition == null ? id : definition.name();
+    }
+
+    PaperOfficialCombat.DamageTrace trace(org.bukkit.event.entity.EntityDamageEvent event) {
+        return official.trace(event);
+    }
+
+    List<PaperIntel.Card> scoutCards(UUID target) {
+        var profile = profiles.get(target);
+        var ids = profile == null ? List.<String>of() : List.copyOf(profile.owned);
+        var cards = new ArrayList<PaperIntel.Card>();
+        cards.add(PaperIntel.card(Material.SPYGLASS, "확인한 증강 " + ids.size() + "개"));
+        for (String combination : official.scoutingCombinations(target)) {
+            cards.add(PaperIntel.card(Material.NETHER_STAR, combination, "활성 조합"));
+        }
+        for (String id : ids) {
+            var definition = registry.get(id);
+            var color = switch (definition.rarity()) {
+                case SILVER -> NamedTextColor.GRAY;
+                case GOLD -> NamedTextColor.GOLD;
+                case PRISMATIC -> NamedTextColor.LIGHT_PURPLE;
+            };
+            cards.add(new PaperIntel.Card(Material.AMETHYST_SHARD, Component.text(definition.name(), color),
+                    List.of(Component.text(definition.rarity().name(), color), Component.text(definition.condition()))));
+        }
+        return List.copyOf(cards);
+    }
+
     String cast(Player player, String id) { return official.cast(player, id); }
 
     Listener officialListener() { return official; }

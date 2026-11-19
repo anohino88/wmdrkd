@@ -189,6 +189,38 @@ final class PaperOfficialCombat implements Listener {
         if (audit.sampleAvailable()) audit.sample(now(), "select actor=" + audit.actor(player) + " effect=" + id + " kind=" + kind);
     }
 
+    private final Map<EntityDamageEvent, UUID> reviewOrigins = new WeakHashMap<>();
+    private final Map<EntityDamageEvent, Double> reviewShields = new WeakHashMap<>();
+    private final Set<EntityDamageEvent> reviewHeavyFist = Collections.newSetFromMap(new WeakHashMap<>());
+
+    record DamageTrace(UUID origin, String augment, boolean synthetic, double shield) { }
+
+    DamageTrace trace(EntityDamageEvent event) {
+        double shield = reviewShields.getOrDefault(event, 0.0);
+        var context = chain.current();
+        var source = event.getDamageSource().getCausingEntity();
+        if (context != null && source != null && context.attacker().equals(source.getUniqueId())
+                && context.victim().equals(event.getEntity().getUniqueId())) {
+            return new DamageTrace(context.original(), context.augment(), true, shield);
+        }
+        return new DamageTrace(reviewOrigins.get(event), reviewHeavyFist.contains(event) ? "heavy_fist" : null, false, shield);
+    }
+
+    List<String> scoutingCombinations(UUID id) {
+        var state = fighters.get(id);
+        if (state == null) return List.of();
+        var list = new ArrayList<String>();
+        if (state.king) list.add(catalog.synergies.getString("steel_king.name"));
+        if (state.train) list.add(catalog.synergies.getString("calamity_train.name"));
+        if (state.barrage) list.add(catalog.synergies.getString("infinite_barrage.name"));
+        if (state.hellLord) list.add(catalog.synergies.getString("hell_lord.name"));
+        if (state.thousandSwords) list.add(catalog.synergies.getString("thousand_swords.name"));
+        var families = resonance.families();
+        if (state.resonance.familyMultiplier() > AugmentResonance.BASE) list.add(families.stacking().name());
+        if (currentResonance(id, owned.apply(id)).shieldPoints() > 0) list.add(families.revival().name());
+        return List.copyOf(list);
+    }
+
     boolean synthetic() { return chain.current() != null; }
     double rawDamage(EntityDamageEvent event) { return rawDamage.getOrDefault(event, event.getDamage()); }
     private long now() { return clock.get().elapsedSeconds(); }
@@ -340,6 +372,9 @@ final class PaperOfficialCombat implements Listener {
                     + " requestedPoints=" + budgetRaw + " healthDamagePoints=" + budgetFinal);
         }
         shieldSpends.clear();
+        reviewOrigins.clear();
+        reviewShields.clear();
+        reviewHeavyFist.clear();
         defended.clear();
         countedWounds.clear();
         countedMovement.clear();
@@ -718,6 +753,7 @@ final class PaperOfficialCombat implements Listener {
             var damage = AugmentBalance.attackParts(base, base * ratio, flat, catalog.setting("max-extra-damage"),
                     split ? rule("split_attack").amount() : 1);
             if (split) splitEvents.put(event, damage.repeat());
+            if (damage.original() > damage.repeat()) reviewHeavyFist.add(event);
             event.setDamage(damage.original());
         }
     }
@@ -752,6 +788,7 @@ final class PaperOfficialCombat implements Listener {
                     resonance.enforceBudget(), target.getUniqueId(), Math.max(0, origin.extraDamage()));
         }
         originalHit = new DamageChain.Root(origin, budget);
+        reviewOrigins.put(event, originalHit.id());
         if (audit.sampleAvailable()) audit.sample(now(), "root=" + originalHit.id()
                 + " attacker=" + audit.actor(attacker.getUniqueId())
                 + " victim=" + (target instanceof Player ? audit.actor(target.getUniqueId()) : target.getType())
@@ -1778,6 +1815,7 @@ final class PaperOfficialCombat implements Listener {
         if (spent != null) {
             double confirmed = spent.confirm(event);
             state.shield.consume(clock.get().elapsedNanos(), confirmed);
+            if (confirmed > 0) reviewShields.put(event, confirmed);
             audit.add("resonance_revival", Metric.SHIELDED, confirmed);
             if (audit.sampleAvailable()) audit.sample(now(), "shield actor=" + audit.actor(player.getUniqueId())
                     + " reserved=" + spent.reserved() + " absorbed=" + confirmed);

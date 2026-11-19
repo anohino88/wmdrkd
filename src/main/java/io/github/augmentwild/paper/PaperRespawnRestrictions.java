@@ -186,7 +186,8 @@ final class PaperRespawnRestrictions implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void open(InventoryOpenEvent event) {
-        if (event.getPlayer() instanceof Player player && restricted.test(player)) event.setCancelled(true);
+        if (event.getPlayer() instanceof Player player && restricted.test(player)
+                && !PaperIntel.isReadOnly(event.getInventory())) event.setCancelled(true);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
