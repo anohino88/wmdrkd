@@ -39,6 +39,7 @@ balance:
     follow-up-max-ticks: 25
 late-growth:
   enabled: false
-  fractions-by-minute: {"5": 0.0, "10": 0.0, "15": 0.10, "20": 0.20, "25": 0.35, "30": 0.35}
+  fractions-by-minute: {"5": 0.0, "10": 0.0, "15": 0.10, "20": 0.20, "25": 0.35}
+  final-fractions: {}
   reference-stacks: {blood_record: 20, mineral_addiction: 20, steel_heart: 20, tank_engine: 20}
   log: false

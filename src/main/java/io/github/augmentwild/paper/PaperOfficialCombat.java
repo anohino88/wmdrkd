@@ -431,6 +431,10 @@ final class PaperOfficialCombat implements Listener {
                     + (before.totalMultiplier() == after.totalMultiplier() ? "" : " → " + percent(after.totalMultiplier())));
             return lines;
         }
+        if (candidate.equals("stack_dinosaur") && before.stackingCount() > 0
+                && before.totalMultiplier() != after.totalMultiplier()) {
+            return List.of("영구 중첩 총 획득 " + percent(before.totalMultiplier()) + " → " + percent(after.totalMultiplier()));
+        }
         if (families.revival().enabled() && families.revival().members().contains(candidate)) {
             return List.of("[사망 방지형] " + families.revival().name() + " · 보유 " + before.revivalCount() + "종",
                     "치명 피해 방지 시 " + before.shieldPoints() / 2 + (before.shieldPoints() == after.shieldPoints()

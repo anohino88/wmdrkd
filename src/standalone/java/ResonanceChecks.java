@@ -115,6 +115,20 @@ public final class ResonanceChecks {
         require(weights.applyAsDouble("steel_heart", Set.of("heavy_fist", "stack_dinosaur")) == 2.5, "two member weight");
         require(weights.applyAsDouble("speed", Set.of("heavy_fist", "stack_dinosaur")) == 1, "unrelated weight");
         require(weights.applyAsDouble("steel_heart", SYNERGIES.getFirst()) == 1, "owned candidate not weighted");
+        var fixedOdds = new Random(100) {
+            private int nextTier;
+            @Override public double nextDouble(double bound) {
+                if (bound == 100) return new double[]{1, 81, 99}[nextTier++];
+                return 0;
+            }
+        };
+        var verified = new AugmentRoller(registry, fixedOdds, weights);
+        require(verified.roll(0, false, Set.of("heavy_fist"), Set.of()).stream().map(AugmentDefinition::rarity).toList()
+                .equals(List.of(AugmentRarity.SILVER, AugmentRarity.GOLD, AugmentRarity.PRISMATIC)),
+                "synergy weights are confined to the drawn rarity");
+        require(verified.roll(50, true, SYNERGIES.getFirst(), Set.of()).stream()
+                .allMatch(offer -> offer.rarity() == AugmentRarity.PRISMATIC), "last round stays prismatic");
+
         var neutral = new AugmentRoller(registry, new Random(100));
         var weighted = new AugmentRoller(registry, new Random(100), weights);
         int draws = 1800;

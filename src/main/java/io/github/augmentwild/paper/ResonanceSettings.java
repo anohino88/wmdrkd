@@ -13,7 +13,7 @@ record ResonanceSettings(AugmentResonance families, AugmentBalance balance, bool
                          boolean announce, boolean sound, boolean particles, double oneWeight, double twoWeight,
                          boolean enforceBudget, boolean measureBudget, double damageRatio, double minimumDamage, int followUpTicks,
                          boolean lateEnabled, boolean lateLog, Map<Integer, Double> lateFractions,
-                         Map<String, Integer> referenceStacks) {
+                         Map<String, Integer> referenceStacks, Map<String, Double> finalFractions) {
 
     static ResonanceSettings load(JavaPlugin plugin) {
         try {
@@ -59,7 +59,7 @@ record ResonanceSettings(AugmentResonance families, AugmentBalance balance, bool
         for (var key : lateTimes.getKeys(false)) {
             int minute = Integer.parseInt(key);
             double fraction = number(lateTimes, key);
-            if (minute < 0 || minute > 60 || fraction < 0 || fraction > 1) throw new IllegalArgumentException("late-growth fraction");
+            if (minute < 0 || minute >= 30 || fraction < 0 || fraction > 1) throw new IllegalArgumentException("late-growth fraction");
             fractions.put(minute, fraction);
         }
         var lateRefs = section(late, "reference-stacks");
@@ -71,14 +71,26 @@ record ResonanceSettings(AugmentResonance families, AugmentBalance balance, bool
             }
             refs.put(id, value);
         }
+        var finalSection = section(late, "final-fractions");
+        var finalFractions = new TreeMap<String, Double>();
+        for (var id : finalSection.getKeys(false)) {
+            double fraction = number(finalSection, id);
+            if (!refs.containsKey(id) || fraction < 0 || fraction > 1) {
+                throw new IllegalArgumentException("late-growth final fraction " + id);
+            }
+            finalFractions.put(id, fraction);
+        }
         return new ResonanceSettings(families, balance, flag(revival, "include-spent"), flag(announcement, "enabled"),
                 flag(announcement, "sound"), flag(announcement, "particles"), one, two,
                 flag(budget, "enforce"), flag(budget, "measure"), ratio, minimum, followUp,
-                flag(late, "enabled"), flag(late, "log"), Map.copyOf(fractions), Map.copyOf(refs));
+                flag(late, "enabled"), flag(late, "log"), Map.copyOf(fractions), Map.copyOf(refs), Map.copyOf(finalFractions));
     }
 
     int lateGrant(String id, long second) {
         int minute = (int) (second / 60);
+        if (minute >= 30) {
+            return (int) Math.floor(referenceStacks.getOrDefault(id, 0) * finalFractions.getOrDefault(id, 0.0));
+        }
         return lateFractions.entrySet().stream().filter(entry -> entry.getKey() <= minute)
                 .max(Map.Entry.comparingByKey()).map(entry -> (int) Math.floor(entry.getValue()
                         * referenceStacks.getOrDefault(id, 0))).orElse(0);
