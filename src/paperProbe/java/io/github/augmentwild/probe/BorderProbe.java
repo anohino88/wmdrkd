@@ -30,11 +30,26 @@ public final class BorderProbe extends JavaPlugin implements Listener {
     private Pig shieldPig;
     private final ResonanceShield shield = new ResonanceShield();
     private long shieldClock;
-    private double pendingShieldSpend;
+    private PaperResonanceShield.Receipt pendingShieldSpend;
+    private enum LateDamage { NONE, CANCEL, REPLACE_MAGIC, ZERO_BASE }
+    private LateDamage lateDamage = LateDamage.NONE;
     private boolean sawOutsideBorderDamage;
 
     @Override public void onEnable() {
         getServer().getPluginManager().registerEvents(this, this);
+        getServer().getPluginManager().registerEvents(new Listener() {
+            @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+            @SuppressWarnings("deprecation")
+            public void alterAfterShield(EntityDamageEvent event) {
+                if (!event.getEntity().equals(shieldPig)) return;
+                switch (lateDamage) {
+                    case CANCEL -> event.setCancelled(true);
+                    case REPLACE_MAGIC -> event.setDamage(EntityDamageEvent.DamageModifier.MAGIC, 0);
+                    case ZERO_BASE -> event.setDamage(0);
+                    case NONE -> { }
+                }
+            }
+        }, this);
         getServer().getScheduler().runTask(this, this::verify);
     }
 
@@ -124,6 +139,20 @@ public final class BorderProbe extends JavaPlugin implements Listener {
             require(shield.remaining(shieldClock) == 0, "shield expires at exact game time");
             require(shieldPig.getAbsorptionAmount() == 2, "shield expiry leaves native absorption");
             shield.grant(shieldClock, 4, 6_000_000_000L);
+            for (var change : new LateDamage[]{LateDamage.CANCEL, LateDamage.REPLACE_MAGIC, LateDamage.ZERO_BASE}) {
+                shieldPig.setHealth(health);
+                shieldPig.setAbsorptionAmount(2);
+                shieldPig.setNoDamageTicks(0);
+                lateDamage = change;
+                shield.grant(shieldClock, 4, 6_000_000_000L);
+                shieldPig.damage(7);
+                require(shield.remaining(shieldClock) == 4, "late " + change + " must not spend discarded shield");
+                if (change == LateDamage.REPLACE_MAGIC) {
+                    require(shieldPig.getHealth() == health - 5 && shieldPig.getAbsorptionAmount() == 0,
+                            "replacement keeps native absorption normal");
+                } else require(shieldPig.getHealth() == health && shieldPig.getAbsorptionAmount() == 2,
+                        "no damage or native absorption consumption");
+            }
             shield.clear();
             require(shield.remaining(shieldClock) == 0 && shieldPig.getAbsorptionAmount() == 2, "cleanup leaves native absorption");
         } finally {
@@ -137,9 +166,12 @@ public final class BorderProbe extends JavaPlugin implements Listener {
         if (event.getEntity().equals(shieldPig)) pendingShieldSpend = PaperResonanceShield.protect(event, shield, shieldClock);
     }
 
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    @EventHandler(priority = EventPriority.MONITOR)
     public void consumeProbe(EntityDamageEvent event) {
-        if (event.getEntity().equals(shieldPig)) shield.consume(shieldClock, pendingShieldSpend);
+        if (event.getEntity().equals(shieldPig) && pendingShieldSpend != null) {
+            shield.consume(shieldClock, pendingShieldSpend.confirm(event));
+            pendingShieldSpend = null;
+        }
     }
 
     @EventHandler

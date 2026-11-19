@@ -39,14 +39,16 @@ import org.bukkit.event.player.PlayerSwapHandItemsEvent;
 
 final class PaperRespawnRestrictions implements Listener {
     private final Predicate<Player> restricted;
+    private final Predicate<Player> choosing;
 
     private final BiPredicate<Player, Location> outside;
     private final Predicate<PlayerTeleportEvent> internalTeleport;
     private final Predicate<Player> protectedPlayer;
 
     PaperRespawnRestrictions(Predicate<Player> restricted, BiPredicate<Player, Location> outside,
-                             Predicate<PlayerTeleportEvent> internalTeleport, Predicate<Player> protectedPlayer) {
+                             Predicate<PlayerTeleportEvent> internalTeleport, Predicate<Player> protectedPlayer, Predicate<Player> choosing) {
         this.restricted = restricted;
+        this.choosing = choosing;
         this.outside = outside;
         this.internalTeleport = internalTeleport;
         this.protectedPlayer = protectedPlayer;
@@ -67,18 +69,18 @@ final class PaperRespawnRestrictions implements Listener {
         Location to = event.getTo();
         Location from = event.getFrom();
         if (to != null && (from.getX() != to.getX() || from.getY() != to.getY() || from.getZ() != to.getZ())
-                && (restricted.test(event.getPlayer()) || outside.test(event.getPlayer(), to))) event.setCancelled(true);
+                && (restricted.test(event.getPlayer()) || choosing.test(event.getPlayer()) || outside.test(event.getPlayer(), to))) event.setCancelled(true);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void teleport(PlayerTeleportEvent event) {
-        if (!internalTeleport.test(event) && (restricted.test(event.getPlayer())
+        if (!internalTeleport.test(event) && (restricted.test(event.getPlayer()) || choosing.test(event.getPlayer())
                 || outside.test(event.getPlayer(), event.getTo()))) event.setCancelled(true);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void portal(PlayerPortalEvent event) {
-        if (restricted.test(event.getPlayer()) || outside.test(event.getPlayer(), event.getTo())) event.setCancelled(true);
+        if (restricted.test(event.getPlayer()) || choosing.test(event.getPlayer()) || outside.test(event.getPlayer(), event.getTo())) event.setCancelled(true);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
@@ -92,7 +94,7 @@ final class PaperRespawnRestrictions implements Listener {
     }
 
     private boolean blocksAttack(Player player) {
-        return restricted.test(player) || protectedPlayer.test(player);
+        return restricted.test(player) || choosing.test(player) || protectedPlayer.test(player);
     }
 
     private boolean blockedSource(Entity source) {

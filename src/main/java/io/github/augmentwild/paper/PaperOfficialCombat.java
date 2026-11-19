@@ -60,7 +60,7 @@ final class PaperOfficialCombat implements Listener {
     private final OfficialAugments catalog;
     private final ResonanceSettings resonance;
     private final int dinosaurMultiplier;
-    private final Map<EntityDamageEvent, Double> shieldSpends = new WeakHashMap<>();
+    private final Map<EntityDamageEvent, PaperResonanceShield.Receipt> shieldSpends = new WeakHashMap<>();
     private final Set<EntityDamageEvent> defended = Collections.newSetFromMap(new WeakHashMap<>());
     private final Set<EntityDamageEvent> countedWounds = Collections.newSetFromMap(new WeakHashMap<>());
     private final Set<PlayerMoveEvent> countedMovement = Collections.newSetFromMap(new WeakHashMap<>());
@@ -704,7 +704,9 @@ final class PaperOfficialCombat implements Listener {
     public void hit(EntityDamageByEntityEvent event) {
         if (synthetic()) {
             var context = chain.current();
-            if (context.victim().equals(event.getEntity().getUniqueId()) && event.getFinalDamage() > 0) {
+            var cause = event.getDamageSource().getCausingEntity();
+            if (cause != null && context.attacker().equals(cause.getUniqueId())
+                    && context.victim().equals(event.getEntity().getUniqueId()) && event.getFinalDamage() > 0) {
                 syntheticConfirmed = true;
                 syntheticFinalDamage = Math.min(((LivingEntity) event.getEntity()).getHealth(), event.getFinalDamage());
             }
@@ -1670,8 +1672,8 @@ final class PaperOfficialCombat implements Listener {
                 && event.getDamageSource().getDamageType() != DamageType.OUT_OF_WORLD) {
             var state = fighters.get(player.getUniqueId());
             if (state != null && !shieldSpends.containsKey(event)) {
-                double spent = PaperResonanceShield.protect(event, state.shield, clock.get().elapsedNanos());
-                if (spent > 0) shieldSpends.put(event, spent);
+                var spent = PaperResonanceShield.protect(event, state.shield, clock.get().elapsedNanos());
+                if (spent != null) shieldSpends.put(event, spent);
             }
         }
         revive(event);
@@ -1722,14 +1724,15 @@ final class PaperOfficialCombat implements Listener {
         }
     }
 
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    @EventHandler(priority = EventPriority.MONITOR)
     public void damageTaken(EntityDamageEvent event) {
+        var spent = shieldSpends.remove(event);
+        if (event.isCancelled()) return;
         if (!(event.getEntity() instanceof Player player) || !valid(player)) return;
         var state = fighters.get(player.getUniqueId());
         if (state == null || !countedWounds.add(event)) return;
-        Double spent = shieldSpends.remove(event);
         if (spent != null) {
-            state.shield.consume(clock.get().elapsedNanos(), spent);
+            state.shield.consume(clock.get().elapsedNanos(), spent.confirm(event));
             updateShieldDisplay(player, state);
         }
         if (owns(player, "counter_shield") && event.isApplicable(EntityDamageEvent.DamageModifier.BLOCKING)

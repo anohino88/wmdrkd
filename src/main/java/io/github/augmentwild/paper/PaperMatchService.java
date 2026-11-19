@@ -66,9 +66,10 @@ public final class PaperMatchService implements Listener {
         placement = new ArenaPlacement(config.getInt("respawn.border-margin"),
                 config.getInt("respawn.attempts-per-cycle"), config.getInt("respawn.retry-ticks"),
                 config.getInt("respawn.protection-seconds"), config.getInt("respawn.preferred-separation"));
-        restrictions = new PaperRespawnRestrictions(this::isRestricted, this::outsideArena,
-                this::consumePermit, player -> placement.protectedFromDamage(player.getUniqueId(), System.nanoTime()));
         session = new GameSession(settings.rules());
+        restrictions = new PaperRespawnRestrictions(this::isRestricted, this::outsideArena,
+                this::consumePermit, player -> placement.protectedFromDamage(player.getUniqueId(), System.nanoTime()),
+                player -> session.state() == MatchState.AUGMENT_SELECTION && augmentMember(player.getUniqueId()));
         augments = new PaperAugments(plugin, () -> clock, this::augmentMember, this::augmentActive,
                 player -> placement.protectedFromDamage(player.getUniqueId(), System.nanoTime()),
                 () -> session.state(), this::insideAugmentArena, this::insideAugmentBorder, this::move, placement::protect, settings.rules().procDepth());
