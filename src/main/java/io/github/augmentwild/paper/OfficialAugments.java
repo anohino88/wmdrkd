@@ -140,7 +140,7 @@ final class OfficialAugments {
         return value;
     }
 
-    private static YamlConfiguration load(JavaPlugin plugin, String name) {
+    static YamlConfiguration load(JavaPlugin plugin, String name) {
         File file = new File(plugin.getDataFolder(), name);
         if (!file.isFile()) plugin.saveResource(name, false);
         var yaml = new YamlConfiguration();

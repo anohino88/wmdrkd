@@ -6,6 +6,7 @@ import java.util.Map;
 /** Match-owned counters. All callers run on the server thread. */
 public final class AugmentProgress {
     private final Map<String, Integer> values = new HashMap<>();
+    private final Map<String, Integer> remainder = new HashMap<>();
     private final Map<String, Long> readyAt = new HashMap<>();
 
     public int value(String key) {
@@ -19,8 +20,21 @@ public final class AugmentProgress {
         return result;
     }
 
+    public int addPermanent(String key, int rawGain, int multiplier, int cap) {
+        if (rawGain < 0 || multiplier < 0 || cap < 0) throw new IllegalArgumentException("Invalid permanent gain");
+        int before = value(key);
+        if (before >= cap || rawGain == 0) return before;
+        long credit = (long) rawGain * multiplier + remainder.getOrDefault(key, 0);
+        int awarded = (int) Math.min(cap - before, credit / AugmentResonance.BASE);
+        int after = add(key, awarded, cap);
+        if (after == cap) remainder.remove(key);
+        else remainder.put(key, (int) (credit % AugmentResonance.BASE));
+        return after;
+    }
+
     public void reset(String key) {
         values.remove(key);
+        remainder.remove(key);
     }
 
     public boolean ready(String key, long now) {

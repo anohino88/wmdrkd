@@ -1,0 +1,43 @@
+enabled: true
+stacking:
+  enabled: true
+  name: "누적의 공명"
+  members: [blood_record, mineral_addiction, steel_heart, tank_engine, muscle_memory, iron_stomach, wound_record, vein_overload, heart_harvester, mineral_devourer, draw_the_sword, endless_evolution, blood_god]
+  multiplier: [1.00, 1.25, 1.50, 1.75]
+  rounding: CARRY_FRACTION
+  stack-dinosaur-mode: ADDITIVE_BONUS
+  total-multiplier-cap: 2.75
+revival:
+  enabled: true
+  name: "생명의 잔향"
+  members: [immortal_berserker, phoenix_heart, russian_doll]
+  include-spent: true
+  duration-seconds: 6
+  two-augments-absorption-hearts: 2.0
+  three-augments-absorption-hearts: 4.0
+  max-absorption-hearts: 4.0
+announcement:
+  enabled: true
+  sound: true
+  particles: true
+selection:
+  one-member-weight: 1.5
+  two-members-weight: 2.5
+balance:
+  steel-heart:
+    first-end: 20
+    second-end: 50
+    second-points: 0.8
+    third-points: 0.2
+  heavy-fist:
+    pvp-bonus-cap-points: 8.0
+  damage-budget:
+    enforce: false
+    measure: true
+    pvp-ratio: 2.0
+    minimum-points: 4.0
+late-growth:
+  enabled: false
+  fractions-by-minute: {"5": 0.0, "10": 0.0, "15": 0.10, "20": 0.20, "25": 0.35, "30": 0.35}
+  reference-stacks: {blood_record: 20, mineral_addiction: 20, steel_heart: 20, tank_engine: 20}
+  log: false

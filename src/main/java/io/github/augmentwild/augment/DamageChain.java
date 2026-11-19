@@ -27,10 +27,18 @@ public final class DamageChain {
         private final Map<UUID, Integer> hits = new HashMap<>();
         private final UUID id = UUID.randomUUID();
         private final Origin provenance;
+        private final LinkedDamageBudget budget;
 
         public Root() { this(new Origin(Attack.EFFECT, 0, 0, 0)); }
 
-        public Root(Origin provenance) { this.provenance = provenance; }
+        public Root(Origin provenance) { this(provenance, null); }
+
+        public Root(Origin provenance, LinkedDamageBudget budget) {
+            this.provenance = provenance;
+            this.budget = budget;
+        }
+
+        public LinkedDamageBudget budget() { return budget; }
     }
 
     private final Set<String> activeEffects = new HashSet<>();

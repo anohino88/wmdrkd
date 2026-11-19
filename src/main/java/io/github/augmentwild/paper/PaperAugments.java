@@ -122,7 +122,7 @@ final class PaperAugments implements Listener {
                     var profile = profiles.get(player);
                     return profile == null ? Set.of() : profile.owned;
                 }, maxDepth);
-        roller = new AugmentRoller(registry, random);
+        roller = new AugmentRoller(registry, random, official.draftWeights());
         guard = new ProcGuard(maxDepth);
     }
 
@@ -323,6 +323,7 @@ final class PaperAugments implements Listener {
                 Component.text("지속 " + (augment.duration() == 0 ? "상시 또는 즉시" : augment.duration() + "초")
                         + " · 쿨다운 " + augment.cooldown() + "초"),
                 Component.text(profile.owned.contains(augment.id()) ? "보유 중" : "획득 가능")));
+        official.resonanceDetails(player.getUniqueId(), augment.id()).forEach(line -> lore.add(Component.text(line)));
         official.details(player.getUniqueId(), augment.id()).forEach(line -> lore.add(Component.text(line)));
         return item(icon, Component.text(augment.name(), color), lore);
     }
