@@ -24,6 +24,10 @@ class CombatViewTest {
         assertEquals(0,CombatView.confirmed(-2,4));
         assertEquals(6,CombatView.confirmed(6,6));
         assertEquals(2,CombatView.confirmed(2,2));
+        var receipt = new CombatView.Receipt(new CombatView.Vitals(20,4),new CombatView.Vitals(5,4));
+        assertEquals(new CombatView.Vitals(5,4),receipt.confirm(new CombatView.Vitals(15,0),false));
+        assertEquals(new CombatView.Vitals(0,0),receipt.confirm(new CombatView.Vitals(15,0),true));
+        assertEquals(new CombatView.Vitals(0,0),receipt.confirm(new CombatView.Vitals(20,4),false));
         UUID root = UUID.randomUUID();
         assertEquals(new CombatView.OriginTarget(first,second,root),new CombatView.OriginTarget(first,second,root));
         assertNotEquals(new CombatView.OriginTarget(first,second,root),new CombatView.OriginTarget(first,UUID.randomUUID(),root));

@@ -450,7 +450,7 @@ public final class PaperMatchService implements Listener {
 
     private void clearMatch() {
         boolean played = clock != null;
-        if (played) feedback.tick(System.nanoTime());
+        if (played) feedback.finishSamples();
         displays.clear();
         search.cancel();
         if (preparation != null) {
@@ -537,6 +537,7 @@ public final class PaperMatchService implements Listener {
             long now = clock.elapsedNanos();
             awaitingNativeRespawn.removeAll(departures);
             for (UUID id : departures) {
+                feedback.finishSamples();
                 outAt.putIfAbsent(id,clock.elapsedNanos());
                 departureStats.put(id,resultLines(id));
                 displays.detach(id);

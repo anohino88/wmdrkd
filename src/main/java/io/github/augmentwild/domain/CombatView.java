@@ -12,6 +12,13 @@ public final class CombatView {
             return String.format(java.util.Locale.ROOT,"%s · %.1f / %.1f HP · 흡수 +%.1f",name,hp,max,absorption);
         }
     }
+    public record Vitals(double hp, double absorption) {}
+    public record Receipt(Vitals before, Vitals expected) {
+        public Vitals confirm(Vitals after, boolean cancelled) {
+            return cancelled ? new Vitals(0,0) : new Vitals(
+                    confirmed(before.hp - after.hp,expected.hp), confirmed(before.absorption - after.absorption,expected.absorption));
+        }
+    }
     public record OriginTarget(java.util.UUID attacker, java.util.UUID target, java.util.UUID origin) {}
     public static String supplyStatus(boolean published, boolean claimed, boolean attempted, boolean present) {
         if (!published) return "공개 대기";

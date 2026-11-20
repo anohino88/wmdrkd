@@ -26,3 +26,7 @@ Java 25에서 `scripts/test-domain.sh`로 Paper 없이 도메인 회귀 검사�
 보급 마커 복구, 인벤토리 지급 실패 처리와 경기 통계는 [PHASE 6.5 운영 문서](docs/phase65-recovery-ko.md)에 있습니다. 실제 2·4·8·16인 경기 절차는 [플레이테스트](docs/phase66-playtest-ko.md), 관리자 실험 명령과 선택 결과는 [전투 실험실](docs/phase67-combat-lab-ko.md)에 있습니다. 본인 도감과 프리셋은 [최종 기능 문서](docs/phase68-feature-complete-ko.md)에 정리되어 있습니다.
 
 84종 증강의 신규 전투 반응, 웅크리기 + F 스킬 지정과 희귀도별 후보 변화는 [전투 반응 및 조작 안내](docs/phase68-combat-reactions-ko.md)에 있습니다.
+
+경기 화면은 `/aw ui`에서 개인별로 설정합니다. 상대 체력바는 24블록 이내에서 직접 조준할 때 표시하며, 조준을 잃으면 마지막 관측 이후 최대 0.5초 뒤에 사라집니다. 피해 알림은 공격자에게 1.2초간 보입니다. `/aw supply`에서 공개된 보급의 방향과 거리를, `/aw result`에서 가장 최근 경기의 개인 결과를 확인합니다. 결과는 다음 경기 시작 또는 서버 재시작까지 메모리에 보관합니다.
+
+기존 스코어보드와 충돌하면 경기 사이드바를 건너뜁니다. 타격 위치에 공격자 전용 숫자를 추가하려면 `hud.floating-damage`를 켭니다. 기본값은 꺼짐이며 `hud.max-floating-numbers`의 기본 상한은 서버 전체 16개입니다.

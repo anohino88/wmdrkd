@@ -127,3 +127,4 @@ dev:
 
 hud:
   floating-damage: false
+  max-floating-numbers: 16
