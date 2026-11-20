@@ -69,6 +69,7 @@ public final class PaperMatchService implements Listener {
     private final PaperSupply supply;
     private final PaperHud hud = new PaperHud();
     private final MatchDisplays displays = new MatchDisplays(this::augmentActive);
+    private final PaperOverheadHealth overhead;
     private final CombatFeedback feedback;
     private final Map<UUID,List<String>> results = new LinkedHashMap<>();
     private final Map<UUID,Long> outAt = new LinkedHashMap<>();
@@ -91,6 +92,7 @@ public final class PaperMatchService implements Listener {
     public PaperMatchService(JavaPlugin plugin, PaperMatchSettings settings, ArenaSearchService search) {
         this.plugin = plugin;
         this.settings = settings;
+        overhead = new PaperOverheadHealth(plugin, this::augmentActive);
         this.search = search;
         snapshots = new PlayerSnapshots(plugin);
         usedRegions = new UsedRegions(plugin);
@@ -452,6 +454,7 @@ public final class PaperMatchService implements Listener {
         boolean played = clock != null;
         if (played) feedback.finishSamples();
         displays.clear();
+        overhead.clear();
         search.cancel();
         if (preparation != null) {
             preparation.cancel();
@@ -541,6 +544,7 @@ public final class PaperMatchService implements Listener {
                 outAt.putIfAbsent(id,clock.elapsedNanos());
                 departureStats.put(id,resultLines(id));
                 displays.detach(id);
+                overhead.detach(id);
                 supply.disconnect(id);
                 intel.remove(id);
                 hud.clear(id, plugin.getServer().getPlayer(id));
@@ -629,7 +633,7 @@ public final class PaperMatchService implements Listener {
             for (UUID id : activeSession.participantIds()) {
                 Player player = plugin.getServer().getPlayer(id);
                 if (player != null) updateDisplay(player,() -> {
-                    displays.aim(player,tickNumber,realTime);
+                    overhead.update(player,tickNumber);
                     if (tickNumber % 20 == 1) displays.sidebar(player,sidebar(player));
                 });
                 if (player == null || !augmentActive(player)) {
@@ -753,11 +757,15 @@ public final class PaperMatchService implements Listener {
         }
     }
 
-    @EventHandler public void worldChange(org.bukkit.event.player.PlayerChangedWorldEvent e) { displays.detach(e.getPlayer().getUniqueId()); }
+    @EventHandler public void worldChange(org.bukkit.event.player.PlayerChangedWorldEvent e) {
+        displays.detach(e.getPlayer().getUniqueId());
+        overhead.detach(e.getPlayer().getUniqueId());
+    }
 
     @EventHandler public void onQuit(PlayerQuitEvent event) {
         UUID id = event.getPlayer().getUniqueId();
         displays.detach(id);
+        overhead.detach(id);
         if (!contains(id)) return;
         supply.disconnect(id);
         intel.remove(id);
@@ -801,6 +809,7 @@ public final class PaperMatchService implements Listener {
             creditedKillers.put(id, killer != null && contains(killer.getUniqueId()) && !departures.contains(killer.getUniqueId())
                     ? killer.getUniqueId() : null);
             displays.detach(id);
+            overhead.detach(id);
             var source = event.getDamageSource().getCausingEntity();
             String cause = source instanceof Player attacker && contains(attacker.getUniqueId())
                     ? attacker.getName() + " ⚔ " : source == null ? "환경 피해 · " : "생물 또는 기타 피해 · ";
