@@ -11,7 +11,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.scoreboard.*;
 
 final class MatchDisplays {
-    private record Target(UUID id, BossBar bar, long seen) {}
+    private record Target(CombatView.Observation view, BossBar bar) {}
     private record Sidebar(Scoreboard prior, Scoreboard board, Objective objective, Map<Integer,String> lines) {}
     private final Map<UUID,Target> targets = new HashMap<>();
     private final Map<UUID,Sidebar> boards = new HashMap<>();
@@ -27,30 +27,31 @@ final class MatchDisplays {
             return;
         }
         if (old != null) {
-            var prior = Bukkit.getPlayer(old.id);
+            var prior = Bukkit.getPlayer(old.view.target());
             if (prior == null || !eligible(prior) || !viewer.getWorld().equals(prior.getWorld())) {
                 hide(id);
                 old = null;
             }
         }
-        if (tick % 5 == 0) {
+        if (CombatView.scan(tick)) {
             var eye = viewer.getEyeLocation();
-            var hit = viewer.getWorld().rayTrace(eye, eye.getDirection(), 24, FluidCollisionMode.NEVER, false, 0,
+            var hit = TargetSight.trace(eye,eye.getDirection(),
                     entity -> entity instanceof Player p && !viewer.equals(p));
             if (hit != null && hit.getHitEntity() instanceof Player p && eligible(p) && viewer.canSee(p)
-                    && viewer.getLocation().distanceSquared(p.getLocation()) <= 576) {
+                    && CombatView.inRange(viewer.getLocation().distanceSquared(p.getLocation()))) {
                 double hp = p.getHealth(), maximum = p.getAttribute(Attribute.MAX_HEALTH).getValue();
-                var title = Component.text(String.format(Locale.ROOT,"%s · %.1f / %.1f HP · 흡수 +%.1f",p.getName(),hp,maximum,p.getAbsorptionAmount()));
+                var view = new CombatView.Observation(p.getUniqueId(),p.getName(),hp,maximum,p.getAbsorptionAmount(),now);
+                var title = Component.text(view.title());
                 float progress = CombatView.ratio(hp, maximum);
                 var bar = old == null ? BossBar.bossBar(title, progress, BossBar.Color.RED, BossBar.Overlay.PROGRESS) : old.bar;
                 if (!title.equals(bar.name())) bar.name(title);
                 if (progress != bar.progress()) bar.progress(progress);
                 if (old == null) viewer.showBossBar(bar);
-                targets.put(id, new Target(p.getUniqueId(),bar,now));
+                targets.put(id, new Target(view,bar));
                 return;
             }
         }
-        if (old != null && now - old.seen >= 500_000_000L) hide(id);
+        if (old != null && !old.view.visible(now)) hide(id);
     }
     private boolean eligible(Player p) { return active.test(p) && p.getGameMode() != GameMode.SPECTATOR; }
     private void hide(UUID id) {
@@ -59,7 +60,7 @@ final class MatchDisplays {
         if (viewer != null && target != null) viewer.hideBossBar(target.bar);
     }
     void detach(UUID id) {
-        for (var entry : List.copyOf(targets.entrySet())) if (entry.getValue().id.equals(id)) hide(entry.getKey());
+        for (var entry : List.copyOf(targets.entrySet())) if (entry.getValue().view.target().equals(id)) hide(entry.getKey());
         hide(id);
         removeBoard(id);
         conflicts.remove(id);
@@ -71,7 +72,7 @@ final class MatchDisplays {
         var side = boards.get(id);
         var current = player.getScoreboard();
         var main = Bukkit.getScoreboardManager().getMainScoreboard();
-        if (side != null && side.board != current || !main.getTeams().isEmpty() || !main.getObjectives().isEmpty()
+        if (side != null && !ownsBoard(side) || side != null && side.board != current || !main.getTeams().isEmpty() || !main.getObjectives().isEmpty()
                 || side == null && current != main) {
             removeBoard(id);
             conflicts.add(id);
@@ -93,10 +94,16 @@ final class MatchDisplays {
             side.objective.getScore(line).setScore(lines.size()-i);
         }
     }
+    private boolean ownsBoard(Sidebar side) {
+        return side.objective.equals(side.board.getObjective(DisplaySlot.SIDEBAR)) && side.board.getObjectives().size() == 1
+                && side.board.getTeams().isEmpty();
+    }
     private void removeBoard(UUID id) {
         var board = boards.remove(id);
         var p = Bukkit.getPlayer(id);
-        if (board != null && p != null && p.getScoreboard() == board.board) p.setScoreboard(board.prior);
+        if (board == null) return;
+        if (p != null && p.getScoreboard() == board.board && ownsBoard(board)) p.setScoreboard(board.prior);
+        if (board.objective.equals(board.board.getObjective("aw_match"))) board.objective.unregister();
     }
     void clear() {
         List.copyOf(targets.keySet()).forEach(this::hide);

@@ -62,7 +62,7 @@ final class CombatFeedback implements Listener {
                 ? Math.max(0,-e.getDamage(EntityDamageEvent.DamageModifier.ABSORPTION)) : 0;
         boolean blocked = e.isApplicable(EntityDamageEvent.DamageModifier.BLOCKING)
                 && e.getDamage(EntityDamageEvent.DamageModifier.BLOCKING) < 0;
-        boolean crit = e instanceof EntityDamageByEntityEvent attack && attack.isCritical();
+        boolean crit = trace.critical() || e instanceof EntityDamageByEntityEvent attack && attack.isCritical();
         String label = trace.synthetic() ? "연쇄 · " + augments.effectName(trace.augment())
                 : trace.augment() != null ? "증강 포함" : e.getCause()==EntityDamageEvent.DamageCause.PROJECTILE ? "원거리" : "공격";
         pending.put(v.getUniqueId(), new Sample(e,p,v,trace.origin()==null ? UUID.randomUUID() : trace.origin(),label,
@@ -80,8 +80,8 @@ final class CombatFeedback implements Listener {
         double health = CombatView.confirmed(s.hp-s.victim.getHealth(),s.expectedHp);
         double abs = CombatView.confirmed(s.absorption-s.victim.getAbsorptionAmount(),s.expectedAbs);
         if (health + abs + s.shield <= 0 && !s.blocked) return;
-        dealt.merge(s.owner.getUniqueId(),health,Double::sum);
-        received.merge(id,health,Double::sum);
+        if (health > 0) dealt.merge(s.owner.getUniqueId(),health,Double::sum);
+        if (health > 0 && s.victim instanceof Player) received.merge(id,health,Double::sum);
         var key = new Group(s.owner.getUniqueId(),id,s.root);
         var hit = groups.computeIfAbsent(key, ignored -> new Hit(s));
         if (!hit.label.equals(s.label)) hit.label = "복합 공격";
@@ -93,7 +93,7 @@ final class CombatFeedback implements Listener {
         Map<Player,List<String>> alerts = new HashMap<>();
         groups.entrySet().removeIf(entry -> {
             Hit h = entry.getValue();
-            if (now - h.start < 200_000_000L) return false;
+            if (now - h.start < CombatView.DAMAGE_WINDOW) return false;
             Player p = Bukkit.getPlayer(entry.getKey().owner);
             if (p != null && eligible(p) && PlayerUi.enabled(p,PlayerUi.Option.DAMAGE)) {
                 String text = h.target + " · " + (h.critical ? "치명타! " : "") + h.label

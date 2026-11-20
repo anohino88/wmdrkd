@@ -302,7 +302,7 @@ final class PaperAugments implements Listener {
         var player = plugin.getServer().getPlayer(id);
         if (player != null) {
             player.sendMessage(definition.name() + (added ? " 증강을 획득했습니다." : " 증강은 이미 활성화돼 있습니다."));
-            player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, .45f,
+            if (PlayerUi.enabled(player,PlayerUi.Option.SOUND)) player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, .45f,
                     definition.rarity() == AugmentRarity.PRISMATIC ? 1.35f : 1f);
         }
     }
@@ -804,7 +804,9 @@ final class PaperAugments implements Listener {
             var a = registry.get(id);
             boolean enabled = a.effect() == Effect.SPEED || profile.timers.active(id, now);
             if (a.effect() == Effect.HEAL && profile.timers.periodic(id, now)) {
-                player.setHealth(Math.min(maxHealth(player), player.getHealth() + a.amount()));
+                double previous = player.getHealth();
+                player.setHealth(Math.min(maxHealth(player),previous + a.amount()));
+                hud.heal(player,previous,player.getHealth());
             }
             profile.timers.expire(id, now);
             var attribute = attribute(a.effect());

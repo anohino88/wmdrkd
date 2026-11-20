@@ -219,8 +219,8 @@ final class PaperSupply implements Listener {
         delivery.arrived = elapsed;
         stats.count(Counter.CREATED);
         notice.accept(label(delivery) + "이 도착했습니다.");
-        location.getWorld().playSound(location, Sound.BLOCK_CHEST_OPEN, 1, .8f);
-        location.getWorld().spawnParticle(Particle.END_ROD, location.clone().add(0, 1, 0), 15, .4, .3, .4, .02);
+        PlayerUi.audience(location,PlayerUi.Option.SOUND,p -> p.playSound(location, Sound.BLOCK_CHEST_OPEN,1,.8f));
+        PlayerUi.audience(location,PlayerUi.Option.PARTICLES,p -> p.spawnParticle(Particle.END_ROD, location.clone().add(0,1,0),15,.4,.3,.4,.02));
     }
 
     private boolean claimable(Delivery delivery) {
@@ -278,8 +278,8 @@ final class PaperSupply implements Listener {
         stats.supplyClaim(delivery.plan.id(), (elapsed - delivery.arrived) / 1_000_000L);
         remove(delivery);
         notice.accept(player.getName() + " 님이 " + label(delivery) + "을 획득했습니다.");
-        player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1, 1.2f);
-        player.getWorld().spawnParticle(Particle.HAPPY_VILLAGER, delivery.position.clone().add(0, .8, 0), 12, .4, .3, .4, .02);
+        if (PlayerUi.enabled(player,PlayerUi.Option.SOUND)) player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1, 1.2f);
+        PlayerUi.audience(delivery.position,PlayerUi.Option.PARTICLES,p -> p.spawnParticle(Particle.HAPPY_VILLAGER,delivery.position.clone().add(0,.8,0),12,.4,.3,.4,.02));
     }
 
     private void remove(Delivery delivery) {

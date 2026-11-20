@@ -23,6 +23,10 @@ final class PlayerUi implements Listener {
     static boolean enabled(Player player, Option option) {
         return !player.getPersistentDataContainer().has(option.key, PersistentDataType.BYTE);
     }
+    static void audience(Location at, Option option, java.util.function.Consumer<Player> send) {
+        for (Player viewer : at.getNearbyPlayers(32))
+            if (enabled(viewer,option)) send.accept(viewer);
+    }
     private static class Menu implements PaperMenu {
         final UUID owner;
         final Inventory inventory;
@@ -54,7 +58,9 @@ final class PlayerUi implements Listener {
     }
     @EventHandler public void click(InventoryClickEvent e) {
         if (!(e.getView().getTopInventory().getHolder() instanceof Menu menu)) return;
+        boolean cancelled = e.isCancelled();
         int slot = PaperMenu.lock(e, false);
+        if (cancelled) return;
         if (!menu.settings || slot < 0 || !(e.getWhoClicked() instanceof Player p) || !p.getUniqueId().equals(menu.owner)) return;
         var option = Option.values()[slot];
         if (enabled(p, option)) p.getPersistentDataContainer().set(option.key, PersistentDataType.BYTE, (byte)1);

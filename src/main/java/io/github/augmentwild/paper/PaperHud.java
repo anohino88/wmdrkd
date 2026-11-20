@@ -26,10 +26,20 @@ final class PaperHud {
         players.computeIfAbsent(id, ignored -> new View()).layers.set(layer, message);
     }
 
+    void skillInput(Player p, String result) {
+        if (PlayerUi.enabled(p,PlayerUi.Option.SKILL))
+            players.computeIfAbsent(p.getUniqueId(),ignored -> new View()).layers.until(Layer.SKILL_INPUT,Component.text(result),System.nanoTime()+1_200_000_000L);
+    }
+    void rescued(Player p,String name) {
+        players.computeIfAbsent(p.getUniqueId(),ignored -> new View()).layers.until(Layer.RESCUE,Component.text("치명 피해 방지 · " + name),System.nanoTime()+1_200_000_000L);
+    }
+    void heal(Player player, double before, double after) {
+        if (after > before) damage(player,String.format(java.util.Locale.ROOT,"회복 +%.1f HP",after-before));
+    }
     void damage(Player p, String text) {
         if (PlayerUi.enabled(p, PlayerUi.Option.DAMAGE))
             players.computeIfAbsent(p.getUniqueId(), ignored -> new View()).layers.until(Layer.DAMAGE,
-                    Component.text(text),System.nanoTime()+1_200_000_000L);
+                    Component.text(text),System.nanoTime()+io.github.augmentwild.domain.CombatView.DAMAGE_VISIBLE);
     }
 
     void proc(Player player, String name) {
@@ -47,7 +57,7 @@ final class PaperHud {
         if (view == null) return;
         if (!PlayerUi.enabled(player,PlayerUi.Option.PROC)) view.layers.remove(Layer.PROC);
         if (!PlayerUi.enabled(player,PlayerUi.Option.DAMAGE)) view.layers.remove(Layer.DAMAGE);
-        if (!PlayerUi.enabled(player,PlayerUi.Option.SKILL)) view.layers.remove(Layer.SKILL);
+        if (!PlayerUi.enabled(player,PlayerUi.Option.SKILL)) { view.layers.remove(Layer.SKILL); view.layers.remove(Layer.SKILL_INPUT); }
         Component next = view.layers.current(now);
         if (!Objects.equals(next, view.sent) || next != null && now - view.refresh >= REFRESH_NANOS) {
             player.sendActionBar(next == null ? Component.empty() : next);

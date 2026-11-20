@@ -2,6 +2,19 @@ package io.github.augmentwild.domain;
 
 public final class CombatView {
     private CombatView() {}
+    public static final int RANGE = 24;
+    public static final long GRACE = 500_000_000L;
+    public static final long DAMAGE_WINDOW = 200_000_000L;
+    public static final long DAMAGE_VISIBLE = 1_200_000_000L;
+    public record Observation(java.util.UUID target, String name, double hp, double max, double absorption, long seen) {
+        public boolean visible(long now) { return now - seen < GRACE; }
+        public String title() {
+            return String.format(java.util.Locale.ROOT,"%s · %.1f / %.1f HP · 흡수 +%.1f",name,hp,max,absorption);
+        }
+    }
+    public static boolean scan(long tick) { return tick % 5 == 0; }
+    public static boolean inRange(double distanceSquared) { return distanceSquared <= RANGE * RANGE; }
+
     public static float ratio(double current, double maximum) {
         return maximum > 0 ? (float) Math.clamp(current / maximum, 0, 1) : 0;
     }

@@ -212,7 +212,7 @@ final class PaperOfficialCombat implements Listener {
     private final Map<EntityDamageEvent, Double> reviewShields = new WeakHashMap<>();
     private final Set<EntityDamageEvent> reviewHeavyFist = Collections.newSetFromMap(new WeakHashMap<>());
 
-    record DamageTrace(UUID origin, String augment, boolean synthetic, double shield) { }
+    record DamageTrace(UUID origin, String augment, boolean synthetic, double shield, boolean critical) { }
 
     DamageTrace trace(EntityDamageEvent event) {
         double shield = reviewShields.getOrDefault(event, 0.0);
@@ -220,9 +220,9 @@ final class PaperOfficialCombat implements Listener {
         var source = event.getDamageSource().getCausingEntity();
         if (context != null && source != null && context.attacker().equals(source.getUniqueId())
                 && context.victim().equals(event.getEntity().getUniqueId())) {
-            return new DamageTrace(context.original(), context.augment(), true, shield);
+            return new DamageTrace(context.original(), context.augment(), true, shield, context.critical());
         }
-        return new DamageTrace(reviewOrigins.get(event), reviewHeavyFist.contains(event) ? "heavy_fist" : null, false, shield);
+        return new DamageTrace(reviewOrigins.get(event), reviewHeavyFist.contains(event) ? "heavy_fist" : null, false, shield, false);
     }
 
     List<String> scoutingCombinations(UUID id) {
@@ -707,6 +707,7 @@ final class PaperOfficialCombat implements Listener {
     private void gainHealth(Player player, double amount, String effect) {
         double previous = player.getHealth();
         player.setHealth(Math.min(maxHealth(player), previous + amount));
+        hud.heal(player,previous,player.getHealth());
         audit.add(effect, Metric.HEALED, player.getHealth() - previous);
     }
 
@@ -1180,7 +1181,7 @@ final class PaperOfficialCombat implements Listener {
     }
     private void visual(Player player, Fighter state, String id, Location at, Particle kind, Sound sound) {
         if (catalog.config.getBoolean(path(id) + "particles")) particle(player, state, kind, at);
-        if (catalog.config.getBoolean(path(id) + "sound")) at.getWorld().playSound(at, sound, .45f, 1.2f);
+        if (catalog.config.getBoolean(path(id) + "sound")) PlayerUi.audience(at, PlayerUi.Option.SOUND, p -> p.playSound(at,sound,.45f,1.2f));
     }
     private void charge(Player player, Fighter state, String id) {
         CombatReaction r = reaction(state, id);
@@ -1378,14 +1379,15 @@ final class PaperOfficialCombat implements Listener {
         if (!player.isSneaking() || state == null || state.skill == null || !owns(player, state.skill)) return;
         event.setCancelled(true);
         String result = cast(player, state.skill);
-        hud.proc(player, result);
+        hud.skillInput(player,result);
     }
 
     String cast(Player player, String id) {
         if (!ACTIVE_SKILLS.contains(id)) return "사용할 수 있는 발동형 증강 ID가 아닙니다.";
+        if (match != null && owns(player,id) && clock.get().isPaused()) return "경기 일시정지 중에는 사용할 수 없습니다.";
         if (!valid(player) || player.getGameMode() == org.bukkit.GameMode.SPECTATOR || !owns(player, id)) return "현재 이 증강을 발동할 수 없습니다.";
         Fighter state = fighter(player.getUniqueId());
-        if (!state.progress.ready(id, now())) return "증강 재사용 대기 중입니다.";
+        if (!state.progress.ready(id, now())) return "재사용 대기 " + state.progress.cooldownRemaining(id,now()) + "초";
         Location before = player.getLocation();
         boolean applied = switch (id) {
             case "shadow_dash", "earthquake_mage" -> {
@@ -1638,10 +1640,9 @@ final class PaperOfficialCombat implements Listener {
             if (before < limit && after >= limit) evolution(attacker, state, "steel_heart");
         }
         if (owns(attacker, "predator") && (!phantom || allowlist.contains("predator")) && every(state, "predator") && ready(attacker, state, "predator")) {
-            double healed = attacker.getHealth() + rule("predator").amount();
             double extra = ReactionRules.overheal(attacker.getHealth(), maxHealth(attacker), rule("predator").amount(),
                     option("predator", "ratio"), option("predator", "cap"));
-            attacker.setHealth(Math.min(maxHealth(attacker), healed));
+            gainHealth(attacker,rule("predator").amount(),"predator");
             if (follow("predator") && extra > 0 && attacker.getAbsorptionAmount() == 0
                     && !attacker.hasPotionEffect(PotionEffectType.ABSORPTION)) {
                 if (reactionPotions.apply(attacker.getUniqueId(), "predator", attacker, new PotionEffect(PotionEffectType.ABSORPTION,
@@ -1828,7 +1829,7 @@ final class PaperOfficialCombat implements Listener {
     }
 
     private void particle(Player player, Fighter state, Particle kind, Location location) {
-        if (particleAvailable(state)) location.getWorld().spawnParticle(kind, location, 1);
+        if (particleAvailable(state)) PlayerUi.audience(location,PlayerUi.Option.PARTICLES, p -> p.spawnParticle(kind,location,1));
     }
 
     private boolean particleAvailable(Fighter state) {
@@ -2096,10 +2097,11 @@ final class PaperOfficialCombat implements Listener {
             var dust = new Particle.DustOptions(org.bukkit.Color.fromRGB(color), 1);
             for (int i = 0; i < 8 && particleAvailable(state); i++) {
                 double angle = i * Math.PI / 4;
-                center.getWorld().spawnParticle(Particle.DUST, center.clone().add(Math.cos(angle), 0, Math.sin(angle)), 1, dust);
+                var point = center.clone().add(Math.cos(angle),0,Math.sin(angle));
+                PlayerUi.audience(point,PlayerUi.Option.PARTICLES,p -> p.spawnParticle(Particle.DUST,point,1,dust));
             }
         }
-        if (catalog.synergies.getBoolean(synergy + ".sound"))
+        if (PlayerUi.enabled(player,PlayerUi.Option.SOUND) && catalog.synergies.getBoolean(synergy + ".sound"))
             player.playSound(center, catalog.synergies.getString(synergy + ".sound-key"), .55f, 1.2f);
     }
 
@@ -2111,7 +2113,8 @@ final class PaperOfficialCombat implements Listener {
         synergyVisual(player, fighter(id), synergy);
         String message = "시너지 활성화 · " + catalog.synergies.getString(synergy + ".name", synergy);
         if (catalog.synergies.getBoolean("announcements.broadcast")) {
-            plugin.getServer().broadcast(net.kyori.adventure.text.Component.text(player.getName() + " · " + message));
+            for (Player recipient : plugin.getServer().getOnlinePlayers())
+                if (PlayerUi.enabled(recipient,PlayerUi.Option.PROC)) recipient.sendMessage(player.getName() + " · " + message);
         } else hud.proc(player, message);
     }
 
@@ -2128,7 +2131,7 @@ final class PaperOfficialCombat implements Listener {
         Player player = plugin.getServer().getPlayer(id);
         if (player == null) return;
         player.sendMessage(message);
-        if (sound) player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, .6f, 1.3f);
+        if (sound && PlayerUi.enabled(player,PlayerUi.Option.SOUND)) player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, .6f, 1.3f);
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -2155,7 +2158,7 @@ final class PaperOfficialCombat implements Listener {
             if (state != null) {
                 if (owns(killer, "heart_harvester")) {
                     grant(state, "heart_harvester", catalog.count("heart-harvester-player-stacks"));
-                    killer.setHealth(Math.min(maxHealth(killer), killer.getHealth() + catalog.setting("heart-harvester-player-heal")));
+                    gainHealth(killer,catalog.setting("heart-harvester-player-heal"),"heart_harvester");
                 }
                 if (owns(killer, "endless_evolution")) {
                     grant(state, "endless_evolution", catalog.count("endless-evolution-player-stacks"));
@@ -2182,7 +2185,7 @@ final class PaperOfficialCombat implements Listener {
         if (killed instanceof Player && !member.test(id) || !arena.test(killed.getLocation())) return;
         if (owns(killer, "bounty_hunter") && id.equals(state.bountyTarget) && state.bountyUntil > now()) {
             state.bountyTarget = null;
-            killer.setHealth(Math.min(maxHealth(killer), killer.getHealth() + catalog.setting("bounty-heal")));
+            gainHealth(killer,catalog.setting("bounty-heal"),"bounty_hunter");
             killer.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, catalog.count("bounty-speed-seconds") * 20, 1));
         }
         Long poisonedUntil = state.poisoned.remove(id);
@@ -2420,7 +2423,7 @@ final class PaperOfficialCombat implements Listener {
                 && event.getDamage(EntityDamageEvent.DamageModifier.BLOCKING) < 0 && ready(player, state, "counter_shield")) {
             state.counterReady = true;
             triad(player, state, Action.REACTION);
-            afterDamage(player, () -> player.setHealth(Math.min(maxHealth(player), player.getHealth() + catalog.setting("shield-heal"))));
+            afterDamage(player, () -> gainHealth(player,catalog.setting("shield-heal"),"counter_shield"));
         }
         if (event.getFinalDamage() <= 0) return;
         if (owns(player, "wound_record")) {
@@ -2456,7 +2459,7 @@ final class PaperOfficialCombat implements Listener {
             player.addPotionEffect(new PotionEffect(PotionEffectType.RESISTANCE, seconds * 20, 0));
         }
         if (owns(player, "survival_instinct") && fraction <= catalog.setting("instinct-low-health") && ready(player, state, "survival_instinct")) {
-            player.setHealth(Math.min(maxHealth(player), player.getHealth() + rule("survival_instinct").amount()));
+            gainHealth(player,rule("survival_instinct").amount(),"survival_instinct");
             player.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, rule("survival_instinct").duration() * 20, 1));
         }
     }
@@ -2471,7 +2474,7 @@ final class PaperOfficialCombat implements Listener {
             grant(state, "iron_stomach", 1);
         }
         if (ready(player, state, "iron_stomach")) {
-            player.setHealth(Math.min(maxHealth(player), player.getHealth() + catalog.setting("iron-stomach-heal")));
+            gainHealth(player,catalog.setting("iron-stomach-heal"),"iron_stomach");
         }
     }
 
@@ -2509,6 +2512,7 @@ final class PaperOfficialCombat implements Listener {
             return player.getHealth() > 0;
         });
         if (applied == null) return;
+        hud.rescued(player,rule(applied).definition().name());
         audit.add(applied, Metric.REVIVED, 1);
         announceProc(player, applied);
         if (audit.sampleAvailable()) audit.sample(now(), "revive actor=" + audit.actor(id) + " effect=" + applied
@@ -2518,7 +2522,7 @@ final class PaperOfficialCombat implements Listener {
         if (shield.shieldPoints() > 0) {
             state.shield.grant(clock.get().elapsedNanos(), shield.shieldPoints(), shield.shieldNanos());
             updateShieldDisplay(player, state);
-            if (resonance.announce() && resonance.sound()) player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, .45f, 1.4f);
+            if (resonance.announce() && resonance.sound() && PlayerUi.enabled(player,PlayerUi.Option.SOUND)) player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, .45f, 1.4f);
             if (resonance.announce() && resonance.particles()) particle(player, state, Particle.END_ROD, player.getLocation().add(0, 1, 0));
         }
         if (applied.equals("immortal_berserker")) {

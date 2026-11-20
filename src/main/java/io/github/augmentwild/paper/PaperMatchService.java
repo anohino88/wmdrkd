@@ -435,7 +435,7 @@ public final class PaperMatchService implements Listener {
     }
 
     private void clearMatch() {
-        boolean played = clock != null && regionCommitted;
+        boolean played = clock != null;
         if (played) feedback.tick(System.nanoTime());
         displays.clear();
         search.cancel();
@@ -462,7 +462,7 @@ public final class PaperMatchService implements Listener {
                     }
                     lines.add("처치 " + telemetry.kills(id) + " · 사망 " + telemetry.deaths(id));
                     lines.add(feedback.totals(id));
-                    lines.add("생존 시간 " + io.github.augmentwild.domain.CombatView.time(outAt.getOrDefault(id,clock.elapsedSeconds())));
+                    lines.add("생존 시간 " + io.github.augmentwild.domain.CombatView.time(outAt.getOrDefault(id,clock.elapsedNanos()) / 1_000_000_000L));
                     lines.add("스킬 사용 " + augments.skillUses(id));
                     lines.add("보유 증강 · " + String.join(", ",augments.ownedNames(id)));
                     lines.addAll(telemetry.attained(id));
@@ -539,9 +539,9 @@ public final class PaperMatchService implements Listener {
             }
             for (var entry : deaths.entrySet()) {
                 UUID id = entry.getKey();
-                if (!session.applyDeath(entry.getValue())) continue;
+                if (!contains(id) || !session.applyDeath(entry.getValue())) continue;
                 boolean eliminated = session.player(id).life().status() == LifeState.Status.ELIMINATED;
-                if (eliminated) outAt.putIfAbsent(id,clock.elapsedSeconds());
+                if (eliminated) outAt.putIfAbsent(id,clock.elapsedNanos());
                 String feed = causes.get(id) + (eliminated ? " · 최종 탈락" : " · 사망");
                 for (UUID viewer : session.participantIds()) {
                     Player p = plugin.getServer().getPlayer(viewer);
@@ -642,7 +642,7 @@ public final class PaperMatchService implements Listener {
             clock.selection().isPresent() ? "선택 진행 중" : next < 0 ? "증강 선택 종료" : "다음 증강 " + io.github.augmentwild.domain.CombatView.time(next),
             supply.guide(player,false), elapsed < start ? "축소 시작 " + io.github.augmentwild.domain.CombatView.time(start-elapsed)
                     : elapsed < end ? "축소 종료 " + io.github.augmentwild.domain.CombatView.time(end-elapsed) : "축소 완료",
-            "안전 구역 폭 " + Math.round(border.area(elapsed).width()), "남은 목숨 " + (elapsed < start ? "무제한" : session.player(id).life().lives()));
+            "안전 구역 폭 " + Math.round(border.area(elapsed).width()), "남은 목숨 " + (elapsed < start ? "무제한" : session.state() == MatchState.SUDDEN_DEATH ? "부활 불가" : session.player(id).life().lives()));
     }
 
     private boolean outsideArena(Player player, Location destination) {
