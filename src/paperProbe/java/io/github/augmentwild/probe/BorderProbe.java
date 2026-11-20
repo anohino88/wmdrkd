@@ -114,6 +114,7 @@ public final class BorderProbe extends JavaPlugin implements Listener {
             require(Math.abs(speed.getValue() - initialSpeed * 1.16) < .000001, "stack growth replaces existing modifier");
             PaperAugmentAttribute.update(speed, key, .16, AttributeModifier.Operation.ADD_SCALAR, false);
             require(speed.getModifier(key) == null && speed.getValue() == initialSpeed, "modifier restore");
+            HudProbe.run(testPig);
             verifyAugmentCatalog();
             verifySyntheticDamage(testPig);
             verifyRicochet(spawn, testPig);
@@ -220,11 +221,17 @@ public final class BorderProbe extends JavaPlugin implements Listener {
             var east = new Vector(1, 0, 0);
             var hit = point.getWorld().rayTrace(eye, east, 48, FluidCollisionMode.NEVER, true, 0, entity -> entity.equals(visible));
             require(hit != null && visible.equals(hit.getHitEntity()), "unobstructed Paper ray");
+            require(io.github.augmentwild.paper.TargetSight.trace(eye,east,visible::equals).getHitEntity() == visible,
+                    "24-block target HUD ray");
+            var far = eye.clone().subtract(25,0,0);
+            var farHit = io.github.augmentwild.paper.TargetSight.trace(far,east,visible::equals);
+            require(farHit == null || farHit.getHitEntity() == null, "HUD range excludes distant target");
             var shortRay = point.getWorld().rayTrace(eye, east, 3, FluidCollisionMode.NEVER, true, 0, entity -> entity.equals(visible));
             require(shortRay == null, "distance cap");
             obstacle.setType(Material.STONE, false);
             var blocked = point.getWorld().rayTrace(eye, east, 48, FluidCollisionMode.NEVER, true, 0, entity -> entity.equals(visible));
             require(blocked != null && obstacle.equals(blocked.getHitBlock()) && blocked.getHitEntity() == null, "wall blocks sight");
+            require(io.github.augmentwild.paper.TargetSight.trace(eye,east,visible::equals).getHitEntity()==null,"HUD wall occlusion");
         } finally {
             if (pig != null) pig.remove();
             obstacle.setBlockData(oldObstacle, false);

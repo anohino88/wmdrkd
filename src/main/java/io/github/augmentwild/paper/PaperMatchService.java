@@ -74,6 +74,16 @@ public final class PaperMatchService implements Listener {
     private final Map<UUID,Long> outAt = new LinkedHashMap<>();
     private final Map<UUID,String> causes = new LinkedHashMap<>();
     private int entrants;
+    private final Set<UUID> displayFailures = new LinkedHashSet<>();
+    private void updateDisplay(Player player, Runnable update) {
+        if (displayFailures.contains(player.getUniqueId())) return;
+        try {
+            update.run();
+        } catch (RuntimeException failure) {
+            displayFailures.add(player.getUniqueId());
+            plugin.getLogger().log(Level.WARNING,"개인 경기 화면 갱신 중단",failure);
+        }
+    }
     private final MatchTelemetry telemetry = new MatchTelemetry();
 
     public PaperMatchService(JavaPlugin plugin, PaperMatchSettings settings, ArenaSearchService search) {
@@ -400,6 +410,7 @@ public final class PaperMatchService implements Listener {
         augments.start(session.matchId(), clock, labWorld != null);
         entrants = players.size();
         results.clear();
+        displayFailures.clear();
         telemetry.start(players);
         intel.start(session.matchId());
         sender.sendMessage("경기가 시작됐습니다. 파밍 중 PvP 허용, 목숨 무제한.");
@@ -501,7 +512,8 @@ public final class PaperMatchService implements Listener {
         clock = null;
         for (UUID id : captured) {
             Player player = available(id);
-            if (player != null && snapshots.restore(player, this::move) && played && plugin.isEnabled() && results.containsKey(id)) PlayerUi.result(player,results.get(id));
+            if (player != null && snapshots.restore(player, this::move) && played && plugin.isEnabled() && results.containsKey(id))
+                updateDisplay(player,() -> PlayerUi.result(player,results.get(id)));
         }
         captured.clear();
         permits.clear();
@@ -606,10 +618,10 @@ public final class PaperMatchService implements Listener {
             var round = clock.selection().orElse(null);
             for (UUID id : activeSession.participantIds()) {
                 Player player = plugin.getServer().getPlayer(id);
-                if (player != null) {
+                if (player != null) updateDisplay(player,() -> {
                     displays.aim(player,tickNumber,realTime);
                     if (tickNumber % 20 == 1) displays.sidebar(player,sidebar(player));
-                }
+                });
                 if (player == null || !augmentActive(player)) {
                     hud.clear(id, player);
                     continue;

@@ -10,16 +10,31 @@ import org.bukkit.attribute.Attribute;
 import org.bukkit.entity.Player;
 import org.bukkit.scoreboard.*;
 
-final class MatchDisplays {
+public final class MatchDisplays {
     private record Target(CombatView.Observation view, BossBar bar) {}
     private record Sidebar(Scoreboard prior, Scoreboard board, Objective objective, Map<Integer,String> lines) {}
     private final Map<UUID,Target> targets = new HashMap<>();
     private final Map<UUID,Sidebar> boards = new HashMap<>();
     private final Set<UUID> conflicts = new HashSet<>();
     private final Predicate<Player> active;
-    MatchDisplays(Predicate<Player> active) { this.active = active; }
+    private final java.util.function.Function<UUID,Player> online;
+    private final java.util.function.Function<Player,Player> sight;
 
-    void aim(Player viewer, long tick, long now) {
+    MatchDisplays(Predicate<Player> active) { this(active,Bukkit::getPlayer,MatchDisplays::look); }
+
+    public MatchDisplays(Predicate<Player> active, java.util.function.Function<UUID,Player> online,
+                         java.util.function.Function<Player,Player> sight) {
+        this.active = active;
+        this.online = online;
+        this.sight = sight;
+    }
+    private static Player look(Player viewer) {
+        var eye = viewer.getEyeLocation();
+        var hit = TargetSight.trace(eye,eye.getDirection(),entity -> entity instanceof Player p && !viewer.equals(p));
+        return hit != null && hit.getHitEntity() instanceof Player p ? p : null;
+    }
+
+    public void aim(Player viewer, long tick, long now) {
         UUID id = viewer.getUniqueId();
         Target old = targets.get(id);
         if (!eligible(viewer) || !PlayerUi.enabled(viewer, PlayerUi.Option.HEALTH)) {
@@ -27,17 +42,15 @@ final class MatchDisplays {
             return;
         }
         if (old != null) {
-            var prior = Bukkit.getPlayer(old.view.target());
+            var prior = online.apply(old.view.target());
             if (prior == null || !eligible(prior) || !viewer.getWorld().equals(prior.getWorld())) {
                 hide(id);
                 old = null;
             }
         }
         if (CombatView.scan(tick)) {
-            var eye = viewer.getEyeLocation();
-            var hit = TargetSight.trace(eye,eye.getDirection(),
-                    entity -> entity instanceof Player p && !viewer.equals(p));
-            if (hit != null && hit.getHitEntity() instanceof Player p && eligible(p) && viewer.canSee(p)
+            Player p = sight.apply(viewer);
+            if (p != null && eligible(p) && viewer.canSee(p)
                     && CombatView.inRange(viewer.getLocation().distanceSquared(p.getLocation()))) {
                 double hp = p.getHealth(), maximum = p.getAttribute(Attribute.MAX_HEALTH).getValue();
                 var view = new CombatView.Observation(p.getUniqueId(),p.getName(),hp,maximum,p.getAbsorptionAmount(),now);
@@ -56,7 +69,7 @@ final class MatchDisplays {
     private boolean eligible(Player p) { return active.test(p) && p.getGameMode() != GameMode.SPECTATOR; }
     private void hide(UUID id) {
         var target = targets.remove(id);
-        Player viewer = Bukkit.getPlayer(id);
+        Player viewer = online.apply(id);
         if (viewer != null && target != null) viewer.hideBossBar(target.bar);
     }
     void detach(UUID id) {
@@ -65,7 +78,7 @@ final class MatchDisplays {
         removeBoard(id);
         conflicts.remove(id);
     }
-    void sidebar(Player player, List<String> lines) {
+    public void sidebar(Player player, List<String> lines) {
         UUID id = player.getUniqueId();
         if (!PlayerUi.enabled(player, PlayerUi.Option.SIDEBAR)) { removeBoard(id); return; }
         if (conflicts.contains(id)) return;
@@ -95,17 +108,17 @@ final class MatchDisplays {
         }
     }
     private boolean ownsBoard(Sidebar side) {
-        return side.objective.equals(side.board.getObjective(DisplaySlot.SIDEBAR)) && side.board.getObjectives().size() == 1
+        return side.board.getObjective(DisplaySlot.SIDEBAR) != null && side.board.getObjective(DisplaySlot.SIDEBAR).getName().equals("aw_match") && side.board.getObjectives().size() == 1
                 && side.board.getTeams().isEmpty();
     }
     private void removeBoard(UUID id) {
         var board = boards.remove(id);
-        var p = Bukkit.getPlayer(id);
+        var p = online.apply(id);
         if (board == null) return;
         if (p != null && p.getScoreboard() == board.board && ownsBoard(board)) p.setScoreboard(board.prior);
-        if (board.objective.equals(board.board.getObjective("aw_match"))) board.objective.unregister();
+
     }
-    void clear() {
+    public void clear() {
         List.copyOf(targets.keySet()).forEach(this::hide);
         List.copyOf(boards.keySet()).forEach(this::removeBoard);
         conflicts.clear();
