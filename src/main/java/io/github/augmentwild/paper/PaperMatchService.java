@@ -77,6 +77,8 @@ public final class PaperMatchService implements Listener {
     private final Set<UUID> entrants = new LinkedHashSet<>();
     private final Map<UUID,List<String>> departureStats = new LinkedHashMap<>();
     private final Map<UUID,UUID> creditedKillers = new LinkedHashMap<>();
+    private final Map<UUID,Integer> killStreaks = new LinkedHashMap<>();
+    private final Set<UUID> augmentKills = new LinkedHashSet<>();
     private final Set<UUID> displayFailures = new LinkedHashSet<>();
     private void updateDisplay(Player player, Runnable update) {
         if (displayFailures.contains(player.getUniqueId())) return;
@@ -155,6 +157,7 @@ public final class PaperMatchService implements Listener {
                 && border.area(clock.elapsedSeconds()).contains(location.getX(), location.getZ(), 0);
     }
 
+    public String combatLog(Player p) { return hud.combatLog(p); }
     public String skill(Player player, String[] args) { return augments.skill(player, args); }
     public String castAugment(Player player, String id) { return augments.cast(player, id); }
     public String openAugments(Player player) { return augments.open(player); }
@@ -468,6 +471,8 @@ public final class PaperMatchService implements Listener {
             var result = session.cancel();
             if (session.state() == MatchState.ENDING) session.transition(MatchState.CLEANUP);
             if (played) {
+                Player victor = result.winner() == null ? null : plugin.getServer().getPlayer(result.winner());
+                if (victor != null) killEffect(victor,"최종 우승",org.bukkit.Sound.UI_TOAST_CHALLENGE_COMPLETE,org.bukkit.Particle.END_ROD);
                 for (UUID id : entrants) {
                     var lines = new java.util.ArrayList<String>();
                     lines.add(result.winner() == null ? (result.outcome() == GameSession.Outcome.DRAW ? "무승부" : "경기 중단")
@@ -501,6 +506,8 @@ public final class PaperMatchService implements Listener {
         var stats = telemetry.finish();
         if (!stats.isEmpty()) plugin.getLogger().info("Match feature totals match=" + session.matchId()
                 + " mode=" + mode + " " + new java.util.TreeMap<>(stats));
+        killStreaks.clear();
+        augmentKills.clear();
         feedback.clear();
         entrants.clear();
         departureStats.clear();
@@ -558,13 +565,28 @@ public final class PaperMatchService implements Listener {
                 if (player != null) snapshots.restore(player, this::move);
             }
             var feed = new java.util.ArrayList<String>();
+            var fallen = new java.util.ArrayList<UUID>();
             for (var entry : deaths.entrySet()) {
                 UUID id = entry.getKey();
                 if (!contains(id) || !session.applyDeath(entry.getValue())) continue;
-                telemetry.death(id,creditedKillers.remove(id));
+                UUID killer = creditedKillers.remove(id);
+                telemetry.death(id,killer);
+                fallen.add(id);
                 boolean eliminated = session.player(id).life().status() == LifeState.Status.ELIMINATED;
                 if (eliminated) outAt.putIfAbsent(id,clock.elapsedNanos());
-                feed.add(io.github.augmentwild.domain.CombatView.feed(causes.get(id),eliminated));
+                String message = io.github.augmentwild.domain.CombatView.feed(causes.get(id),eliminated);
+                if (killer != null && !killer.equals(id)) {
+                    int streak = killStreaks.merge(killer,1,Integer::sum);
+                    if (streak > 1) message += " · " + streak + "연속 처치";
+                    Player credited = plugin.getServer().getPlayer(killer);
+                    if (credited != null) {
+                        String effect = eliminated ? "최종 탈락 확정" : augmentKills.contains(id) ? "증강 처치" : "처치";
+                        killEffect(credited,streak > 1 ? effect + " · " + streak + "연속" : effect,
+                                eliminated ? org.bukkit.Sound.ENTITY_PLAYER_LEVELUP : org.bukkit.Sound.BLOCK_NOTE_BLOCK_PLING,
+                                augmentKills.contains(id) ? org.bukkit.Particle.ENCHANT : org.bukkit.Particle.CRIT);
+                    }
+                }
+                feed.add(message);
             }
             if (!feed.isEmpty()) {
                 String message = String.join("  |  ",feed);
@@ -573,6 +595,8 @@ public final class PaperMatchService implements Listener {
                     if (p != null && PlayerUi.enabled(p,PlayerUi.Option.FEED)) p.sendMessage(message);
                 }
             }
+            fallen.forEach(killStreaks::remove);
+            augmentKills.clear();
             causes.clear();
             creditedKillers.clear();
             departures.clear();
@@ -648,12 +672,26 @@ public final class PaperMatchService implements Listener {
                 if (supply.isOpening(id)) hud.set(id, Layer.SUPPLY, Component.text("보급 개봉 중 · 이동하거나 피격되면 중단됩니다."));
                 else hud.remove(id, Layer.SUPPLY);
                 if (clock.isPaused()) hud.remove(id, Layer.PROC);
+                hud.crisis(player,realTime);
+                if (tickNumber % 5 == 1) {
+                    hud.border(player,frame.area(),elapsed >= shrinkStart && elapsed < shrinkStart + settings.rules().shrinkSeconds());
+                    hud.status(player,augments.timedStates(id),Math.floorDiv(realTime,1_000_000_000L));
+                }
                 hud.render(player, realTime);
             }
         } catch (RuntimeException failure) {
             plugin.getLogger().log(Level.SEVERE, "Match tick failed", failure);
             clearMatch();
         }
+    }
+
+    private void killEffect(Player p, String label, org.bukkit.Sound sound, org.bukkit.Particle particle) {
+        if (!PlayerUi.enabled(p,PlayerUi.Option.KILL_FX)) return;
+        p.showTitle(net.kyori.adventure.title.Title.title(Component.empty(), Component.text(label),
+                net.kyori.adventure.title.Title.Times.times(java.time.Duration.ZERO,
+                        java.time.Duration.ofMillis(750),java.time.Duration.ofMillis(200))));
+        if (PlayerUi.enabled(p,PlayerUi.Option.SOUND)) p.playSound(p.getLocation(),sound,.45f,1.3f);
+        if (PlayerUi.enabled(p,PlayerUi.Option.PARTICLES)) p.spawnParticle(particle,p.getEyeLocation().add(0,.25,0),4);
     }
 
     private List<String> resultLines(UUID id) {
@@ -815,6 +853,7 @@ public final class PaperMatchService implements Listener {
                     ? attacker.getName() + " ⚔ " : source == null ? "환경 피해 · " : "생물 또는 기타 피해 · ";
             var last = event.getEntity().getLastDamageCause();
             var trace = last == null ? null : augments.trace(last);
+            if (trace != null && trace.synthetic() && trace.augment() != null) augmentKills.add(id);
             causes.put(id,cause + event.getEntity().getName() + (trace != null && trace.synthetic() && trace.augment()!=null
                     ? " · " + augments.effectName(trace.augment()) : ""));
             feedback.settle(id);

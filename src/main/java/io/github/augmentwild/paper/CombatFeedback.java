@@ -13,7 +13,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 final class CombatFeedback implements Listener {
     private record Sample(EntityDamageEvent event, Player owner, LivingEntity victim, UUID root, String label,
                           CombatView.Receipt receipt, double shield,
-                          boolean critical, boolean blocked, Location impact, long time) {}
+                          boolean critical, boolean blocked, Location impact, long time, String incoming, String source) {}
 
     private static final class Hit {
         final long start;
@@ -24,6 +24,33 @@ final class CombatFeedback implements Listener {
         boolean critical, blocked;
         Hit(Sample s) { start = s.time; at = s.impact; target = s.victim.getName(); label = s.label; }
     }
+    private record Launch(UUID shooter, Location at) {}
+    private final Map<Projectile,Launch> launches = new WeakHashMap<>();
+
+    @EventHandler(priority=EventPriority.MONITOR, ignoreCancelled=true)
+    public void launch(ProjectileLaunchEvent event) {
+        Projectile projectile = event.getEntity();
+        if (projectile.getShooter() instanceof LivingEntity shooter && arena.test(projectile.getLocation()))
+            launches.put(projectile,new Launch(shooter.getUniqueId(),projectile.getLocation()));
+    }
+
+    private String direction(EntityDamageEvent event, Player victim, boolean synthetic) {
+        if (synthetic || !(event instanceof EntityDamageByEntityEvent hit)) return null;
+        var source = event.getDamageSource().getCausingEntity();
+        if (!(source instanceof LivingEntity) || victim.equals(source)
+                || source instanceof Player player && !eligible(player)) return null;
+        Location origin = null;
+        if (hit.getDamager() instanceof Projectile projectile) {
+            var launch = launches.get(projectile);
+            if (launch != null && source.getUniqueId().equals(launch.shooter())) origin = launch.at();
+        } else if (hit.getDamager().equals(source) && (event.getCause() == EntityDamageEvent.DamageCause.ENTITY_ATTACK
+                || event.getCause() == EntityDamageEvent.DamageCause.ENTITY_SWEEP_ATTACK)) origin = source.getLocation();
+        var at = victim.getLocation();
+        if (origin == null || !at.getWorld().equals(origin.getWorld())) return null;
+        String arrow = io.github.augmentwild.domain.CombatNavigation.bearing(origin.getX()-at.getX(),origin.getZ()-at.getZ(),at.getYaw());
+        return arrow.isEmpty() ? null : "피격 방향 " + arrow;
+    }
+
     private final Map<UUID,Sample> pending = new HashMap<>();
     private record Heal(EntityRegainHealthEvent event, Player player, double before, double expected) {}
     private final Map<UUID,Heal> heals = new HashMap<>();
@@ -69,21 +96,36 @@ final class CombatFeedback implements Listener {
         boolean crit = trace.critical() || e instanceof EntityDamageByEntityEvent attack && attack.isCritical();
         String label = trace.synthetic() ? "연쇄 · " + augments.effectName(trace.augment())
                 : trace.augment() != null ? "증강 포함" : e.getCause()==EntityDamageEvent.DamageCause.PROJECTILE ? "원거리" : "공격";
+        var source = e.getDamageSource().getCausingEntity();
+        boolean environmental = source == null && !(e instanceof EntityDamageByEntityEvent);
+        String incoming = v instanceof Player victim ? direction(e,victim,trace.synthetic()) : null;
+        if (environmental) incoming = "환경 피해";
+        String sourceName = source instanceof LivingEntity ? source.getName() : environmental ? "환경 · " + e.getCause().name() : "출처 미확인";
         pending.put(v.getUniqueId(), new Sample(e,p,v,trace.origin()==null ? UUID.randomUUID() : trace.origin(),label,
                 DamageObservation.capture(e,v),
-                trace.shield(),crit,blocked,v.getEyeLocation(),System.nanoTime()));
+                trace.shield(),crit,blocked,v.getEyeLocation(),System.nanoTime(),incoming,sourceName));
     }
     void settle(UUID id) {
         Heal h = heals.remove(id);
         if (h != null && !h.event.isCancelled()) {
             double gain = CombatView.confirmed(h.player.getHealth()-h.before,h.expected);
-            if (gain > 0 && eligible(h.player)) hud.damage(h.player,"회복 +" + fmt(gain) + " HP");
+            if (gain > 0 && eligible(h.player)) hud.heal(h.player,0,gain);
         }
         Sample s = pending.remove(id);
         if (s == null || s.event.isCancelled()) return;
         var observed = s.receipt.confirm(DamageObservation.read(s.victim),false);
         double health = observed.hp(), abs = observed.absorption();
         if (health + abs + s.shield <= 0 && !s.blocked) return;
+        if (health + abs + s.shield > 0) {
+            String debit = (health > 0 ? " 체력 −" + fmt(health) : "")
+                    + (abs > 0 ? " 흡수 −" + fmt(abs) : "") + (s.shield > 0 ? " 보호막 −" + fmt(s.shield) : "");
+            if (s.victim instanceof Player victim) {
+                hud.record(victim,"피격 · " + s.source + debit);
+                if (s.incoming != null) hud.incoming(victim,s.incoming,s.time+1_000_000_000L);
+                else hud.remove(id,io.github.augmentwild.domain.HudMessages.Layer.INCOMING);
+            }
+            if (s.owner != null) hud.record(s.owner,"공격 · " + s.victim.getName() + " · " + s.label + debit);
+        }
         if (health > 0 && s.victim instanceof Player) received.merge(id,health,Double::sum);
         if (s.owner == null) return;
         if (health > 0) dealt.merge(s.owner.getUniqueId(),health,Double::sum);
@@ -148,7 +190,7 @@ final class CombatFeedback implements Listener {
     String totals(UUID id) { return "확인한 체력 피해 · 가한 " + fmt(dealt.getOrDefault(id,0d)) + " / 받은 " + fmt(received.getOrDefault(id,0d)); }
     private static String fmt(double v) { return String.format(Locale.ROOT,"%.1f",v); }
     void clear() {
-        ready.clear(); pending.clear(); heals.clear(); groups.clear(); seen.clear(); dealt.clear(); received.clear();
+        launches.clear(); ready.clear(); pending.clear(); heals.clear(); groups.clear(); seen.clear(); dealt.clear(); received.clear();
         numbers.keySet().forEach(TextDisplay::remove); numbers.clear();
     }
 }

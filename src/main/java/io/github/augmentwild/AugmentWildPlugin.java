@@ -94,6 +94,7 @@ public final class AugmentWildPlugin extends JavaPlugin {
         }
         if (args.length != 1) return false;
         switch (args[0].toLowerCase(Locale.ROOT)) {
+            case "combatlog" -> sender.sendMessage(sender instanceof Player p ? matches.combatLog(p) : "플레이어 전용 명령입니다.");
             case "ui" -> sender.sendMessage(sender instanceof Player p ? matches.ui(p) : "플레이어 전용 명령입니다.");
             case "supply" -> sender.sendMessage(sender instanceof Player p ? matches.guide(p) : "플레이어 전용 명령입니다.");
             case "result" -> sender.sendMessage(sender instanceof Player p ? matches.result(p) : "플레이어 전용 명령입니다.");

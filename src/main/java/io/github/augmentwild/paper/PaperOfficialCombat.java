@@ -3,6 +3,7 @@ package io.github.augmentwild.paper;
 import io.github.augmentwild.augment.AugmentBalance;
 import io.github.augmentwild.augment.AugmentCombinations;
 import io.github.augmentwild.augment.AugmentEvolution;
+import io.github.augmentwild.augment.SkillSlots;
 import io.github.augmentwild.augment.AugmentProgress;
 import io.github.augmentwild.augment.AugmentResonance;
 import io.github.augmentwild.augment.ResonanceShield;
@@ -115,8 +116,10 @@ final class PaperOfficialCombat implements Listener {
         final Map<String, CombatReaction> reactions = new HashMap<>();
         final List<Pending> pending = new ArrayList<>();
         int skillUses;
-        String skill;
-        boolean skillCooling;
+        final SkillSlots slots = new SkillSlots();
+        final Set<String> growthNotices = new HashSet<>();
+        String completingMember;
+        String coolingSkill;
         long hudSecond = -1, bastionVisualSecond = -1;
         boolean hudAvailable;
         final Map<String, Long> lastVisual = new HashMap<>();
@@ -125,6 +128,7 @@ final class PaperOfficialCombat implements Listener {
         final Set<String> lateChecked = new HashSet<>();
         AugmentResonance.State resonance;
         double shieldShownPoints;
+        long shieldShownSeconds;
         double overgrowthAward;
         long acquiredGrowth, lastBerserkHit = -1, lastSecond = -1;
         final MovementProgress movement = new MovementProgress();
@@ -286,7 +290,9 @@ final class PaperOfficialCombat implements Listener {
             if (resonance.lateLog()) plugin.getLogger().info("late-growth " + augment + " second=" + now()
                     + " proposed=" + adjustment + " enabled=" + resonance.lateEnabled());
         }
-        refreshSynergies(id, state);
+        state.completingMember = augment;
+        try { refreshSynergies(id, state); }
+        finally { state.completingMember = null; }
     }
 
     void lost(UUID id, String augment, boolean experiment) {
@@ -295,10 +301,9 @@ final class PaperOfficialCombat implements Listener {
         reactionPotions.clear(id, augment);
         state.reactions.remove(augment);
         state.pending.removeIf(task -> task.id().equals(augment));
-        if (augment.equals(state.skill)) {
-            state.skill = null;
-            hud.remove(id, Layer.SKILL);
-        }
+        state.slots.remove(augment);
+        state.hudSecond = -1;
+        hud.remove(id, Layer.SKILL);
         state.progress.reset(augment);
         state.progress.reset("hits:" + augment);
         state.progress.reset("revive:" + augment);
@@ -673,10 +678,13 @@ final class PaperOfficialCombat implements Listener {
             if (state.shieldShownPoints > 0) hud.proc(player, "생명의 잔향 보호막 종료");
             hud.remove(id, Layer.SHIELD);
             state.shieldShownPoints = 0;
-        } else if (points != state.shieldShownPoints) {
+        } else {
+            long seconds = Math.ceilDiv(state.shield.timeLeft(clock.get().elapsedNanos()),1_000_000_000L);
+            if (points == state.shieldShownPoints && seconds == state.shieldShownSeconds) return;
+            state.shieldShownSeconds = seconds;
             state.shieldShownPoints = points;
             hud.set(id, Layer.SHIELD, net.kyori.adventure.text.Component.text(resonance.families().revival().name()
-                    + " · " + String.format(Locale.ROOT, "%.1f", points / 2) + "하트"));
+                    + " · " + String.format(Locale.ROOT, "%.1f", points / 2) + "하트 · " + seconds + "초"));
         }
     }
 
@@ -1307,26 +1315,61 @@ final class PaperOfficialCombat implements Listener {
         reactionPotions.apply(player.getUniqueId(), id, player, new PotionEffect(PotionEffectType.SPEED, (int) option(id, "speed-ticks"), 0));
     }
 
+    List<String> timedStates(UUID id) {
+        var state = fighters.get(id);
+        if (state == null) return List.of();
+        var rows = new ArrayList<String>();
+        addTimed(rows,"그림자 질주",state.shadowUntil);
+        addTimed(rows,"불멸의 광전사",state.immortalUntil);
+        addTimed(rows,"결투 계약",state.duelUntil);
+        addTimed(rows,"최후의 악마",state.lastDemonUntil);
+        addTimed(rows,"자연 회복 제한",state.naturalRegenBlockedUntil);
+        return rows;
+    }
+
+    private void addTimed(List<String> lines, String label, long until) {
+        if (until > now()) lines.add(label + " " + (until-now()) + "초");
+    }
+
     int skillUses(UUID id) { var f = fighters.get(id); return f == null ? 0 : f.skillUses; }
     String skill(Player player, String[] args) {
         var state = fighters.get(player.getUniqueId());
         if (state == null) return "지정한 발동형 스킬이 없습니다.";
         String op = args[1].toLowerCase(Locale.ROOT);
-        if (args.length == 3 && op.equals("bind")) {
-            String id = args[2].toLowerCase(Locale.ROOT);
+        var slots = state.slots;
+        String usage = "/aw skill bind [1-3] <id> | select <1-3> | next | unbind | use | status";
+        if (op.equals("bind") && (args.length == 3 || args.length == 4)) {
+            int slot = args.length == 3 ? slots.selected() : parseSlot(args[2]);
+            String id = args[args.length-1].toLowerCase(Locale.ROOT);
             if (!ACTIVE_SKILLS.contains(id) || !owns(player, id)) return "보유한 발동형 증강을 지정하세요.";
-            state.skill = id;
-            state.skillCooling = false;
-            state.hudSecond = -1;
-            return skillStatus(player, state);
+            if (!slots.bind(slot,id)) return usage;
+        } else if (op.equals("select") && args.length == 3) {
+            if (!slots.select(parseSlot(args[2]))) return usage;
+        } else if (args.length == 2) {
+            switch (op) {
+                case "next" -> slots.next();
+                case "unbind" -> slots.remove(slots.current());
+                case "use" -> { return slots.current() == null ? "선택 슬롯이 비었습니다." : cast(player,slots.current()); }
+                case "status" -> { }
+                default -> { return usage; }
+            }
+        } else return usage;
+        state.hudSecond = -1;
+        return String.join(" | ", slotLines(player,state,true));
+    }
+
+    private static int parseSlot(String value) {
+        return switch (value) { case "1" -> 1; case "2" -> 2; case "3" -> 3; default -> 0; };
+    }
+
+    private List<String> slotLines(Player player, Fighter state, boolean includeEmpty) {
+        var lines = new ArrayList<String>();
+        for (int slot = 1; slot <= SkillSlots.COUNT; slot++) {
+            String id = state.slots.at(slot);
+            if (id != null || includeEmpty) lines.add((slot == state.slots.selected() ? "▶" : "") + slot + " "
+                    + (id == null ? "비어 있음" : skillStatus(player,state,id)));
         }
-        if (args.length != 2) return "/aw skill bind <id> | unbind | use | status";
-        return switch (op) {
-            case "unbind" -> { state.skill = null; state.hudSecond = -1; hud.remove(player.getUniqueId(), Layer.SKILL); yield "스킬 지정 해제"; }
-            case "use" -> state.skill == null ? "지정한 스킬 없음" : cast(player, state.skill);
-            case "status" -> skillStatus(player, state);
-            default -> "/aw skill bind <id> | unbind | use | status";
-        };
+        return lines;
     }
 
     private void updateSkillHud(Player player, Fighter state) {
@@ -1334,51 +1377,61 @@ final class PaperOfficialCombat implements Listener {
         if (state.hudSecond == now() && state.hudAvailable == available) return;
         state.hudAvailable = available;
         state.hudSecond = now();
-        var lines = new ArrayList<String>();
-        if (state.skill != null) {
-            lines.add("지정 스킬 · " + skillStatus(player, state));
-            boolean cooling = !state.progress.ready(state.skill, now());
-            if (state.skillCooling && !cooling) hud.proc(player, rule(state.skill).definition().name() + " 준비 완료");
-            state.skillCooling = cooling;
-        }
+        var lines = slotLines(player,state,false);
+        String current = state.slots.current();
+        boolean cooling = current != null && !state.progress.ready(current,now());
+        if (!cooling && current != null && current.equals(state.coolingSkill))
+            hud.proc(player,rule(current).definition().name() + " 준비 완료");
+        state.coolingSkill = cooling ? current : null;
         if (active.test(player)) {
-            for (var entry : state.reactions.entrySet()) {
-                var r = entry.getValue();
-                if (r.charged(millis())) lines.add(rule(entry.getKey()).definition().name() + " 충전");
-                else if (entry.getKey().equals("triad_reactor") || entry.getKey().equals("afterimage_stride")) {
-                    String progress = reactionProgress(player.getUniqueId(), entry.getKey(), r);
-                    if (progress != null) lines.add(progress);
-                }
-                if (entry.getKey().equals("ore_ward")) lines.add("광맥 방벽 " + r.charges() + "/" + rule("ore_ward").cap()
-                        + " · 광석 " + state.progress.value("hits:ore_ward") + "/" + rule("ore_ward").threshold());
+            checkGrowth(player,state);
+            var automatic = new ArrayList<String>();
+            for (String id : List.of("triad_reactor","ore_ward","afterimage_stride","last_bastion","delayed_blast")) {
+                if (!owns(player,id)) continue;
+                var r = state.reactions.get(id);
+                if (r == null) r = new CombatReaction();
+                String progress = reactionProgress(player.getUniqueId(),id,r);
+                String name = rule(id).definition().name();
+                if (r.charged(millis())) automatic.add(name + " 충전 완료");
+                else if (r.remaining(millis()) > 0) automatic.add(name + " 재사용 " + (r.remaining(millis())+999)/1000 + "초");
+                else if (id.equals("ore_ward")) automatic.add(name + " " + r.charges() + "/" + rule(id).cap()
+                        + " · 광석 " + state.progress.value("hits:ore_ward") + "/" + rule(id).threshold());
+                else if (progress != null) automatic.add(progress);
+                if (automatic.size() == 3) break;
             }
+            if (!automatic.isEmpty()) hud.set(player.getUniqueId(),Layer.AUTO,net.kyori.adventure.text.Component.text("자동 · " + String.join(" | ",automatic)));
+            else hud.remove(player.getUniqueId(),Layer.AUTO);
         }
         if (lines.isEmpty()) hud.remove(player.getUniqueId(), Layer.SKILL);
         else hud.set(player.getUniqueId(), Layer.SKILL, net.kyori.adventure.text.Component.text(String.join(" · ", lines)));
     }
 
     private String reactionProgress(UUID owner, String id, CombatReaction state) {
-        if (id.equals("triad_reactor")) return "자동 · 삼중 반응로 " + state.actionCount(millis(), interval(id, "window")) + "/3";
+        if (id.equals("triad_reactor")) return "삼중 반응로 " + state.actionCount(millis(), interval(id, "window")) + "/3";
         if (Set.of("afterimage_stride", "last_bastion", "delayed_blast").contains(id))
             return String.format(Locale.ROOT, "%s %.1f/%d", rule(id).definition().name(),
                     state.progress(owner, millis(), interval(id, "window")), rule(id).threshold());
         return null;
     }
 
-    private String skillStatus(Player player, Fighter state) {
-        if (state.skill == null) return "지정한 스킬 없음";
-        long remaining = state.progress.cooldownRemaining(state.skill, now());
+    private String skillStatus(Player player, Fighter state, String id) {
+        long remaining = state.progress.cooldownRemaining(id, now());
         String status = clock.get().isPaused() ? "경기 일시정지" : !valid(player) || player.getGameMode() == org.bukkit.GameMode.SPECTATOR ? "사용 불가" : remaining > 0 ? remaining + "초" : "사용 가능";
-        return rule(state.skill).definition().name() + " · " + status;
+        if (remaining == 0 && status.equals("사용 가능")) {
+            if (id.equals("calamity_giant") && !player.isOnGround()) status = "지상 전용";
+            if (id.equals("bomb_alchemy") && state.bomb != null) status = "폭탄 비행 중";
+            if (id.equals("time_rewind") && state.history.stream().noneMatch(h -> h.second() == now()-rule(id).threshold())) status = "기록 대기";
+        }
+        return rule(id).definition().name() + " · " + status;
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void swapSkill(org.bukkit.event.player.PlayerSwapHandItemsEvent event) {
         Player player = event.getPlayer();
         Fighter state = fighters.get(player.getUniqueId());
-        if (!player.isSneaking() || state == null || state.skill == null || !owns(player, state.skill)) return;
+        if (!player.isSneaking() || state == null || state.slots.current() == null || !owns(player, state.slots.current())) return;
         event.setCancelled(true);
-        String result = cast(player, state.skill);
+        String result = cast(player, state.slots.current());
         hud.skillInput(player,result);
     }
 
@@ -2076,7 +2129,7 @@ final class PaperOfficialCombat implements Listener {
     private void announceProc(Player player, String id) {
         var definition = catalog.rules.get(id);
         String name = definition != null ? definition.definition().name() : catalog.synergies.getString(id + ".name");
-        if (name != null) hud.proc(player, name);
+        if (name != null) hud.activated(player,name);
         var state = fighters.get(player.getUniqueId());
         if (state == null) return;
         String synergy = switch (id) {
@@ -2110,16 +2163,33 @@ final class PaperOfficialCombat implements Listener {
         telemetry.synergy(id, synergy);
         Player player = plugin.getServer().getPlayer(id);
         if (player == null) return;
-        synergyVisual(player, fighter(id), synergy);
+        var state = fighter(id);
+        if (!state.growthNotices.add(synergy) || !PlayerUi.enabled(player,PlayerUi.Option.GROWTH)) return;
+        synergyVisual(player, state, synergy);
         String message = "시너지 활성화 · " + catalog.synergies.getString(synergy + ".name", synergy);
+        if (state.completingMember != null && AugmentCombinations.UNIQUE.get(synergy).contains(state.completingMember))
+            player.sendMessage(message + " · 마지막 구성원 " + rule(state.completingMember).definition().name());
+        else player.sendMessage(message);
         if (catalog.synergies.getBoolean("announcements.broadcast")) {
             for (Player recipient : plugin.getServer().getOnlinePlayers())
-                if (PlayerUi.enabled(recipient,PlayerUi.Option.PROC)) recipient.sendMessage(player.getName() + " · " + message);
-        } else hud.proc(player, message);
+                if (!recipient.equals(player) && PlayerUi.enabled(recipient,PlayerUi.Option.GROWTH)) recipient.sendMessage(player.getName() + " · " + message);
+        }
+    }
+
+    private void checkGrowth(Player player, Fighter state) {
+        for (var evo : AugmentEvolution.values()) {
+            if (!owns(player,evo.augment) || state.growthNotices.contains(evo.augment)) continue;
+            double goal = evolutionThreshold(evo);
+            double progress = evo.progress(state.progress,state.burned);
+            if (progress < goal && progress >= .9 * goal && state.growthNotices.add("near:" + evo.augment)
+                    && PlayerUi.enabled(player,PlayerUi.Option.GROWTH))
+                player.sendMessage("진화 임박 · " + rule(evo.augment).definition().name() + " · " + evolutionLine(player.getUniqueId(),evo));
+        }
     }
 
     private void evolution(Player player, Fighter state, String id) {
         telemetry.evolution(player.getUniqueId(), id, clock.get().elapsedSeconds());
+        if (!state.growthNotices.add(id) || !PlayerUi.enabled(player,PlayerUi.Option.GROWTH)) return;
         announce(player.getUniqueId(), "증강 진화 · " + rule(id).definition().name(),
                 catalog.config.getBoolean("settings.evolution-sound"));
         if (catalog.config.getBoolean("settings.evolution-particles")) {
@@ -2521,6 +2591,7 @@ final class PaperOfficialCombat implements Listener {
         shieldSpends.remove(event);
         if (shield.shieldPoints() > 0) {
             state.shield.grant(clock.get().elapsedNanos(), shield.shieldPoints(), shield.shieldNanos());
+            hud.record(player,"생명의 잔향 보호막 +" + shield.shieldPoints() + " HP");
             updateShieldDisplay(player, state);
             if (resonance.announce() && resonance.sound() && PlayerUi.enabled(player,PlayerUi.Option.SOUND)) player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, .45f, 1.4f);
             if (resonance.announce() && resonance.particles()) particle(player, state, Particle.END_ROD, player.getLocation().add(0, 1, 0));

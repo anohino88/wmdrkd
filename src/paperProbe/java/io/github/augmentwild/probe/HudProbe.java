@@ -45,17 +45,21 @@ final class HudProbe {
     private static void verifyControls(HudProbe viewer, Pig pig) {
         var p = viewer.player;
         io.github.augmentwild.paper.PlayerUi.open(p);
-        if (!(viewer.menu.getHolder() instanceof io.github.augmentwild.paper.PaperMenu) || viewer.menu.getSize()!=9)
+        if (!(viewer.menu.getHolder() instanceof io.github.augmentwild.paper.PaperMenu) || viewer.menu.getSize() < io.github.augmentwild.paper.PlayerUi.Option.values().length)
             throw new AssertionError("UI controls must use locked plugin inventory");
         for (var option : io.github.augmentwild.paper.PlayerUi.Option.values()) {
             if (!io.github.augmentwild.paper.PlayerUi.enabled(p,option)) throw new AssertionError(option);
             io.github.augmentwild.paper.PlayerUi.toggle(p,option);
         }
+        for (int i=0;i<8;i++) if (!io.github.augmentwild.paper.PlayerUi.toggleFavorite(p,"id"+i)) throw new AssertionError("favorite");
+        if (io.github.augmentwild.paper.PlayerUi.toggleFavorite(p,"ninth")) throw new AssertionError("favorite cap");
         try {
             byte[] saved = pig.getPersistentDataContainer().serializeToBytes();
             for (var option : io.github.augmentwild.paper.PlayerUi.Option.values())
                 io.github.augmentwild.paper.PlayerUi.toggle(p,option);
+            io.github.augmentwild.paper.PlayerUi.toggleFavorite(p,"id0");
             pig.getPersistentDataContainer().readFromBytes(saved);
+            if (io.github.augmentwild.paper.PlayerUi.favorites(p).size()!=8) throw new AssertionError("lost favorite");
         } catch (java.io.IOException failure) { throw new AssertionError(failure); }
         for (var option : io.github.augmentwild.paper.PlayerUi.Option.values()) {
             if (io.github.augmentwild.paper.PlayerUi.enabled(p,option)) throw new AssertionError("lost " + option);

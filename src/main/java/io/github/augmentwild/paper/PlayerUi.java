@@ -12,7 +12,9 @@ import net.kyori.adventure.text.Component;
 public final class PlayerUi implements Listener {
     public enum Option {
         HEALTH("상대 체력바"), DAMAGE("피해량 표시"), SIDEBAR("경기 사이드바"), SKILL("스킬 상태"),
-        PROC("증강 발동 알림"), PARTICLES("강조 파티클"), SOUND("효과음"), FEED("킬 피드"), SUPPLY("보급 안내");
+        PROC("증강 발동 알림"), PARTICLES("강조 파티클"), SOUND("효과음"), FEED("킬 피드"), SUPPLY("보급 안내"),
+        INCOMING("피격 방향"), STATUS("상태 효과"), BORDER("자기장 경고"), CRISIS("생존 위기"),
+        GROWTH("진화와 시너지"), KILL_FX("처치 연출"), AUTO("자동 발동 상태");
         final String title;
         final NamespacedKey key;
         Option(String title) {
@@ -23,6 +25,22 @@ public final class PlayerUi implements Listener {
     public static boolean enabled(Player player, Option option) {
         return !player.getPersistentDataContainer().has(option.key, PersistentDataType.BYTE);
     }
+    private static final NamespacedKey FAVORITES = new NamespacedKey("augmentwild", "favorite_augments");
+    public static Set<String> favorites(Player player) {
+        String stored = player.getPersistentDataContainer().getOrDefault(FAVORITES, PersistentDataType.STRING, "");
+        return stored.isEmpty() ? Set.of() : Set.copyOf(Arrays.asList(stored.split(",")));
+    }
+    public static boolean toggleFavorite(Player player, String id) {
+        var ids = new TreeSet<>(favorites(player));
+        if (!ids.remove(id)) {
+            if (ids.size() >= 8) return false;
+            ids.add(id);
+        }
+        if (ids.isEmpty()) player.getPersistentDataContainer().remove(FAVORITES);
+        else player.getPersistentDataContainer().set(FAVORITES, PersistentDataType.STRING, String.join(",",ids));
+        return true;
+    }
+
     static void audience(Location at, Option option, java.util.function.Consumer<Player> send) {
         for (Player viewer : at.getNearbyPlayers(32))
             if (enabled(viewer,option)) send.accept(viewer);
@@ -34,7 +52,7 @@ public final class PlayerUi implements Listener {
         Menu(Player player, boolean settings) {
             owner = player.getUniqueId();
             this.settings = settings;
-            inventory = Bukkit.createInventory(this, settings ? 9 : 27, Component.text(settings ? "화면 설정" : "경기 결과"));
+            inventory = Bukkit.createInventory(this, settings ? ((Option.values().length + 8) / 9) * 9 : 27, Component.text(settings ? "화면 설정" : "경기 결과"));
         }
         public Inventory getInventory() { return inventory; }
         public boolean availableWhileRestricted() { return true; }
@@ -65,7 +83,7 @@ public final class PlayerUi implements Listener {
         boolean cancelled = e.isCancelled();
         int slot = PaperMenu.lock(e, false);
         if (cancelled) return;
-        if (!menu.settings || slot < 0 || !(e.getWhoClicked() instanceof Player p) || !p.getUniqueId().equals(menu.owner)) return;
+        if (!menu.settings || slot < 0 || slot >= Option.values().length || !(e.getWhoClicked() instanceof Player p) || !p.getUniqueId().equals(menu.owner)) return;
         var option = Option.values()[slot];
         toggle(p,option);
         paint(p, menu, option);

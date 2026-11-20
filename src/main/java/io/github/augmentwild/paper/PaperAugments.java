@@ -68,6 +68,7 @@ final class PaperAugments implements Listener {
 
     private static final class SummaryMenu implements PaperMenu {
         final UUID owner, match;
+        final Map<Integer,String> favoriteButtons = new HashMap<>();
         int page;
         long updated = -1;
         Inventory inventory;
@@ -175,6 +176,18 @@ final class PaperAugments implements Listener {
     }
 
     int skillUses(UUID id) { return official.skillUses(id); }
+    List<String> timedStates(UUID id) {
+        var rows = new ArrayList<>(official.timedStates(id));
+        var profile = profiles.get(id);
+        if (profile != null) {
+            long now = clock.get().elapsedSeconds();
+            for (String augment : profile.owned) {
+                long left = profile.timers.remainingActive(augment,now);
+                if (left > 0) rows.add(registry.get(augment).name() + " " + left + "초");
+            }
+        }
+        return rows;
+    }
     String skill(Player player, String[] args) { return official.skill(player, args); }
     String effectName(String id) { var def = id == null ? null : registry.get(id); return def == null ? "증강" : def.name(); }
     List<String> ownedNames(UUID id) { var p = profiles.get(id); return p == null ? List.of() : p.acquired.stream().map(this::effectName).toList(); }
@@ -486,8 +499,11 @@ final class PaperAugments implements Listener {
         var profile = stored == null ? new Profile() : stored;
         menu.updated = clock.get() == null ? 0 : clock.get().elapsedSeconds();
         menu.inventory.clear();
+        menu.favoriteButtons.clear();
+        var favorites = PlayerUi.favorites(player);
         var definitions = registry.all().stream()
-                .sorted(Comparator.comparing((AugmentDefinition a) -> !profile.owned.contains(a.id()))
+                .sorted(Comparator.comparing((AugmentDefinition a) -> !favorites.contains(a.id()))
+                        .thenComparing(a -> !profile.owned.contains(a.id()))
                         .thenComparing(AugmentDefinition::rarity).thenComparing(AugmentDefinition::id)).toList();
         int last = (definitions.size() + CODEX_CARDS - 1) / CODEX_CARDS;
         if (menu.page == 0) {
@@ -496,7 +512,15 @@ final class PaperAugments implements Listener {
         } else {
             int offset = (menu.page - 1) * CODEX_CARDS;
             for (int i = offset; i < Math.min(offset + CODEX_CARDS, definitions.size()); i++) {
-                menu.inventory.setItem(i - offset, augmentItem(player, profile, definitions.get(i), true));
+                var definition = definitions.get(i);
+                menu.favoriteButtons.put(i - offset, definition.id());
+                var card = augmentItem(player, profile, definition, true);
+                var meta = card.getItemMeta();
+                var lore = new ArrayList<>(meta.lore());
+                lore.add(Component.text(favorites.contains(definition.id()) ? "★ 즐겨찾기 해제 · 클릭" : "☆ 즐겨찾기 등록 · 클릭"));
+                meta.lore(lore);
+                card.setItemMeta(meta);
+                menu.inventory.setItem(i - offset, card);
             }
         }
         if (menu.page > 0) menu.inventory.setItem(45, item(Material.ARROW, Component.text("이전 페이지"), List.of()));
@@ -612,10 +636,13 @@ final class PaperAugments implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST)
     public void click(InventoryClickEvent event) {
         if (event.getView().getTopInventory().getHolder() instanceof SummaryMenu codex) {
+            boolean cancelled = event.isCancelled();
             int slot = PaperMenu.lock(event, false);
-            if (!(event.getWhoClicked() instanceof Player player) || !codex.owner.equals(player.getUniqueId())
+            if (cancelled || !(event.getWhoClicked() instanceof Player player) || !codex.owner.equals(player.getUniqueId())
                     || !Objects.equals(codex.match, match)) return;
-            if (slot == 45 && codex.page > 0) codex.page--;
+            if (codex.favoriteButtons.containsKey(slot)) {
+                if (!PlayerUi.toggleFavorite(player, codex.favoriteButtons.get(slot))) player.sendMessage("즐겨찾기는 최대 8개입니다.");
+            } else if (slot == 45 && codex.page > 0) codex.page--;
             else if (slot == 53 && codex.page < (registry.all().size() + CODEX_CARDS - 1) / CODEX_CARDS) codex.page++;
             else return;
             renderCodex(player, codex);
@@ -747,7 +774,7 @@ final class PaperAugments implements Listener {
                 || event.getFinalDamage() <= 0 || !active.test(attacker) || !active.test(target)
                 || protectedPlayer.test(attacker) || protectedPlayer.test(target)) return;
         var confirmed = observedProcs.remove(event);
-        if (confirmed != null) confirmed.forEach(hud::proc);
+        if (confirmed != null) confirmed.forEach(hud::activated);
         var attacking = profiles.get(attacker.getUniqueId());
         var defending = profiles.get(target.getUniqueId());
         if (attacking != null) {
@@ -784,7 +811,7 @@ final class PaperAugments implements Listener {
                 if (event instanceof EntityDamageByEntityEvent hit) {
                     if (effect == Effect.REAR || effect == Effect.FALL || effect == Effect.DEFENSE) {
                         observedProcs.computeIfAbsent(hit, ignored -> new LinkedHashMap<>()).putIfAbsent(player, a.name());
-                    } else hud.proc(player, a.name());
+                    } else hud.activated(player, a.name());
                 }
                 plugin.getLogger().fine("Augment proc match=" + match + " player=" + player.getUniqueId() + " id=" + a.id());
             });

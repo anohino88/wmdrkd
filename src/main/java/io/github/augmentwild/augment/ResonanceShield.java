@@ -9,6 +9,8 @@ public final class ResonanceShield {
         return now < expiresAt ? points : 0;
     }
 
+    public long timeLeft(long now) { return remaining(now) > 0 ? expiresAt - now : 0; }
+
     public void grant(long now, double capacity, long duration) {
         if (capacity <= 0 || duration <= 0) return;
         points = capacity;

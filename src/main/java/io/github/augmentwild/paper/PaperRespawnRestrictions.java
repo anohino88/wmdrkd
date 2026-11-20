@@ -198,7 +198,9 @@ final class PaperRespawnRestrictions implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void click(InventoryClickEvent event) {
-        if (event.getWhoClicked() instanceof Player player && restricted.test(player)) event.setCancelled(true);
+        if (event.getWhoClicked() instanceof Player player && restricted.test(player)
+                && !(event.getView().getTopInventory().getHolder() instanceof PaperMenu menu && menu.availableWhileRestricted()))
+            event.setCancelled(true);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)

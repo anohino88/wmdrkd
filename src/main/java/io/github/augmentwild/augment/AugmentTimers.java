@@ -36,6 +36,8 @@ public final class AugmentTimers {
         }
     }
 
+    public long remainingActive(String id, long now) { return Math.max(0,expires.getOrDefault(id,now)-now); }
+
     public void remove(String id) {
         cooldowns.remove(id);
         expires.remove(id);
