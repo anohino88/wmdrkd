@@ -28,6 +28,8 @@ public final class AugmentWildPlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(matches.officialAugmentListener(), this);
         getServer().getPluginManager().registerEvents(matches.intelListener(), this);
         getServer().getPluginManager().registerEvents(matches.supplyListener(), this);
+        getServer().getPluginManager().registerEvents(matches.feedbackListener(), this);
+        getServer().getPluginManager().registerEvents(matches.uiListener(), this);
         matches.recoverSupply();
         matches.recoverOnlinePlayers();
     }
@@ -92,6 +94,9 @@ public final class AugmentWildPlugin extends JavaPlugin {
         }
         if (args.length != 1) return false;
         switch (args[0].toLowerCase(Locale.ROOT)) {
+            case "ui" -> sender.sendMessage(sender instanceof Player p ? matches.ui(p) : "플레이어 전용 명령입니다.");
+            case "supply" -> sender.sendMessage(sender instanceof Player p ? matches.guide(p) : "플레이어 전용 명령입니다.");
+            case "result" -> sender.sendMessage(sender instanceof Player p ? matches.result(p) : "플레이어 전용 명령입니다.");
             case "augments" -> sender.sendMessage(sender instanceof Player player ? matches.openCodex(player) : "플레이어 전용 명령입니다.");
             case "augment" -> sender.sendMessage(sender instanceof Player player ? matches.openAugments(player) : "플레이어 전용 명령입니다.");
             case "locate", "track" -> sender.sendMessage(sender instanceof Player player && sender.hasPermission("augmentwild.track")

@@ -114,6 +114,7 @@ final class PaperOfficialCombat implements Listener {
     private static final class Fighter {
         final Map<String, CombatReaction> reactions = new HashMap<>();
         final List<Pending> pending = new ArrayList<>();
+        int skillUses;
         String skill;
         boolean skillCooling;
         long hudSecond = -1, bastionVisualSecond = -1;
@@ -511,6 +512,19 @@ final class PaperOfficialCombat implements Listener {
         var rule = rule("eureka");
         return (int) Math.ceil(base * (1 - Math.min(.95, rule.amount()
                 * Math.min(rule.cap(), player.getLevel() / rule.threshold()))));
+    }
+
+    List<String> candidateRelations(UUID player, String augment, Set<String> owned) {
+        var lines = new ArrayList<String>();
+        AugmentCombinations.UNIQUE.forEach((key, members) -> {
+            if (!members.contains(augment) || !catalog.synergies.getBoolean(key + ".enabled")) return;
+            long count = members.stream().filter(owned::contains).count();
+            lines.add(catalog.synergies.getString(key + ".name") + (!owned.contains(augment) && count+1 == members.size()
+                    ? " · 마지막 구성원" : " · " + count + "/" + members.size()));
+        });
+        var evolution = AugmentEvolution.of(augment);
+        if (evolution != null) lines.add(evolutionLine(player,evolution));
+        return lines;
     }
 
     List<String> details(UUID id, String augment) {
@@ -1292,6 +1306,7 @@ final class PaperOfficialCombat implements Listener {
         reactionPotions.apply(player.getUniqueId(), id, player, new PotionEffect(PotionEffectType.SPEED, (int) option(id, "speed-ticks"), 0));
     }
 
+    int skillUses(UUID id) { var f = fighters.get(id); return f == null ? 0 : f.skillUses; }
     String skill(Player player, String[] args) {
         var state = fighters.get(player.getUniqueId());
         if (state == null) return "지정한 발동형 스킬이 없습니다.";
@@ -1320,7 +1335,7 @@ final class PaperOfficialCombat implements Listener {
         state.hudSecond = now();
         var lines = new ArrayList<String>();
         if (state.skill != null) {
-            lines.add(skillStatus(player, state));
+            lines.add("지정 스킬 · " + skillStatus(player, state));
             boolean cooling = !state.progress.ready(state.skill, now());
             if (state.skillCooling && !cooling) hud.proc(player, rule(state.skill).definition().name() + " 준비 완료");
             state.skillCooling = cooling;
@@ -1417,6 +1432,7 @@ final class PaperOfficialCombat implements Listener {
         ready(player, state, id);
         state.hudSecond = -1;
         announceProc(player, id);
+        state.skillUses++;
         return rule(id).definition().name() + " 발동";
     }
 

@@ -26,6 +26,12 @@ final class PaperHud {
         players.computeIfAbsent(id, ignored -> new View()).layers.set(layer, message);
     }
 
+    void damage(Player p, String text) {
+        if (PlayerUi.enabled(p, PlayerUi.Option.DAMAGE))
+            players.computeIfAbsent(p.getUniqueId(), ignored -> new View()).layers.until(Layer.DAMAGE,
+                    Component.text(text),System.nanoTime()+1_200_000_000L);
+    }
+
     void proc(Player player, String name) {
         players.computeIfAbsent(player.getUniqueId(), ignored -> new View()).layers
                 .offerProc(Component.text("증강 발동 · " + name, NamedTextColor.LIGHT_PURPLE), System.nanoTime(), 2 * REFRESH_NANOS);
@@ -39,6 +45,9 @@ final class PaperHud {
     void render(Player player, long now) {
         View view = players.get(player.getUniqueId());
         if (view == null) return;
+        if (!PlayerUi.enabled(player,PlayerUi.Option.PROC)) view.layers.remove(Layer.PROC);
+        if (!PlayerUi.enabled(player,PlayerUi.Option.DAMAGE)) view.layers.remove(Layer.DAMAGE);
+        if (!PlayerUi.enabled(player,PlayerUi.Option.SKILL)) view.layers.remove(Layer.SKILL);
         Component next = view.layers.current(now);
         if (!Objects.equals(next, view.sent) || next != null && now - view.refresh >= REFRESH_NANOS) {
             player.sendActionBar(next == null ? Component.empty() : next);

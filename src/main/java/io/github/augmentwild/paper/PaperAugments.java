@@ -173,7 +173,10 @@ final class PaperAugments implements Listener {
         return List.copyOf(cards);
     }
 
+    int skillUses(UUID id) { return official.skillUses(id); }
     String skill(Player player, String[] args) { return official.skill(player, args); }
+    String effectName(String id) { var def = id == null ? null : registry.get(id); return def == null ? "증강" : def.name(); }
+    List<String> ownedNames(UUID id) { var p = profiles.get(id); return p == null ? List.of() : p.owned.stream().map(this::effectName).toList(); }
     String cast(Player player, String id) { return official.cast(player, id); }
 
     Listener officialListener() { return official; }
@@ -524,7 +527,10 @@ final class PaperAugments implements Listener {
                 Component.text(profile.owned.contains(augment.id()) ? "보유 중"
                         : !augment.selectable() ? "비활성화" : codex ? "미보유" : "획득 가능")));
         if (codex) lore.add(Component.text(augment.id(), NamedTextColor.DARK_GRAY));
-        if (!codex || profile.owned.contains(augment.id())) {
+        if (!codex) {
+            official.candidateRelations(player.getUniqueId(), augment.id(), profile.owned).forEach(line -> lore.add(Component.text(line)));
+            lore.add(Component.text("상세 정보 · /aw augments"));
+        } else if (profile.owned.contains(augment.id())) {
             official.resonanceDetails(player.getUniqueId(), augment.id()).forEach(line -> lore.add(Component.text(line)));
             official.details(player.getUniqueId(), augment.id()).forEach(line -> lore.add(Component.text(line)));
         }

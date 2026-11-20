@@ -92,6 +92,18 @@ public final class MatchTelemetry {
         add(Counter.CLAIM_DELAY_MS, millis);
     }
 
+    public int kills(UUID id) { return players.containsKey(id) ? kills[players.get(id)] : 0; }
+    public int deaths(UUID id) { return players.containsKey(id) ? deaths[players.get(id)] : 0; }
+    public List<String> attained(UUID id) {
+        var lines = new ArrayList<String>();
+        int index = players.getOrDefault(id,-1);
+        String prefix = "P" + (index+1) + "/";
+        evolutions.forEach((key,time) -> { if (key.startsWith(prefix)) lines.add("진화 · " + key.substring(prefix.length())); });
+        String member = index + ":";
+        completedSynergies.stream().filter(k -> k.startsWith(member)).forEach(k -> lines.add("시너지 · " + k.substring(member.length())));
+        return List.copyOf(lines);
+    }
+
     public void death(UUID victim, UUID killer) {
         if (!active || !players.containsKey(victim)) return;
         deaths[players.get(victim)]++;

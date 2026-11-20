@@ -44,6 +44,7 @@ final class PaperSupply implements Listener {
         List<ItemStack> loot = List.of();
         SupplyBlock block;
         long arrived;
+        boolean claimed;
         boolean announced, published, attempted;
 
         Delivery(SupplyPlan.Drop plan) { this.plan = plan; }
@@ -273,6 +274,7 @@ final class PaperSupply implements Listener {
             } else player.sendMessage("보급 지급이 실패해 다시 시도할 수 있습니다.");
             return;
         }
+        delivery.claimed = true;
         stats.supplyClaim(delivery.plan.id(), (elapsed - delivery.arrived) / 1_000_000L);
         remove(delivery);
         notice.accept(player.getName() + " 님이 " + label(delivery) + "을 획득했습니다.");
@@ -420,6 +422,28 @@ final class PaperSupply implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void explode(EntityExplodeEvent event) { event.blockList().removeIf(block -> protectedAt(block.getLocation())); }
+
+    String guide(Player player, boolean details) {
+        var lines = new java.util.ArrayList<String>();
+        for (var delivery : plans) {
+            String name = label(delivery);
+            if (!delivery.published) { lines.add(name + " · 공개 대기"); break; }
+            if (delivery.claimed || delivery.attempted && !spawned.containsValue(delivery)) {
+                if (details) lines.add(name + (delivery.claimed ? " · 획득 완료" : " · 취소"));
+                continue;
+            }
+            Location point = delivery.position;
+            String status = delivery.attempted ? "개봉 가능" : "등장까지 " + Math.max(0,delivery.plan.second()-elapsed/1_000_000_000L) + "초";
+            if (details && point != null && player.getWorld().equals(point.getWorld())) {
+                Location from = player.getLocation();
+                status += String.format(java.util.Locale.ROOT," · %d %d %d · %s · %.0fm",point.getBlockX(),point.getBlockY(),
+                        point.getBlockZ(),io.github.augmentwild.domain.Tracker.direction(point.getX()-from.getX(),point.getZ()-from.getZ()),point.distance(from));
+            }
+            lines.add(name + " · " + status);
+            if (!details) break;
+        }
+        return lines.isEmpty() ? "보급 일정 종료" : String.join(" / ",lines);
+    }
 
     private static String label(Delivery delivery) { return delivery.plan.premium() ? "고급 보급" : "일반 보급"; }
     private static double square(double value) { return value * value; }

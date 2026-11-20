@@ -68,6 +68,12 @@ public final class PaperMatchService implements Listener {
     private final PaperIntel intel;
     private final PaperSupply supply;
     private final PaperHud hud = new PaperHud();
+    private final MatchDisplays displays = new MatchDisplays(this::augmentActive);
+    private final CombatFeedback feedback;
+    private final Map<UUID,List<String>> results = new LinkedHashMap<>();
+    private final Map<UUID,Long> outAt = new LinkedHashMap<>();
+    private final Map<UUID,String> causes = new LinkedHashMap<>();
+    private int entrants;
     private final MatchTelemetry telemetry = new MatchTelemetry();
 
     public PaperMatchService(JavaPlugin plugin, PaperMatchSettings settings, ArenaSearchService search) {
@@ -90,6 +96,7 @@ public final class PaperMatchService implements Listener {
         augments = new PaperAugments(plugin, () -> clock, this::augmentMember, this::augmentActive,
                 player -> placement.protectedFromDamage(player.getUniqueId(), System.nanoTime()),
                 () -> session.state(), this::insideAugmentArena, this::insideAugmentBorder, this::move, placement::protect, settings.rules().procDepth(), telemetry, hud);
+        feedback = new CombatFeedback(plugin,this::augmentActive,this::insideAugmentArena,augments,hud);
         supply = new PaperSupply(plugin, SupplySettings.load(config, settings.rules().gatheringSeconds()),
                 this::augmentActive, this::insideAugmentBorder, this::notice, telemetry);
         intel = new PaperIntel(plugin, () -> clock, () -> session.participantIds(), this::augmentActive,
@@ -101,6 +108,18 @@ public final class PaperMatchService implements Listener {
             Player player = plugin.getServer().getPlayer(id);
             if (player != null) player.sendMessage(message);
         }
+    }
+
+    public Listener feedbackListener() { return feedback; }
+    public Listener uiListener() { return new PlayerUi(); }
+    public String ui(Player p) { return PlayerUi.open(p); }
+    public String guide(Player p) { return augmentActive(p) && PlayerUi.enabled(p,PlayerUi.Option.SUPPLY)
+            ? supply.guide(p,true) : "보급 안내를 사용할 수 없습니다."; }
+    public String result(Player p) {
+        var lines = results.get(p.getUniqueId());
+        if (lines == null || task != null || snapshots.pending(p.getUniqueId())) return "현재 확인할 경기 결과가 없습니다.";
+        PlayerUi.result(p,lines);
+        return "경기 결과";
     }
 
     public Listener supplyListener() { return supply; }
@@ -379,6 +398,8 @@ public final class PaperMatchService implements Listener {
         clock = new MatchSimulationClock(session, settings.rules(), () -> System.nanoTime() - started,
                 settings.selectionSeconds(), supply.start(session.matchId(), context.spawns()));
         augments.start(session.matchId(), clock, labWorld != null);
+        entrants = players.size();
+        results.clear();
         telemetry.start(players);
         intel.start(session.matchId());
         sender.sendMessage("경기가 시작됐습니다. 파밍 중 PvP 허용, 목숨 무제한.");
@@ -414,6 +435,9 @@ public final class PaperMatchService implements Listener {
     }
 
     private void clearMatch() {
+        boolean played = clock != null && regionCommitted;
+        if (played) feedback.tick(System.nanoTime());
+        displays.clear();
         search.cancel();
         if (preparation != null) {
             preparation.cancel();
@@ -426,6 +450,25 @@ public final class PaperMatchService implements Listener {
         if (session.state() != MatchState.WAITING) {
             var result = session.cancel();
             if (session.state() == MatchState.ENDING) session.transition(MatchState.CLEANUP);
+            if (played) {
+                for (UUID id : session.participantIds()) {
+                    var lines = new java.util.ArrayList<String>();
+                    lines.add(result.winner() == null ? (result.outcome() == GameSession.Outcome.DRAW ? "무승부" : "경기 중단")
+                            : "우승 · " + plugin.getServer().getOfflinePlayer(result.winner()).getName());
+                    if (result.outcome() != GameSession.Outcome.CANCELLED) {
+                        long rank = outAt.containsKey(id) ? 1 + session.participantIds().stream()
+                                .filter(other -> outAt.getOrDefault(other,Long.MAX_VALUE) > outAt.get(id)).count() : 1;
+                        lines.add("순위 " + rank);
+                    }
+                    lines.add("처치 " + telemetry.kills(id) + " · 사망 " + telemetry.deaths(id));
+                    lines.add(feedback.totals(id));
+                    lines.add("생존 시간 " + io.github.augmentwild.domain.CombatView.time(outAt.getOrDefault(id,clock.elapsedSeconds())));
+                    lines.add("스킬 사용 " + augments.skillUses(id));
+                    lines.add("보유 증강 · " + String.join(", ",augments.ownedNames(id)));
+                    lines.addAll(telemetry.attained(id));
+                    results.put(id,List.copyOf(lines));
+                }
+            }
             plugin.getLogger().info("Match " + session.matchId() + " ended with " + result.outcome()
                     + (result.winner() == null ? "" : " (winner " + result.winner() + ")"));
         }
@@ -446,6 +489,9 @@ public final class PaperMatchService implements Listener {
         var stats = telemetry.finish();
         if (!stats.isEmpty()) plugin.getLogger().info("Match feature totals match=" + session.matchId()
                 + " mode=" + mode + " " + new java.util.TreeMap<>(stats));
+        feedback.clear();
+        outAt.clear();
+        causes.clear();
         intel.clear();
         augments.clear();
         hud.clear(plugin);
@@ -455,7 +501,7 @@ public final class PaperMatchService implements Listener {
         clock = null;
         for (UUID id : captured) {
             Player player = available(id);
-            if (player != null) snapshots.restore(player, this::move);
+            if (player != null && snapshots.restore(player, this::move) && played && plugin.isEnabled() && results.containsKey(id)) PlayerUi.result(player,results.get(id));
         }
         captured.clear();
         permits.clear();
@@ -478,6 +524,7 @@ public final class PaperMatchService implements Listener {
             long now = clock.elapsedNanos();
             awaitingNativeRespawn.removeAll(departures);
             for (UUID id : departures) {
+                displays.detach(id);
                 supply.disconnect(id);
                 intel.remove(id);
                 hud.clear(id, plugin.getServer().getPlayer(id));
@@ -490,7 +537,18 @@ public final class PaperMatchService implements Listener {
                 if (online != null) borderDisplay.detach(online);
                 if (player != null) snapshots.restore(player, this::move);
             }
-            deaths.values().forEach(session::applyDeath);
+            for (var entry : deaths.entrySet()) {
+                UUID id = entry.getKey();
+                if (!session.applyDeath(entry.getValue())) continue;
+                boolean eliminated = session.player(id).life().status() == LifeState.Status.ELIMINATED;
+                if (eliminated) outAt.putIfAbsent(id,clock.elapsedSeconds());
+                String feed = causes.get(id) + (eliminated ? " · 최종 탈락" : " · 사망");
+                for (UUID viewer : session.participantIds()) {
+                    Player p = plugin.getServer().getPlayer(viewer);
+                    if (p != null && PlayerUi.enabled(p,PlayerUi.Option.FEED)) p.sendMessage(feed);
+                }
+            }
+            causes.clear();
             departures.clear();
             deaths.clear();
             augments.collectCompleted();
@@ -544,9 +602,14 @@ public final class PaperMatchService implements Listener {
             }
             intel.tick();
             long realTime = System.nanoTime();
+            feedback.tick(realTime);
             var round = clock.selection().orElse(null);
             for (UUID id : activeSession.participantIds()) {
                 Player player = plugin.getServer().getPlayer(id);
+                if (player != null) {
+                    displays.aim(player,tickNumber,realTime);
+                    if (tickNumber % 20 == 1) displays.sidebar(player,sidebar(player));
+                }
                 if (player == null || !augmentActive(player)) {
                     hud.clear(id, player);
                     continue;
@@ -565,6 +628,21 @@ public final class PaperMatchService implements Listener {
             plugin.getLogger().log(Level.SEVERE, "Match tick failed", failure);
             clearMatch();
         }
+    }
+
+    private List<String> sidebar(Player player) {
+        long elapsed = clock.elapsedSeconds(), start = settings.rules().pvpStartSeconds(), end = start + settings.rules().shrinkSeconds();
+        long next = io.github.augmentwild.domain.CombatView.nextPick(elapsed,settings.rules().selectionInterval(),settings.rules().gatheringSeconds());
+        UUID id = player.getUniqueId();
+        return List.of(switch (session.state()) {
+            case AUGMENT_SELECTION -> "증강 선택 중"; case GATHERING -> "파밍 단계"; case PVP -> "자기장 축소"; case SUDDEN_DEATH -> "서든데스";
+            default -> session.state().name(); }, "경기 시간 " + io.github.augmentwild.domain.CombatView.time(elapsed),
+            "생존 " + session.participantIds().stream().filter(p -> session.player(p).life().status()!=LifeState.Status.ELIMINATED).count() + "/" + entrants,
+            "처치 " + telemetry.kills(id) + " · 사망 " + telemetry.deaths(id),
+            clock.selection().isPresent() ? "선택 진행 중" : next < 0 ? "증강 선택 종료" : "다음 증강 " + io.github.augmentwild.domain.CombatView.time(next),
+            supply.guide(player,false), elapsed < start ? "축소 시작 " + io.github.augmentwild.domain.CombatView.time(start-elapsed)
+                    : elapsed < end ? "축소 종료 " + io.github.augmentwild.domain.CombatView.time(end-elapsed) : "축소 완료",
+            "안전 구역 폭 " + Math.round(border.area(elapsed).width()), "남은 목숨 " + (elapsed < start ? "무제한" : session.player(id).life().lives()));
     }
 
     private boolean outsideArena(Player player, Location destination) {
@@ -642,8 +720,11 @@ public final class PaperMatchService implements Listener {
         }
     }
 
+    @EventHandler public void worldChange(org.bukkit.event.player.PlayerChangedWorldEvent e) { displays.detach(e.getPlayer().getUniqueId()); }
+
     @EventHandler public void onQuit(PlayerQuitEvent event) {
         UUID id = event.getPlayer().getUniqueId();
+        displays.detach(id);
         if (!contains(id)) return;
         supply.disconnect(id);
         intel.remove(id);
@@ -686,6 +767,15 @@ public final class PaperMatchService implements Listener {
             Player killer = event.getEntity().getKiller();
             telemetry.death(id, killer != null && contains(killer.getUniqueId()) && !departures.contains(killer.getUniqueId())
                     ? killer.getUniqueId() : null);
+            displays.detach(id);
+            var source = event.getDamageSource().getCausingEntity();
+            String cause = source instanceof Player attacker && contains(attacker.getUniqueId())
+                    ? attacker.getName() + " ⚔ " : "환경 피해 · ";
+            var last = event.getEntity().getLastDamageCause();
+            var trace = last == null ? null : augments.trace(last);
+            causes.put(id,cause + event.getEntity().getName() + (trace != null && trace.synthetic() && trace.augment()!=null
+                    ? " · " + augments.effectName(trace.augment()) : ""));
+            feedback.settle(id);
             awaitingNativeRespawn.add(id);
             supply.disconnect(id);
             intel.death(event.getEntity(), event.getDamageSource());

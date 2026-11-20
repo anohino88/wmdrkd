@@ -124,3 +124,6 @@ dev:
   combat-audit:
     enabled: false
     max-events: 1000
+
+hud:
+  floating-damage: false
