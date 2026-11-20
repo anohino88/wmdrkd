@@ -508,25 +508,33 @@ final class PaperAugments implements Listener {
         int last = (definitions.size() + CODEX_CARDS - 1) / CODEX_CARDS;
         if (menu.page == 0) {
             int slot = 0;
+            for (var definition : definitions) {
+                if (!favorites.contains(definition.id())) break;
+                placeCodexCard(player,profile,menu,slot++,definition,favorites);
+            }
             for (var card : official.codexStatus(menu.owner)) menu.inventory.setItem(slot++, PaperIntel.item(card));
         } else {
             int offset = (menu.page - 1) * CODEX_CARDS;
             for (int i = offset; i < Math.min(offset + CODEX_CARDS, definitions.size()); i++) {
-                var definition = definitions.get(i);
-                menu.favoriteButtons.put(i - offset, definition.id());
-                var card = augmentItem(player, profile, definition, true);
-                var meta = card.getItemMeta();
-                var lore = new ArrayList<>(meta.lore());
-                lore.add(Component.text(favorites.contains(definition.id()) ? "★ 즐겨찾기 해제 · 클릭" : "☆ 즐겨찾기 등록 · 클릭"));
-                meta.lore(lore);
-                card.setItemMeta(meta);
-                menu.inventory.setItem(i - offset, card);
+                placeCodexCard(player,profile,menu,i-offset,definitions.get(i),favorites);
             }
         }
         if (menu.page > 0) menu.inventory.setItem(45, item(Material.ARROW, Component.text("이전 페이지"), List.of()));
         menu.inventory.setItem(49, item(Material.BOOK, Component.text(menu.page == 0 ? "조합 · 진화 · 공명" : "증강 목록 " + menu.page + "/" + last),
                 List.of(Component.text("보유 " + profile.owned.size() + "/" + definitions.size()))));
         if (menu.page < last) menu.inventory.setItem(53, item(Material.ARROW, Component.text("다음 페이지"), List.of()));
+    }
+
+    private void placeCodexCard(Player player, Profile profile, SummaryMenu menu, int slot,
+                                AugmentDefinition definition, Set<String> favorites) {
+        menu.favoriteButtons.put(slot, definition.id());
+        var card = augmentItem(player,profile,definition,true);
+        var meta = card.getItemMeta();
+        var lore = new ArrayList<>(meta.lore());
+        lore.add(Component.text(favorites.contains(definition.id()) ? "★ 즐겨찾기 해제 · 클릭" : "☆ 즐겨찾기 등록 · 클릭"));
+        meta.lore(lore);
+        card.setItemMeta(meta);
+        menu.inventory.setItem(slot,card);
     }
 
     private ItemStack augmentItem(Player player, Profile profile, AugmentDefinition augment) {

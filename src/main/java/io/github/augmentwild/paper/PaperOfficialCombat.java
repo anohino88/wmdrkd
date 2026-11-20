@@ -1416,7 +1416,12 @@ final class PaperOfficialCombat implements Listener {
 
     private String skillStatus(Player player, Fighter state, String id) {
         long remaining = state.progress.cooldownRemaining(id, now());
-        String status = clock.get().isPaused() ? "경기 일시정지" : !valid(player) || player.getGameMode() == org.bukkit.GameMode.SPECTATOR ? "사용 불가" : remaining > 0 ? remaining + "초" : "사용 가능";
+        String status;
+        if (clock.get().isPaused()) status = "경기 일시정지";
+        else if (protectedPlayer.test(player)) status = "부활 보호 중";
+        else if (!valid(player) || player.getGameMode() == org.bukkit.GameMode.SPECTATOR) status = "경기 참여 불가";
+        else if (remaining > 0) status = "재사용 " + remaining + "초";
+        else status = "사용 가능";
         if (remaining == 0 && status.equals("사용 가능")) {
             if (id.equals("calamity_giant") && !player.isOnGround()) status = "지상 전용";
             if (id.equals("bomb_alchemy") && state.bomb != null) status = "폭탄 비행 중";
@@ -1483,7 +1488,13 @@ final class PaperOfficialCombat implements Listener {
             }
             default -> false;
         };
-        if (!applied) return "안전한 위치 또는 유효한 기록이 없어 발동하지 못했습니다.";
+        if (!applied) return switch (id) {
+            case "duel_contract" -> "조준한 유효 상대가 없습니다.";
+            case "bomb_alchemy" -> "폭탄이 이미 비행 중이거나 발사할 수 없습니다.";
+            case "calamity_giant" -> player.isOnGround() ? "효과 처리 대기열이 가득 찼습니다." : "지상에서 사용하세요.";
+            case "time_rewind" -> "복귀 가능한 위치 기록이 없습니다.";
+            default -> "안전한 이동 위치를 확보하지 못했습니다.";
+        };
         ready(player, state, id);
         state.hudSecond = -1;
         announceProc(player, id);

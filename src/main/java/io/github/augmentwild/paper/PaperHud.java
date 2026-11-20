@@ -16,20 +16,20 @@ final class PaperHud {
     private static final long REFRESH_NANOS = 1_000_000_000L;
     private final Map<UUID, View> players = new HashMap<>();
 
-    private final Map<UUID,java.util.ArrayDeque<String>> history = new HashMap<>();
+    private final io.github.augmentwild.domain.CombatHistory history = new io.github.augmentwild.domain.CombatHistory();
     private final java.util.Set<UUID> low = new java.util.HashSet<>();
     private static final java.time.format.DateTimeFormatter UTC = java.time.format.DateTimeFormatter
             .ofPattern("HH:mm:ss").withZone(java.time.ZoneOffset.UTC);
 
     void record(Player p, String text) {
-        var rows = history.computeIfAbsent(p.getUniqueId(), ignored -> new java.util.ArrayDeque<>());
-        if (rows.size() == 30) rows.removeLast();
-        rows.addFirst(UTC.format(java.time.Instant.now()) + "  " + text);
+        history.record(p.getUniqueId(),UTC.format(java.time.Instant.now()) + "  " + text);
     }
 
+    boolean beginObservation(Object event) { return history.beginObservation(event); }
+
     String combatLog(Player p) {
-        var rows = history.get(p.getUniqueId());
-        return rows == null || rows.isEmpty() ? "현재 경기의 전투 기록이 없습니다."
+        var rows = history.recent(p.getUniqueId());
+        return rows.isEmpty() ? "현재 경기의 전투 기록이 없습니다."
                 : "나의 전투 기록 · UTC · 최근 " + rows.size() + "건\n" + String.join("\n",rows);
     }
 

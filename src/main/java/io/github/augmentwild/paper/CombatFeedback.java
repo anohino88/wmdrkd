@@ -58,7 +58,6 @@ final class CombatFeedback implements Listener {
     private final List<Map.Entry<CombatView.OriginTarget,Hit>> ready = new ArrayList<>();
     private final Map<TextDisplay,Long> numbers = new HashMap<>();
     private final Map<UUID,Double> dealt = new HashMap<>(), received = new HashMap<>();
-    private final Set<EntityDamageEvent> seen = Collections.newSetFromMap(new WeakHashMap<>());
     private final Predicate<Player> active;
     private final Predicate<Location> arena;
     private final PaperAugments augments;
@@ -78,7 +77,7 @@ final class CombatFeedback implements Listener {
     public void beforeHeal(EntityRegainHealthEvent e) { settle(e.getEntity().getUniqueId()); }
     @EventHandler(priority=EventPriority.MONITOR, ignoreCancelled=true)
     public void healed(EntityRegainHealthEvent e) {
-        if (e.getEntity() instanceof Player p && eligible(p)) {
+        if (e.getEntity() instanceof Player p && eligible(p) && hud.beginObservation(e)) {
             double missing = p.getAttribute(org.bukkit.attribute.Attribute.MAX_HEALTH).getValue() - p.getHealth();
             heals.put(p.getUniqueId(), new Heal(e,p,p.getHealth(), Math.min(missing,e.getAmount())));
         }
@@ -89,7 +88,7 @@ final class CombatFeedback implements Listener {
         Player p = e.getDamageSource().getCausingEntity() instanceof Player attacker && eligible(attacker)
                 && !attacker.equals(v) ? attacker : null;
         if (!(v instanceof Player enemy ? eligible(enemy) : p != null && v instanceof Enemy && arena.test(v.getLocation()))
-                || !seen.add(e)) return;
+                || !hud.beginObservation(e)) return;
         var trace = augments.trace(e);
         boolean blocked = e.isApplicable(EntityDamageEvent.DamageModifier.BLOCKING)
                 && e.getDamage(EntityDamageEvent.DamageModifier.BLOCKING) < 0;
@@ -97,7 +96,11 @@ final class CombatFeedback implements Listener {
         String label = trace.synthetic() ? "연쇄 · " + augments.effectName(trace.augment())
                 : trace.augment() != null ? "증강 포함" : e.getCause()==EntityDamageEvent.DamageCause.PROJECTILE ? "원거리" : "공격";
         var source = e.getDamageSource().getCausingEntity();
-        boolean environmental = source == null && !(e instanceof EntityDamageByEntityEvent);
+        boolean environmental = source == null && switch (e.getCause()) {
+            case FALL, FIRE, FIRE_TICK, LAVA, HOT_FLOOR, FREEZE, DROWNING, SUFFOCATION, VOID,
+                    WORLD_BORDER, STARVATION, CONTACT, FLY_INTO_WALL, CRAMMING -> true;
+            default -> false;
+        };
         String incoming = v instanceof Player victim ? direction(e,victim,trace.synthetic()) : null;
         if (environmental) incoming = "환경 피해";
         String sourceName = source instanceof LivingEntity ? source.getName() : environmental ? "환경 · " + e.getCause().name() : "출처 미확인";
@@ -190,7 +193,7 @@ final class CombatFeedback implements Listener {
     String totals(UUID id) { return "확인한 체력 피해 · 가한 " + fmt(dealt.getOrDefault(id,0d)) + " / 받은 " + fmt(received.getOrDefault(id,0d)); }
     private static String fmt(double v) { return String.format(Locale.ROOT,"%.1f",v); }
     void clear() {
-        launches.clear(); ready.clear(); pending.clear(); heals.clear(); groups.clear(); seen.clear(); dealt.clear(); received.clear();
+        launches.clear(); ready.clear(); pending.clear(); heals.clear(); groups.clear(); dealt.clear(); received.clear();
         numbers.keySet().forEach(TextDisplay::remove); numbers.clear();
     }
 }

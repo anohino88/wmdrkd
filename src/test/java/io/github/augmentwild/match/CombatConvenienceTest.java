@@ -61,6 +61,23 @@ class CombatConvenienceTest {
         assertEquals("automatic",hud.current(2_000_000_000L));
     }
 
+    @Test void journalRejectsRepeatedObservationAndKeepsThirtyPrivateRowsPerMatch() {
+        var journal = new CombatHistory();
+        var victim = java.util.UUID.randomUUID();
+        var other = java.util.UUID.randomUUID();
+        var event = new Object();
+        assertTrue(journal.beginObservation(event));
+        assertFalse(journal.beginObservation(event));
+        for (int i=0; i<40; i++) journal.record(victim,"hit " + i);
+        assertEquals(30,journal.recent(victim).size());
+        assertEquals("hit 39",journal.recent(victim).getFirst());
+        assertEquals("hit 10",journal.recent(victim).getLast());
+        assertTrue(journal.recent(other).isEmpty());
+        journal.clear();
+        assertTrue(journal.recent(victim).isEmpty());
+        assertTrue(journal.beginObservation(event));
+    }
+
     @Test void statusUsesTheSameExpiryAsShieldAndBuffMechanics() {
         var shield = new ResonanceShield();
         shield.grant(17,5,80);
