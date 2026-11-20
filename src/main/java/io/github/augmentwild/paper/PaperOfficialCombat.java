@@ -1358,7 +1358,7 @@ final class PaperOfficialCombat implements Listener {
     }
 
     private String reactionProgress(UUID owner, String id, CombatReaction state) {
-        if (id.equals("triad_reactor")) return "전투 행동 " + state.actionCount(millis(), interval(id, "window")) + "/3";
+        if (id.equals("triad_reactor")) return "자동 · 삼중 반응로 " + state.actionCount(millis(), interval(id, "window")) + "/3";
         if (Set.of("afterimage_stride", "last_bastion", "delayed_blast").contains(id))
             return String.format(Locale.ROOT, "%s %.1f/%d", rule(id).definition().name(),
                     state.progress(owner, millis(), interval(id, "window")), rule(id).threshold());
@@ -1368,7 +1368,7 @@ final class PaperOfficialCombat implements Listener {
     private String skillStatus(Player player, Fighter state) {
         if (state.skill == null) return "지정한 스킬 없음";
         long remaining = state.progress.cooldownRemaining(state.skill, now());
-        String status = !valid(player) ? "사용 불가" : remaining > 0 ? remaining + "초" : "사용 가능";
+        String status = clock.get().isPaused() ? "경기 일시정지" : !valid(player) || player.getGameMode() == org.bukkit.GameMode.SPECTATOR ? "사용 불가" : remaining > 0 ? remaining + "초" : "사용 가능";
         return rule(state.skill).definition().name() + " · " + status;
     }
 
@@ -1451,7 +1451,7 @@ final class PaperOfficialCombat implements Listener {
         if (record == null || !safe.test(record.location()) || !SafeArenaSurface.valid(record.location())
                 || !teleport.test(player, record.location())) return false;
         if (record.health() > player.getHealth()) {
-            player.setHealth(Math.min(maxHealth(player), Math.min(record.health(), player.getHealth() + rule("time_rewind").amount())));
+            gainHealth(player,Math.min(record.health()-player.getHealth(),rule("time_rewind").amount()),"time_rewind");
         }
         return true;
     }

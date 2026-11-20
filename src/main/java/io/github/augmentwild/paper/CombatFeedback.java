@@ -64,16 +64,13 @@ final class CombatFeedback implements Listener {
         if (!(v instanceof Player enemy ? eligible(enemy) : p != null && v instanceof Enemy && arena.test(v.getLocation()))
                 || !seen.add(e)) return;
         var trace = augments.trace(e);
-        double abs = e.isApplicable(EntityDamageEvent.DamageModifier.ABSORPTION)
-                ? Math.max(0,-e.getDamage(EntityDamageEvent.DamageModifier.ABSORPTION)) : 0;
         boolean blocked = e.isApplicable(EntityDamageEvent.DamageModifier.BLOCKING)
                 && e.getDamage(EntityDamageEvent.DamageModifier.BLOCKING) < 0;
         boolean crit = trace.critical() || e instanceof EntityDamageByEntityEvent attack && attack.isCritical();
         String label = trace.synthetic() ? "연쇄 · " + augments.effectName(trace.augment())
                 : trace.augment() != null ? "증강 포함" : e.getCause()==EntityDamageEvent.DamageCause.PROJECTILE ? "원거리" : "공격";
         pending.put(v.getUniqueId(), new Sample(e,p,v,trace.origin()==null ? UUID.randomUUID() : trace.origin(),label,
-                new CombatView.Receipt(new CombatView.Vitals(v.getHealth(),v.getAbsorptionAmount()),
-                        new CombatView.Vitals(Math.min(v.getHealth(),Math.max(0,e.getFinalDamage())), Math.min(abs,v.getAbsorptionAmount()))),
+                DamageObservation.capture(e,v),
                 trace.shield(),crit,blocked,v.getEyeLocation(),System.nanoTime()));
     }
     void settle(UUID id) {
@@ -84,7 +81,7 @@ final class CombatFeedback implements Listener {
         }
         Sample s = pending.remove(id);
         if (s == null || s.event.isCancelled()) return;
-        var observed = s.receipt.confirm(new CombatView.Vitals(s.victim.getHealth(),s.victim.getAbsorptionAmount()),false);
+        var observed = s.receipt.confirm(DamageObservation.read(s.victim),false);
         double health = observed.hp(), abs = observed.absorption();
         if (health + abs + s.shield <= 0 && !s.blocked) return;
         if (health > 0 && s.victim instanceof Player) received.merge(id,health,Double::sum);

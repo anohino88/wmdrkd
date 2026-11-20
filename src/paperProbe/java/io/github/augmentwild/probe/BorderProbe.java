@@ -37,6 +37,13 @@ public final class BorderProbe extends JavaPlugin implements Listener {
     private Pig testPig;
     private SyntheticCombatLoad combatLoad;
     private Pig shieldPig;
+    private io.github.augmentwild.domain.CombatView.Receipt observedDamage;
+    private boolean damageCancelled;
+    private void checkHudDelta(double health, double absorption) {
+        var actual = observedDamage.confirm(io.github.augmentwild.paper.DamageObservation.read(shieldPig),damageCancelled);
+        require(Math.abs(actual.hp()-health)<.00001 && Math.abs(actual.absorption()-absorption)<.00001,
+                "confirmed HUD amounts expected " + health + "/" + absorption + " got " + actual);
+    }
     private final ResonanceShield shield = new ResonanceShield();
     private long shieldClock;
     private PaperResonanceShield.Receipt pendingShieldSpend;
@@ -296,6 +303,7 @@ public final class BorderProbe extends JavaPlugin implements Listener {
             shieldClock = 1_000_000_000L;
             shield.grant(shieldClock, 4, 6_000_000_000L);
             shieldPig.damage(7);
+            checkHudDelta(1,2);
             require(Math.abs(shieldPig.getHealth() - (health - 1)) < .000001, "virtual shield applies after native absorption");
             require(shield.remaining(shieldClock) < 1e-7 && shieldPig.getAbsorptionAmount() == 0, "both pools spend exactly once");
             shieldPig.setAbsorptionAmount(2);
@@ -312,6 +320,7 @@ public final class BorderProbe extends JavaPlugin implements Listener {
                 shield.grant(shieldClock, 4, 6_000_000_000L);
                 shieldPig.damage(7);
                 require(shield.remaining(shieldClock) == 4, "late " + change + " must not spend discarded shield");
+                checkHudDelta(change == LateDamage.RESTORE_BASE ? 5 : 0, change == LateDamage.RESTORE_BASE ? 2 : 0);
                 if (change == LateDamage.RESTORE_BASE) {
                     require(shieldPig.getHealth() == health - 5 && shieldPig.getAbsorptionAmount() == 0,
                             "replacement keeps native absorption normal");
@@ -347,6 +356,7 @@ public final class BorderProbe extends JavaPlugin implements Listener {
         shieldPig.damage(7);
         require(Math.abs(maxHealth - shieldPig.getHealth() - (mitigated - 2)) < .00001,
                 "shield reduces final health damage by two points with armor and resistance");
+        checkHudDelta(mitigated-2,0);
         require(shield.remaining(shieldClock) < 1e-7, "mitigated shield debited once");
     }
 
@@ -357,6 +367,10 @@ public final class BorderProbe extends JavaPlugin implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void consumeProbe(EntityDamageEvent event) {
+        if (event.getEntity().equals(shieldPig)) {
+            observedDamage = io.github.augmentwild.paper.DamageObservation.capture(event,shieldPig);
+            damageCancelled = event.isCancelled();
+        }
         if (event.getEntity().equals(shieldPig) && pendingShieldSpend != null) {
             shield.consume(shieldClock, pendingShieldSpend.confirm(event));
             pendingShieldSpend = null;

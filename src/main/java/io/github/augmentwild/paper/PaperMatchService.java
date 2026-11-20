@@ -553,16 +553,20 @@ public final class PaperMatchService implements Listener {
                 if (online != null) borderDisplay.detach(online);
                 if (player != null) snapshots.restore(player, this::move);
             }
+            var feed = new java.util.ArrayList<String>();
             for (var entry : deaths.entrySet()) {
                 UUID id = entry.getKey();
                 if (!contains(id) || !session.applyDeath(entry.getValue())) continue;
                 telemetry.death(id,creditedKillers.remove(id));
                 boolean eliminated = session.player(id).life().status() == LifeState.Status.ELIMINATED;
                 if (eliminated) outAt.putIfAbsent(id,clock.elapsedNanos());
-                String feed = io.github.augmentwild.domain.CombatView.feed(causes.get(id),eliminated);
+                feed.add(io.github.augmentwild.domain.CombatView.feed(causes.get(id),eliminated));
+            }
+            if (!feed.isEmpty()) {
+                String message = String.join("  |  ",feed);
                 for (UUID viewer : session.participantIds()) {
                     Player p = plugin.getServer().getPlayer(viewer);
-                    if (p != null && PlayerUi.enabled(p,PlayerUi.Option.FEED)) p.sendMessage(feed);
+                    if (p != null && PlayerUi.enabled(p,PlayerUi.Option.FEED)) p.sendMessage(message);
                 }
             }
             causes.clear();
