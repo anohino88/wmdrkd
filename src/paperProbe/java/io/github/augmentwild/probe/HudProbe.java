@@ -15,6 +15,7 @@ final class HudProbe {
     final Player player;
     Scoreboard board = Bukkit.getScoreboardManager().getMainScoreboard();
     BossBar visible;
+    org.bukkit.inventory.Inventory menu;
     double hp = 10;
     int reads;
 
@@ -30,6 +31,7 @@ final class HudProbe {
             case "getPersistentDataContainer" -> pig.getPersistentDataContainer();
             case "getName" -> "뷰어";
             case "canSee" -> true;
+            case "openInventory" -> { menu = (org.bukkit.inventory.Inventory)args[0]; yield null; }
             case "getScoreboard" -> board;
             case "setScoreboard" -> { board = (Scoreboard)args[0]; yield null; }
             case "showBossBar" -> { visible = (BossBar)args[0]; yield null; }
@@ -40,7 +42,33 @@ final class HudProbe {
             default -> throw new AssertionError("Unexpected viewer operation " + method);
         });
     }
+    private static void verifyControls(HudProbe viewer, Pig pig) {
+        var p = viewer.player;
+        io.github.augmentwild.paper.PlayerUi.open(p);
+        if (!(viewer.menu.getHolder() instanceof io.github.augmentwild.paper.PaperMenu) || viewer.menu.getSize()!=9)
+            throw new AssertionError("UI controls must use locked plugin inventory");
+        for (var option : io.github.augmentwild.paper.PlayerUi.Option.values()) {
+            if (!io.github.augmentwild.paper.PlayerUi.enabled(p,option)) throw new AssertionError(option);
+            io.github.augmentwild.paper.PlayerUi.toggle(p,option);
+        }
+        try {
+            byte[] saved = pig.getPersistentDataContainer().serializeToBytes();
+            for (var option : io.github.augmentwild.paper.PlayerUi.Option.values())
+                io.github.augmentwild.paper.PlayerUi.toggle(p,option);
+            pig.getPersistentDataContainer().readFromBytes(saved);
+        } catch (java.io.IOException failure) { throw new AssertionError(failure); }
+        for (var option : io.github.augmentwild.paper.PlayerUi.Option.values()) {
+            if (io.github.augmentwild.paper.PlayerUi.enabled(p,option)) throw new AssertionError("lost " + option);
+            io.github.augmentwild.paper.PlayerUi.toggle(p,option);
+        }
+        io.github.augmentwild.paper.PlayerUi.result(p,List.of("우승 · A","처치 3 · 사망 1"));
+        if (viewer.menu.getItem(0)==null || viewer.menu.getItem(1)==null || viewer.menu.getItem(2)!=null)
+            throw new AssertionError("result inventory");
+    }
+
     static void run(Pig pig) {
+        var test = new HudProbe(pig);
+        verifyControls(test,pig);
         for (int size : List.of(2,4,8,16)) {
             var viewers = new ArrayList<HudProbe>();
             var online = new HashMap<UUID,Player>();

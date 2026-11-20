@@ -427,9 +427,11 @@ final class PaperSupply implements Listener {
         var lines = new java.util.ArrayList<String>();
         for (var delivery : plans) {
             String name = label(delivery);
-            if (!delivery.published) { lines.add(name + " · 공개 대기"); break; }
+            String state = io.github.augmentwild.domain.CombatView.supplyStatus(delivery.published,delivery.claimed,
+                    delivery.attempted,spawned.containsValue(delivery));
+            if (!delivery.published) { lines.add(name + " · " + state); break; }
             if (delivery.claimed || delivery.attempted && !spawned.containsValue(delivery)) {
-                if (details) lines.add(name + (delivery.claimed ? " · 획득 완료" : " · 취소"));
+                if (details) lines.add(name + " · " + state);
                 continue;
             }
             Location point = delivery.position;

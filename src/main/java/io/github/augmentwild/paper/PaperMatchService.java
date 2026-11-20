@@ -73,7 +73,9 @@ public final class PaperMatchService implements Listener {
     private final Map<UUID,List<String>> results = new LinkedHashMap<>();
     private final Map<UUID,Long> outAt = new LinkedHashMap<>();
     private final Map<UUID,String> causes = new LinkedHashMap<>();
-    private int entrants;
+    private final Set<UUID> entrants = new LinkedHashSet<>();
+    private final Map<UUID,List<String>> departureStats = new LinkedHashMap<>();
+    private final Map<UUID,UUID> creditedKillers = new LinkedHashMap<>();
     private final Set<UUID> displayFailures = new LinkedHashSet<>();
     private void updateDisplay(Player player, Runnable update) {
         if (displayFailures.contains(player.getUniqueId())) return;
@@ -408,7 +410,8 @@ public final class PaperMatchService implements Listener {
         clock = new MatchSimulationClock(session, settings.rules(), () -> System.nanoTime() - started,
                 settings.selectionSeconds(), supply.start(session.matchId(), context.spawns()));
         augments.start(session.matchId(), clock, labWorld != null);
-        entrants = players.size();
+        entrants.clear();
+        entrants.addAll(players);
         results.clear();
         displayFailures.clear();
         telemetry.start(players);
@@ -462,21 +465,16 @@ public final class PaperMatchService implements Listener {
             var result = session.cancel();
             if (session.state() == MatchState.ENDING) session.transition(MatchState.CLEANUP);
             if (played) {
-                for (UUID id : session.participantIds()) {
+                for (UUID id : entrants) {
                     var lines = new java.util.ArrayList<String>();
                     lines.add(result.winner() == null ? (result.outcome() == GameSession.Outcome.DRAW ? "무승부" : "경기 중단")
                             : "우승 · " + plugin.getServer().getOfflinePlayer(result.winner()).getName());
                     if (result.outcome() != GameSession.Outcome.CANCELLED) {
-                        long rank = outAt.containsKey(id) ? 1 + session.participantIds().stream()
+                        long rank = outAt.containsKey(id) ? 1 + entrants.stream()
                                 .filter(other -> outAt.getOrDefault(other,Long.MAX_VALUE) > outAt.get(id)).count() : 1;
                         lines.add("순위 " + rank);
                     }
-                    lines.add("처치 " + telemetry.kills(id) + " · 사망 " + telemetry.deaths(id));
-                    lines.add(feedback.totals(id));
-                    lines.add("생존 시간 " + io.github.augmentwild.domain.CombatView.time(outAt.getOrDefault(id,clock.elapsedNanos()) / 1_000_000_000L));
-                    lines.add("스킬 사용 " + augments.skillUses(id));
-                    lines.add("보유 증강 · " + String.join(", ",augments.ownedNames(id)));
-                    lines.addAll(telemetry.attained(id));
+                    lines.addAll(departureStats.containsKey(id) ? departureStats.get(id) : resultLines(id));
                     results.put(id,List.copyOf(lines));
                 }
             }
@@ -501,6 +499,9 @@ public final class PaperMatchService implements Listener {
         if (!stats.isEmpty()) plugin.getLogger().info("Match feature totals match=" + session.matchId()
                 + " mode=" + mode + " " + new java.util.TreeMap<>(stats));
         feedback.clear();
+        entrants.clear();
+        departureStats.clear();
+        creditedKillers.clear();
         outAt.clear();
         causes.clear();
         intel.clear();
@@ -536,6 +537,8 @@ public final class PaperMatchService implements Listener {
             long now = clock.elapsedNanos();
             awaitingNativeRespawn.removeAll(departures);
             for (UUID id : departures) {
+                outAt.putIfAbsent(id,clock.elapsedNanos());
+                departureStats.put(id,resultLines(id));
                 displays.detach(id);
                 supply.disconnect(id);
                 intel.remove(id);
@@ -552,15 +555,17 @@ public final class PaperMatchService implements Listener {
             for (var entry : deaths.entrySet()) {
                 UUID id = entry.getKey();
                 if (!contains(id) || !session.applyDeath(entry.getValue())) continue;
+                telemetry.death(id,creditedKillers.remove(id));
                 boolean eliminated = session.player(id).life().status() == LifeState.Status.ELIMINATED;
                 if (eliminated) outAt.putIfAbsent(id,clock.elapsedNanos());
-                String feed = causes.get(id) + (eliminated ? " · 최종 탈락" : " · 사망");
+                String feed = io.github.augmentwild.domain.CombatView.feed(causes.get(id),eliminated);
                 for (UUID viewer : session.participantIds()) {
                     Player p = plugin.getServer().getPlayer(viewer);
                     if (p != null && PlayerUi.enabled(p,PlayerUi.Option.FEED)) p.sendMessage(feed);
                 }
             }
             causes.clear();
+            creditedKillers.clear();
             departures.clear();
             deaths.clear();
             augments.collectCompleted();
@@ -642,6 +647,17 @@ public final class PaperMatchService implements Listener {
         }
     }
 
+    private List<String> resultLines(UUID id) {
+        var lines = new java.util.ArrayList<String>();
+        lines.add("처치 " + telemetry.kills(id) + " · 사망 " + telemetry.deaths(id));
+        lines.add(feedback.totals(id));
+        lines.add("생존 시간 " + io.github.augmentwild.domain.CombatView.time(outAt.getOrDefault(id,clock.elapsedNanos()) / 1_000_000_000L));
+        lines.add("스킬 사용 " + augments.skillUses(id));
+        lines.add("획득 증강 · " + String.join(", ",augments.ownedNames(id)));
+        lines.addAll(telemetry.attained(id));
+        return List.copyOf(lines);
+    }
+
     private List<String> sidebar(Player player) {
         long elapsed = clock.elapsedSeconds(), start = settings.rules().pvpStartSeconds(), end = start + settings.rules().shrinkSeconds();
         long next = io.github.augmentwild.domain.CombatView.nextPick(elapsed,settings.rules().selectionInterval(),settings.rules().gatheringSeconds());
@@ -649,7 +665,7 @@ public final class PaperMatchService implements Listener {
         return List.of(switch (session.state()) {
             case AUGMENT_SELECTION -> "증강 선택 중"; case GATHERING -> "파밍 단계"; case PVP -> "자기장 축소"; case SUDDEN_DEATH -> "서든데스";
             default -> session.state().name(); }, "경기 시간 " + io.github.augmentwild.domain.CombatView.time(elapsed),
-            "생존 " + session.participantIds().stream().filter(p -> session.player(p).life().status()!=LifeState.Status.ELIMINATED).count() + "/" + entrants,
+            "생존 " + session.participantIds().stream().filter(p -> session.player(p).life().status()!=LifeState.Status.ELIMINATED).count() + "/" + entrants.size(),
             "처치 " + telemetry.kills(id) + " · 사망 " + telemetry.deaths(id),
             clock.selection().isPresent() ? "선택 진행 중" : next < 0 ? "증강 선택 종료" : "다음 증강 " + io.github.augmentwild.domain.CombatView.time(next),
             supply.guide(player,false), elapsed < start ? "축소 시작 " + io.github.augmentwild.domain.CombatView.time(start-elapsed)
@@ -777,12 +793,12 @@ public final class PaperMatchService implements Listener {
                 && session.player(id).life().status() == LifeState.Status.ACTIVE && !deaths.containsKey(id)) {
             deaths.put(id, session.deathIntent(id, clock.elapsedNanos()));
             Player killer = event.getEntity().getKiller();
-            telemetry.death(id, killer != null && contains(killer.getUniqueId()) && !departures.contains(killer.getUniqueId())
+            creditedKillers.put(id, killer != null && contains(killer.getUniqueId()) && !departures.contains(killer.getUniqueId())
                     ? killer.getUniqueId() : null);
             displays.detach(id);
             var source = event.getDamageSource().getCausingEntity();
             String cause = source instanceof Player attacker && contains(attacker.getUniqueId())
-                    ? attacker.getName() + " ⚔ " : "환경 피해 · ";
+                    ? attacker.getName() + " ⚔ " : source == null ? "환경 피해 · " : "생물 또는 기타 피해 · ";
             var last = event.getEntity().getLastDamageCause();
             var trace = last == null ? null : augments.trace(last);
             causes.put(id,cause + event.getEntity().getName() + (trace != null && trace.synthetic() && trace.augment()!=null

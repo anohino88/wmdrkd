@@ -9,8 +9,8 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.persistence.PersistentDataType;
 import net.kyori.adventure.text.Component;
 
-final class PlayerUi implements Listener {
-    enum Option {
+public final class PlayerUi implements Listener {
+    public enum Option {
         HEALTH("상대 체력바"), DAMAGE("피해량 표시"), SIDEBAR("경기 사이드바"), SKILL("스킬 상태"),
         PROC("증강 발동 알림"), PARTICLES("강조 파티클"), SOUND("효과음"), FEED("킬 피드"), SUPPLY("보급 안내");
         final String title;
@@ -20,7 +20,7 @@ final class PlayerUi implements Listener {
             key = new NamespacedKey("augmentwild", "ui_" + name().toLowerCase(Locale.ROOT));
         }
     }
-    static boolean enabled(Player player, Option option) {
+    public static boolean enabled(Player player, Option option) {
         return !player.getPersistentDataContainer().has(option.key, PersistentDataType.BYTE);
     }
     static void audience(Location at, Option option, java.util.function.Consumer<Player> send) {
@@ -39,18 +39,22 @@ final class PlayerUi implements Listener {
         public Inventory getInventory() { return inventory; }
         public boolean availableWhileRestricted() { return true; }
     }
-    static String open(Player p) {
+    public static String open(Player p) {
         var menu = new Menu(p, true);
         for (var option : Option.values()) paint(p, menu, option);
         p.openInventory(menu.inventory);
         return "화면 설정";
+    }
+    public static void toggle(Player p, Option option) {
+        if (enabled(p, option)) p.getPersistentDataContainer().set(option.key, PersistentDataType.BYTE, (byte)1);
+        else p.getPersistentDataContainer().remove(option.key);
     }
     private static void paint(Player p, Menu menu, Option option) {
         boolean on = enabled(p, option);
         menu.inventory.setItem(option.ordinal(), PaperIntel.item(PaperIntel.card(on ? Material.LIME_DYE : Material.GRAY_DYE,
                 option.title + (on ? " ON" : " OFF"))));
     }
-    static void result(Player player, List<String> lines) {
+    public static void result(Player player, List<String> lines) {
         var menu = new Menu(player, false);
         for (int i = 0; i < Math.min(lines.size(), menu.inventory.getSize()); i++)
             menu.inventory.setItem(i, PaperIntel.item(PaperIntel.card(Material.PAPER, lines.get(i))));
@@ -63,8 +67,7 @@ final class PlayerUi implements Listener {
         if (cancelled) return;
         if (!menu.settings || slot < 0 || !(e.getWhoClicked() instanceof Player p) || !p.getUniqueId().equals(menu.owner)) return;
         var option = Option.values()[slot];
-        if (enabled(p, option)) p.getPersistentDataContainer().set(option.key, PersistentDataType.BYTE, (byte)1);
-        else p.getPersistentDataContainer().remove(option.key);
+        toggle(p,option);
         paint(p, menu, option);
     }
     @EventHandler public void drag(InventoryDragEvent e) {

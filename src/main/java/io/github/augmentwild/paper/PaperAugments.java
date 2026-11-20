@@ -54,6 +54,7 @@ final class PaperAugments implements Listener {
     private UUID match;
 
     private static final class Profile {
+        final Set<String> acquired = new LinkedHashSet<>();
         final Set<String> owned = new LinkedHashSet<>();
         final AugmentTimers timers = new AugmentTimers();
         final Set<String> modifiers = new HashSet<>();
@@ -176,7 +177,7 @@ final class PaperAugments implements Listener {
     int skillUses(UUID id) { return official.skillUses(id); }
     String skill(Player player, String[] args) { return official.skill(player, args); }
     String effectName(String id) { var def = id == null ? null : registry.get(id); return def == null ? "증강" : def.name(); }
-    List<String> ownedNames(UUID id) { var p = profiles.get(id); return p == null ? List.of() : p.owned.stream().map(this::effectName).toList(); }
+    List<String> ownedNames(UUID id) { var p = profiles.get(id); return p == null ? List.of() : p.acquired.stream().map(this::effectName).toList(); }
     String cast(Player player, String id) { return official.cast(player, id); }
 
     Listener officialListener() { return official; }
@@ -309,6 +310,7 @@ final class PaperAugments implements Listener {
 
     private boolean acquire(Profile profile, UUID player, AugmentDefinition definition, String source) {
         if (!profile.owned.add(definition.id())) return false;
+        profile.acquired.add(definition.id());
         official.selected(player, definition.id(), source);
         official.acquired(player, definition.id());
         return true;
@@ -578,6 +580,8 @@ final class PaperAugments implements Listener {
             return;
         }
         profile.owned.removeAll(commit.get().removed());
+        profile.acquired.addAll(commit.get().awarded());
+        profile.acquired.add(exchangeId);
         profile.owned.addAll(commit.get().awarded());
         profile.owned.add(exchangeId);
         for (String lost : commit.get().removed()) release(player, profile, lost, false);

@@ -12,6 +12,16 @@ public final class CombatView {
             return String.format(java.util.Locale.ROOT,"%s · %.1f / %.1f HP · 흡수 +%.1f",name,hp,max,absorption);
         }
     }
+    public record OriginTarget(java.util.UUID attacker, java.util.UUID target, java.util.UUID origin) {}
+    public static String supplyStatus(boolean published, boolean claimed, boolean attempted, boolean present) {
+        if (!published) return "공개 대기";
+        if (claimed) return "획득 완료";
+        if (attempted) return present ? "개봉 가능" : "취소";
+        return "등장 예정";
+    }
+    public static String feed(String cause, boolean eliminated) {
+        return cause + (eliminated ? " · 최종 탈락" : " · 사망");
+    }
     public static boolean scan(long tick) { return tick % 5 == 0; }
     public static boolean inRange(double distanceSquared) { return distanceSquared <= RANGE * RANGE; }
 

@@ -14,7 +14,7 @@ final class CombatFeedback implements Listener {
     private record Sample(EntityDamageEvent event, Player owner, LivingEntity victim, UUID root, String label,
                           double hp, double absorption, double expectedHp, double expectedAbs, double shield,
                           boolean critical, boolean blocked, long time) {}
-    private record Group(UUID owner, UUID victim, UUID root) {}
+
     private static final class Hit {
         final long start;
         final Location at;
@@ -27,7 +27,7 @@ final class CombatFeedback implements Listener {
     private final Map<UUID,Sample> pending = new HashMap<>();
     private record Heal(EntityRegainHealthEvent event, Player player, double before, double expected) {}
     private final Map<UUID,Heal> heals = new HashMap<>();
-    private final Map<Group,Hit> groups = new LinkedHashMap<>();
+    private final Map<CombatView.OriginTarget,Hit> groups = new LinkedHashMap<>();
     private final Map<TextDisplay,Long> numbers = new HashMap<>();
     private final Map<UUID,Double> dealt = new HashMap<>(), received = new HashMap<>();
     private final Set<EntityDamageEvent> seen = Collections.newSetFromMap(new WeakHashMap<>());
@@ -82,7 +82,7 @@ final class CombatFeedback implements Listener {
         if (health + abs + s.shield <= 0 && !s.blocked) return;
         if (health > 0) dealt.merge(s.owner.getUniqueId(),health,Double::sum);
         if (health > 0 && s.victim instanceof Player) received.merge(id,health,Double::sum);
-        var key = new Group(s.owner.getUniqueId(),id,s.root);
+        var key = new CombatView.OriginTarget(s.owner.getUniqueId(),id,s.root);
         var hit = groups.computeIfAbsent(key, ignored -> new Hit(s));
         if (!hit.label.equals(s.label)) hit.label = "복합 공격";
         hit.hp += health; hit.absorption += abs; hit.shield += s.shield; hit.critical |= s.critical; hit.blocked |= s.blocked;
@@ -94,7 +94,7 @@ final class CombatFeedback implements Listener {
         groups.entrySet().removeIf(entry -> {
             Hit h = entry.getValue();
             if (now - h.start < CombatView.DAMAGE_WINDOW) return false;
-            Player p = Bukkit.getPlayer(entry.getKey().owner);
+            Player p = Bukkit.getPlayer(entry.getKey().attacker());
             if (p != null && eligible(p) && PlayerUi.enabled(p,PlayerUi.Option.DAMAGE)) {
                 String text = h.target + " · " + (h.critical ? "치명타! " : "") + h.label
                         + (h.hp > 0 ? " −" + fmt(h.hp) + " HP" : "")

@@ -12,7 +12,7 @@ import org.bukkit.scoreboard.*;
 
 public final class MatchDisplays {
     private record Target(CombatView.Observation view, BossBar bar) {}
-    private record Sidebar(Scoreboard prior, Scoreboard board, Objective objective, Map<Integer,String> lines) {}
+    private record Sidebar(Scoreboard prior, Scoreboard board, Objective objective, String name, Map<Integer,String> lines) {}
     private final Map<UUID,Target> targets = new HashMap<>();
     private final Map<UUID,Sidebar> boards = new HashMap<>();
     private final Set<UUID> conflicts = new HashSet<>();
@@ -94,9 +94,10 @@ public final class MatchDisplays {
         }
         if (side == null) {
             var board = Bukkit.getScoreboardManager().getNewScoreboard();
-            var objective = board.registerNewObjective("aw_match", Criteria.DUMMY, Component.text("AUGMENTWILD"));
+            String name = "aw_" + UUID.randomUUID().toString().substring(0,8);
+            var objective = board.registerNewObjective(name, Criteria.DUMMY, Component.text("AUGMENTWILD"));
             objective.setDisplaySlot(DisplaySlot.SIDEBAR);
-            side = new Sidebar(current, board, objective, new HashMap<>());
+            side = new Sidebar(current, board, objective, name, new HashMap<>());
             boards.put(id, side);
             player.setScoreboard(board);
         }
@@ -108,7 +109,7 @@ public final class MatchDisplays {
         }
     }
     private boolean ownsBoard(Sidebar side) {
-        return side.board.getObjective(DisplaySlot.SIDEBAR) != null && side.board.getObjective(DisplaySlot.SIDEBAR).getName().equals("aw_match") && side.board.getObjectives().size() == 1
+        return side.board.getObjective(DisplaySlot.SIDEBAR) != null && side.board.getObjective(DisplaySlot.SIDEBAR).getName().equals(side.name) && side.board.getObjectives().size() == 1
                 && side.board.getTeams().isEmpty();
     }
     private void removeBoard(UUID id) {
@@ -116,6 +117,8 @@ public final class MatchDisplays {
         var p = online.apply(id);
         if (board == null) return;
         if (p != null && p.getScoreboard() == board.board && ownsBoard(board)) p.setScoreboard(board.prior);
+        var ours = board.board.getObjective(board.name);
+        if (ours != null) ours.unregister();
 
     }
     public void clear() {
