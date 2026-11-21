@@ -3,6 +3,7 @@ package io.github.augmentwild;
 import io.github.augmentwild.paper.ArenaSearchService;
 import io.github.augmentwild.paper.PaperMatchService;
 import io.github.augmentwild.paper.PaperMatchSettings;
+import io.github.augmentwild.paper.PaperQuickMenu;
 import java.util.Locale;
 import java.util.Objects;
 import org.bukkit.command.Command;
@@ -14,13 +15,17 @@ import org.bukkit.plugin.java.JavaPlugin;
 public final class AugmentWildPlugin extends JavaPlugin {
     private PaperMatchService matches;
     private ArenaSearchService arenaSearch;
+    private PaperQuickMenu quickMenu;
 
     @Override public void onEnable() {
         if (matches != null) return;
         saveDefaultConfig();
         arenaSearch = new ArenaSearchService(this);
         matches = new PaperMatchService(this, PaperMatchSettings.load(getConfig()), arenaSearch);
-        Objects.requireNonNull(getCommand("aw"), "Missing aw command in plugin.yml").setExecutor(this);
+        quickMenu = new PaperQuickMenu(this, matches);
+        var aw = Objects.requireNonNull(getCommand("aw"), "Missing aw command in plugin.yml");
+        aw.setExecutor(this);
+        aw.setTabCompleter(new AwCompletion(matches));
         getServer().getPluginManager().registerEvents(arenaSearch, this);
         getServer().getPluginManager().registerEvents(matches, this);
         getServer().getPluginManager().registerEvents(matches.restrictions(), this);
@@ -30,6 +35,7 @@ public final class AugmentWildPlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(matches.supplyListener(), this);
         getServer().getPluginManager().registerEvents(matches.feedbackListener(), this);
         getServer().getPluginManager().registerEvents(matches.uiListener(), this);
+        getServer().getPluginManager().registerEvents(quickMenu, this);
         matches.recoverSupply();
         matches.recoverOnlinePlayers();
     }
@@ -43,14 +49,20 @@ public final class AugmentWildPlugin extends JavaPlugin {
         HandlerList.unregisterAll(matches.intelListener());
         HandlerList.unregisterAll(matches.supplyListener());
         HandlerList.unregisterAll(arenaSearch);
+        HandlerList.unregisterAll(quickMenu);
         arenaSearch.cancel();
         matches.shutdown();
         matches = null;
+        quickMenu = null;
     }
 
     @Override public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (matches == null) {
             sender.sendMessage("경기 서비스를 사용할 수 없습니다.");
+            return true;
+        }
+        if (args.length == 0) {
+            sender.sendMessage(sender instanceof Player player ? quickMenu.open(player) : "플레이어 전용 메뉴입니다.");
             return true;
         }
         if (args.length >= 2 && args[0].equalsIgnoreCase("admin") && args[1].equalsIgnoreCase("test")) {
@@ -94,6 +106,7 @@ public final class AugmentWildPlugin extends JavaPlugin {
         }
         if (args.length != 1) return false;
         switch (args[0].toLowerCase(Locale.ROOT)) {
+            case "menu" -> sender.sendMessage(sender instanceof Player p ? quickMenu.open(p) : "플레이어 전용 메뉴입니다.");
             case "combatlog" -> sender.sendMessage(sender instanceof Player p ? matches.combatLog(p) : "플레이어 전용 명령입니다.");
             case "ui" -> sender.sendMessage(sender instanceof Player p ? matches.ui(p) : "플레이어 전용 명령입니다.");
             case "supply" -> sender.sendMessage(sender instanceof Player p ? matches.guide(p) : "플레이어 전용 명령입니다.");
