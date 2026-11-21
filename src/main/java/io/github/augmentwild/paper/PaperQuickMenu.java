@@ -13,6 +13,9 @@ import org.bukkit.event.block.Action;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.NamespacedKey;
+import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -139,6 +142,21 @@ public final class PaperQuickMenu implements Listener {
         }
         player.openInventory(menu.inventory);
         return "스킬 슬롯을 고른 뒤 아래 증강을 클릭해 지정하세요.";
+    }
+
+    /** First-time players are shown the controls once instead of needing a help command. */
+    @EventHandler
+    public void firstJoinHint(PlayerJoinEvent event) {
+        Player player = event.getPlayer();
+        if (!player.hasPermission("augmentwild.play")) return;
+        NamespacedKey key = new NamespacedKey(plugin, "quick_menu_hint_seen");
+        if (player.getPersistentDataContainer().has(key, PersistentDataType.BYTE)) return;
+        player.getPersistentDataContainer().set(key, PersistentDataType.BYTE, (byte) 1);
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            if (!player.isOnline()) return;
+            player.sendMessage("§b[AugmentWild] §f웅크리기 + 빈손 우클릭(공중) = 게임 메뉴");
+            player.sendMessage("§7다이아 우클릭: 적 추적 · 나침반 공중 우클릭: 보급 안내 · 스킬: 웅크리기 + F");
+        }, 20L);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
