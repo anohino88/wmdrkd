@@ -1332,6 +1332,11 @@ final class PaperOfficialCombat implements Listener {
     }
 
     int skillUses(UUID id) { var f = fighters.get(id); return f == null ? 0 : f.skillUses; }
+    List<String> availableSkills(Player player) {
+        if (fighter(player.getUniqueId()) == null) return List.of();
+        return ACTIVE_SKILLS.stream().filter(id -> owns(player, id)).sorted().toList();
+    }
+
     String skill(Player player, String[] args) {
         var state = fighters.get(player.getUniqueId());
         if (state == null) return "지정한 발동형 스킬이 없습니다.";
