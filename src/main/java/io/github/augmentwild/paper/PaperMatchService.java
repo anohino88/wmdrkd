@@ -142,6 +142,23 @@ public final class PaperMatchService implements Listener {
     public Listener supplyListener() { return supply; }
     public Listener intelListener() { return intel; }
     public String locate(Player player) { return intel.locate(player); }
+
+    /** A real diamond right click performs the same transaction as /aw locate. */
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void diamondTracker(org.bukkit.event.player.PlayerInteractEvent event) {
+        if (event.getHand() != org.bukkit.inventory.EquipmentSlot.HAND
+                || event.getItem() == null || event.getItem().getType() != org.bukkit.Material.DIAMOND
+                || event.getAction() != org.bukkit.event.block.Action.RIGHT_CLICK_AIR
+                   && event.getAction() != org.bukkit.event.block.Action.RIGHT_CLICK_BLOCK) return;
+        Player player = event.getPlayer();
+        if (!player.hasPermission("augmentwild.play") || !player.hasPermission("augmentwild.track")
+                || !augmentActive(player)) return;
+        // Respect a different plugin's cancelled block interaction. Bukkit may
+        // pre-cancel air interactions when there is nothing to interact with.
+        if (event.getAction() == org.bukkit.event.block.Action.RIGHT_CLICK_BLOCK && event.isCancelled()) return;
+        event.setCancelled(true);
+        player.sendMessage(locate(player));
+    }
     public String scout(Player player) { return intel.openScout(player); }
     public String deathReport(Player player) { return intel.openDeath(player); }
 
