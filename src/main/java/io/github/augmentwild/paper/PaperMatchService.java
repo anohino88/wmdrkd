@@ -176,6 +176,7 @@ public final class PaperMatchService implements Listener {
     }
 
     public UUID menuSession() { return session.matchId(); }
+    public boolean isLobby() { return session.state() == MatchState.WAITING; }
     public boolean inMatch(Player player) { return contains(player.getUniqueId()) && !departures.contains(player.getUniqueId()); }
     public boolean soloInProgress(Player player) {
         return soloLab && labWorld != null && task != null && inMatch(player)
