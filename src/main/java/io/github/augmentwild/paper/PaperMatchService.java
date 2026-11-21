@@ -177,6 +177,10 @@ public final class PaperMatchService implements Listener {
 
     public UUID menuSession() { return session.matchId(); }
     public boolean inMatch(Player player) { return contains(player.getUniqueId()) && !departures.contains(player.getUniqueId()); }
+    public boolean soloInProgress(Player player) {
+        return soloLab && labWorld != null && task != null && inMatch(player)
+                && labWorld.equals(player.getWorld().getUID());
+    }
     public boolean picking(Player player) {
         if (clock == null || !inMatch(player)) return false;
         var choice = clock.selection().map(round -> round.choices().get(player.getUniqueId())).orElse(null);
