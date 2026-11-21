@@ -43,6 +43,21 @@ public final class PaperQuickMenu implements Listener {
         @Override public Inventory getInventory() { return inventory; }
     }
 
+    private static final class ConfirmStop implements PaperMenu {
+        final UUID owner;
+        final UUID match;
+        final Inventory inventory;
+        ConfirmStop(Player player, UUID match) {
+            this.owner = player.getUniqueId();
+            this.match = match;
+            this.inventory = Bukkit.createInventory(this, 9, Component.text("1인 전투 실험 종료 확인"));
+            inventory.setItem(3, PaperIntel.item(PaperIntel.card(Material.BARRIER, "실험 종료 확인")));
+            inventory.setItem(5, PaperIntel.item(PaperIntel.card(Material.LIME_DYE, "취소 · 메뉴로 돌아가기")));
+        }
+        @Override public boolean availableWhileRestricted() { return true; }
+        @Override public Inventory getInventory() { return inventory; }
+    }
+
     public PaperQuickMenu(JavaPlugin plugin, PaperMatchService matches) {
         this.plugin = plugin;
         this.matches = matches;
@@ -65,8 +80,10 @@ public final class PaperQuickMenu implements Listener {
         item(menu, 16, Material.COMPASS, "보급 길잡이");
         item(menu, 21, Material.WRITABLE_BOOK, "전투 기록");
         item(menu, 22, Material.PAPER, "최근 경기 결과");
-        if (player.hasPermission("augmentwild.admin") && player.hasPermission("augmentwild.admin.test"))
-            item(menu, 23, Material.ENDER_EYE, "1인 전투 실험 시작 · 관리자 전용");
+        if (player.hasPermission("augmentwild.admin") && player.hasPermission("augmentwild.admin.test")) {
+            if (matches.soloInProgress(player)) item(menu, 24, Material.BARRIER, "1인 전투 실험 종료");
+            else item(menu, 23, Material.ENDER_EYE, "1인 전투 실험 시작 · 관리자 전용");
+        }
         player.openInventory(menu.inventory);
         return "빠른 메뉴 · 웅크리기 + 빈손 우클릭(공중)으로 다시 열 수 있습니다.";
     }
@@ -99,8 +116,30 @@ public final class PaperQuickMenu implements Listener {
         event.getPlayer().sendMessage(open(event.getPlayer()));
     }
 
+    private String confirmStop(Player player) {
+        if (!player.hasPermission("augmentwild.admin") || !player.hasPermission("augmentwild.admin.test")
+                || !matches.soloInProgress(player)) return "진행 중인 본인 1인 실험이 없습니다.";
+        player.openInventory(new ConfirmStop(player, matches.menuSession()).inventory);
+        return "실험 종료 여부를 확인하세요.";
+    }
+
     @EventHandler(priority = EventPriority.HIGHEST)
     public void click(InventoryClickEvent event) {
+        if (event.getView().getTopInventory().getHolder() instanceof ConfirmStop confirm) {
+            int selection = PaperMenu.lock(event, false);
+            if (selection < 0 || !(event.getWhoClicked() instanceof Player p)
+                    || !p.getUniqueId().equals(confirm.owner)) return;
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                if (!p.isOnline() || !confirm.match.equals(matches.menuSession())
+                        || p.getOpenInventory().getTopInventory().getHolder() != confirm) return;
+                p.closeInventory();
+                if (selection == 3 && p.hasPermission("augmentwild.admin")
+                        && p.hasPermission("augmentwild.admin.test") && matches.soloInProgress(p)) {
+                    p.sendMessage(matches.stop());
+                } else if (selection == 5) p.sendMessage(open(p));
+            });
+            return;
+        }
         if (!(event.getView().getTopInventory().getHolder() instanceof Menu menu)) return;
         boolean blocked = event.isCancelled();
         int slot = PaperMenu.lock(event, false);
@@ -129,6 +168,7 @@ public final class PaperQuickMenu implements Listener {
             case 22 -> matches.result(player);
             case 23 -> player.hasPermission("augmentwild.admin") && player.hasPermission("augmentwild.admin.test")
                     ? matches.soloStart(player) : "관리자 권한이 없습니다.";
+            case 24 -> confirmStop(player);
             default -> open(player);
         };
     }
@@ -150,6 +190,7 @@ public final class PaperQuickMenu implements Listener {
     }
 
     @EventHandler public void drag(InventoryDragEvent event) {
-        if (event.getView().getTopInventory().getHolder() instanceof Menu) event.setCancelled(true);
+        if (event.getView().getTopInventory().getHolder() instanceof Menu
+                || event.getView().getTopInventory().getHolder() instanceof ConfirmStop) event.setCancelled(true);
     }
 }
