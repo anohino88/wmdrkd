@@ -261,18 +261,44 @@ public final class PaperMatchService implements Listener {
             return "관리자 실험 권한이 없습니다.";
         if (!lab.ready() || !plugin.getConfig().getBoolean("dev.combat-lab.allow-solo", true))
             return "1인 테스트는 활성화된 전용 전투 실험실에서만 가능합니다.";
-        if (session.state() != MatchState.WAITING || task != null) return "진행 중인 경기가 있습니다.";
+        if (session.state() != MatchState.WAITING || task != null || search.busy())
+            return "진행 중인 경기 또는 경기장 정리 작업이 있습니다.";
         World world = plugin.getServer().getWorld(lab.world());
-        if (world == null || !world.equals(player.getWorld()))
-            return "먼저 설정된 테스트 월드 " + lab.world() + "로 이동하세요.";
-        if (world.getPlayers().size() != 1) return "테스트 월드에 혼자 있어야 합니다.";
+        if (world == null || world.getEnvironment() != World.Environment.NORMAL
+                || !world.getPVP() || world.equals(plugin.getServer().getWorld(plugin.getConfig().getString("arena.world", ""))))
+            return "운영 월드와 다른 기존 PvP 테스트 오버월드를 서버에 로드하세요.";
+        if (world.getPlayers().stream().anyMatch(other -> !other.equals(player)))
+            return "테스트 월드에 다른 플레이어가 있어 시작할 수 없습니다.";
         if (session.participantIds().stream().anyMatch(id -> !id.equals(player.getUniqueId())))
             return "대기 중인 다른 참가자가 있어 혼자 테스트를 시작할 수 없습니다.";
-        if (!contains(player.getUniqueId())) {
+        boolean added = !contains(player.getUniqueId());
+        if (added) {
             String response = join(player);
             if (!contains(player.getUniqueId())) return response;
         }
-        return start(player, true);
+        boolean relocated = !world.equals(player.getWorld());
+        if (relocated) {
+            Location entry = world.getSpawnLocation();
+            if (!SafeArenaSurface.valid(entry)) {
+                if (added) session.leave(player.getUniqueId());
+                return "테스트 월드의 스폰 지점이 안전하지 않습니다. 먼저 안전한 스폰을 지정하세요.";
+            }
+            try {
+                snapshots.capture(player);
+                captured.add(player.getUniqueId());
+            } catch (java.io.IOException failure) {
+                if (added) session.leave(player.getUniqueId());
+                plugin.getLogger().log(Level.WARNING, "Could not snapshot solo test player", failure);
+                return "1인 테스트 시작 전 플레이어 인벤토리 스냅샷을 저장하지 못했습니다.";
+            }
+            if (!move(player, entry)) {
+                clearMatch(); // Restores the original location and inventory, or keeps the recovery record.
+                return "테스트 월드로 안전하게 이동하지 못했습니다.";
+            }
+        }
+        String response = start(player, true);
+        if (relocated && session.state() == MatchState.WAITING) clearMatch();
+        return response;
     }
 
     private boolean labParticipant(Player player) {
@@ -353,7 +379,8 @@ public final class PaperMatchService implements Listener {
         if (players.size() < settings.minimumPlayers() && !singlePractice) {
             return "참가자가 최소 " + settings.minimumPlayers() + "명 필요합니다.";
         }
-        if (players.stream().anyMatch(id -> available(id) == null || snapshots.pending(id))) {
+        if (players.stream().anyMatch(id -> available(id) == null
+                || snapshots.pending(id) && !(singlePractice && captured.contains(id)))) {
             return "모든 참가자가 접속하고 살아 있어야 하며 이전 복구 작업이 없어야 합니다.";
         }
         String worldName = plugin.getConfig().getString("arena.world", "");
@@ -400,8 +427,10 @@ public final class PaperMatchService implements Listener {
                 if (player == null || labWorld != null && !labWorld.equals(player.getWorld().getUID())) {
                     throw new IllegalStateException("Participant unavailable at arena preparation: " + id);
                 }
-                snapshots.capture(player);
-                captured.add(id);
+                if (!captured.contains(id)) {
+                    snapshots.capture(player);
+                    captured.add(id);
+                }
             }
             var targets = context.spawns();
             final class Placing implements Runnable {
