@@ -175,6 +175,16 @@ public final class PaperMatchService implements Listener {
                 && border.area(clock.elapsedSeconds()).contains(location.getX(), location.getZ(), 0);
     }
 
+    public UUID menuSession() { return session.matchId(); }
+    public boolean inMatch(Player player) { return contains(player.getUniqueId()) && !departures.contains(player.getUniqueId()); }
+    public boolean picking(Player player) {
+        if (clock == null || !inMatch(player)) return false;
+        var choice = clock.selection().map(round -> round.choices().get(player.getUniqueId())).orElse(null);
+        return choice != null && choice.status() == io.github.augmentwild.domain.SelectionRound.Status.PENDING;
+    }
+    public List<String> availableSkills(Player player) { return augments.availableSkills(player); }
+    public List<String> registeredAugments() { return augments.registeredIds(); }
+    public List<String> ownedAugments(Player player) { return augments.ownedIds(player); }
     public String combatLog(Player p) { return hud.combatLog(p); }
     public String skill(Player player, String[] args) { return augments.skill(player, args); }
     public String castAugment(Player player, String id) { return augments.cast(player, id); }
