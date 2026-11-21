@@ -5,7 +5,7 @@ api-version: '26.3'
 commands:
   aw:
     description: 증강 야생 명령어
-    usage: "/aw <status|join|leave|augment|augments|combatlog|ui|supply|result|locate|scout|death> 또는 /aw skill <bind [1-3] <id>|select <1-3>|next|unbind|use|status> 또는 /aw cast <증강 ID> 또는 /aw admin <start|stop|arena preview>"
+    usage: "/aw [menu|join|leave|status|augment|augments|ui|combatlog|supply|result|locate|track|scout|death|skill|cast|admin] (TAB 자동완성) · /aw admin test solo"
 permissions:
   augmentwild.play:
     default: true
