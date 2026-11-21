@@ -52,7 +52,7 @@ public final class PlayerUi implements Listener {
         Menu(Player player, boolean settings) {
             owner = player.getUniqueId();
             this.settings = settings;
-            inventory = Bukkit.createInventory(this, settings ? ((Option.values().length + 8) / 9) * 9 : 27, Component.text(settings ? "화면 설정" : "경기 결과"));
+            inventory = Bukkit.createInventory(this, settings ? Math.max(27, ((Option.values().length + 8) / 9) * 9) : 27, Component.text(settings ? "화면 설정" : "경기 결과"));
         }
         public Inventory getInventory() { return inventory; }
         public boolean availableWhileRestricted() { return true; }
