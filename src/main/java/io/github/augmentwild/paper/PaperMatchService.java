@@ -58,6 +58,7 @@ public final class PaperMatchService implements Listener {
     private boolean regionCommitted;
     private final CombatLab lab;
     private UUID labWorld;
+    private boolean soloLab;
     private long matchStarted;
     private long lastSurvivorSample;
 
@@ -227,6 +228,26 @@ public final class PaperMatchService implements Listener {
 
     public String start(CommandSender sender) { return start(sender, false); }
 
+    /** One-player practice is deliberately confined to the explicitly enabled combat lab. */
+    public String soloStart(Player player) {
+        if (!player.hasPermission("augmentwild.admin") || !player.hasPermission("augmentwild.admin.test"))
+            return "관리자 실험 권한이 없습니다.";
+        if (!lab.ready() || !plugin.getConfig().getBoolean("dev.combat-lab.allow-solo", true))
+            return "1인 테스트는 활성화된 전용 전투 실험실에서만 가능합니다.";
+        if (session.state() != MatchState.WAITING || task != null) return "진행 중인 경기가 있습니다.";
+        World world = plugin.getServer().getWorld(lab.world());
+        if (world == null || !world.equals(player.getWorld()))
+            return "먼저 설정된 테스트 월드 " + lab.world() + "로 이동하세요.";
+        if (world.getPlayers().size() != 1) return "테스트 월드에 혼자 있어야 합니다.";
+        if (session.participantIds().stream().anyMatch(id -> !id.equals(player.getUniqueId())))
+            return "대기 중인 다른 참가자가 있어 혼자 테스트를 시작할 수 없습니다.";
+        if (!contains(player.getUniqueId())) {
+            String response = join(player);
+            if (!contains(player.getUniqueId())) return response;
+        }
+        return start(player, true);
+    }
+
     private boolean labParticipant(Player player) {
         return labWorld != null && contains(player.getUniqueId());
     }
@@ -249,6 +270,8 @@ public final class PaperMatchService implements Listener {
         }
         if (!lab.ready()) return "전투 실험실을 활성화하고 운영 월드와 다른 기존 테스트 월드를 지정하세요.";
         if (action.equals("start") && args.length == 1) return start(sender, true);
+        if (action.equals("solo") && args.length == 1)
+            return sender instanceof Player player ? soloStart(player) : "1인 테스트는 플레이어만 시작할 수 있습니다.";
         if (action.equals("presets") && args.length == 1) {
             return "실험 프리셋 " + io.github.augmentwild.augment.AugmentCombinations.PRESETS.keySet();
         }
@@ -298,7 +321,9 @@ public final class PaperMatchService implements Listener {
         if (search.busy()) return "이전 경기장 탐색이 정리될 때까지 기다리세요.";
         if (!supply.recover()) return "미처리 보급 복구 기록이 있습니다. 서버 로그를 확인하세요.";
         var players = session.participantIds().stream().sorted().toList();
-        if (players.size() < settings.minimumPlayers()) {
+        boolean singlePractice = experiment && players.size() == 1 && lab.ready()
+                && plugin.getConfig().getBoolean("dev.combat-lab.allow-solo", true);
+        if (players.size() < settings.minimumPlayers() && !singlePractice) {
             return "참가자가 최소 " + settings.minimumPlayers() + "명 필요합니다.";
         }
         if (players.stream().anyMatch(id -> available(id) == null || snapshots.pending(id))) {
@@ -318,6 +343,7 @@ public final class PaperMatchService implements Listener {
             worldName = lab.world();
             labWorld = world.getUID();
         }
+        soloLab = singlePractice;
         UUID matchId = session.matchId();
         session.transition(MatchState.PREPARING);
         String message = search.search(sender, players.size(), matchId, worldName, context -> {
@@ -519,6 +545,7 @@ public final class PaperMatchService implements Listener {
         hud.clear(plugin);
         regionCommitted = false;
         labWorld = null;
+        soloLab = false;
         arena = null;
         clock = null;
         for (UUID id : captured) {
@@ -616,7 +643,7 @@ public final class PaperMatchService implements Listener {
                     telemetry.survivors(elapsed, alive);
                 }
             }
-            if (session.state() == MatchState.PVP || session.state() == MatchState.SUDDEN_DEATH) {
+            if ((session.state() == MatchState.PVP || session.state() == MatchState.SUDDEN_DEATH) && !soloLab) {
                 session.resolveTick(Set.of(), now);
             } else if (session.participantIds().isEmpty()) {
                 session.cancel();
