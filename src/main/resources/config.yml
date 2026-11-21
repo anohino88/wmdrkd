@@ -121,6 +121,7 @@ dev:
   combat-lab:
     enabled: false
     world: ""
+    allow-solo: true
   combat-audit:
     enabled: false
     max-events: 1000
