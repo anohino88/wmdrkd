@@ -188,6 +188,12 @@ final class PaperAugments implements Listener {
         }
         return rows;
     }
+    List<String> availableSkills(Player player) { return official.availableSkills(player); }
+    List<String> registeredIds() { return registry.selectable().stream().map(AugmentDefinition::id).sorted().toList(); }
+    List<String> ownedIds(Player player) {
+        var profile = profiles.get(player.getUniqueId());
+        return profile == null ? List.of() : profile.owned.stream().sorted().toList();
+    }
     String skill(Player player, String[] args) { return official.skill(player, args); }
     String effectName(String id) { var def = id == null ? null : registry.get(id); return def == null ? "증강" : def.name(); }
     List<String> ownedNames(UUID id) { var p = profiles.get(id); return p == null ? List.of() : p.acquired.stream().map(this::effectName).toList(); }
