@@ -113,7 +113,7 @@ public final class PaperQuickMenu implements Listener {
         item(menu, 26, Material.ARROW, "메뉴 새로고침");
         if (player.hasPermission("augmentwild.admin") && player.hasPermission("augmentwild.admin.test")) {
             if (matches.soloInProgress(player)) item(menu, 24, Material.BARRIER, "1인 전투 실험 종료");
-            else item(menu, 23, Material.ENDER_EYE, "1인 전투 실험 시작 · 관리자 전용");
+            else if (matches.isLobby()) item(menu, 23, Material.ENDER_EYE, "1인 전투 실험 시작 · 관리자 전용");
         }
         if (player.hasPermission("augmentwild.admin") && matches.isLobby())
             item(menu, 25, Material.EMERALD, "일반 경기 시작 · 관리자", "최소 참가자 충족 시 시작", "실수 방지를 위해 확인 화면이 열립니다");
