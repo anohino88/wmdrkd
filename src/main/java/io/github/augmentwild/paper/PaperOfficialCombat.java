@@ -113,6 +113,9 @@ final class PaperOfficialCombat implements Listener {
     private record MissileShot(PaperMissiles.Missile missile, DamageChain.Root root) { }
 
     private static final class Fighter {
+        final UUID owner;
+        Fighter(UUID owner) { this.owner = owner; }
+
         final Map<String, CombatReaction> reactions = new HashMap<>();
         final List<Pending> pending = new ArrayList<>();
         int skillUses;
@@ -260,7 +263,7 @@ final class PaperOfficialCombat implements Listener {
         return target instanceof Enemy && arena.test(target.getLocation());
     }
 
-    private Fighter fighter(UUID id) { return fighters.computeIfAbsent(id, key -> new Fighter()); }
+    private Fighter fighter(UUID id) { return fighters.computeIfAbsent(id, Fighter::new); }
 
     void acquired(UUID id, String augment) {
         if (!catalog.rules.containsKey(augment) || !rule(augment).definition().implemented()) return;
@@ -708,6 +711,7 @@ final class PaperOfficialCombat implements Listener {
         int previous = state.progress.value(key);
         int updated = state.progress.addPermanent(key, raw, Math.max(AugmentResonance.BASE, rate), cap);
         audit.add(id, Metric.STACKS, updated - previous);
+        if (updated > previous) art.cue(state.owner,id);
         return updated;
     }
 
@@ -721,6 +725,7 @@ final class PaperOfficialCombat implements Listener {
         player.setHealth(Math.min(maxHealth(player), previous + amount));
         hud.heal(player,previous,player.getHealth());
         audit.add(effect, Metric.HEALED, player.getHealth() - previous);
+        if (player.getHealth() > previous) art.cue(player,effect);
     }
 
     private void modifier(Player player, Attribute attribute, String key, double amount, Operation operation) {
@@ -793,6 +798,7 @@ final class PaperOfficialCombat implements Listener {
         if (transform) {
             state.transformedSmall = small(state, second);
             player.setHealth(Math.clamp(healthFraction * maxHealth(player), .01, maxHealth(player)));
+            art.cue(player,"mad_scientist");
         }
         if (valid(player)) {
             tickReactions(player, state);
@@ -814,11 +820,13 @@ final class PaperOfficialCombat implements Listener {
                 && (phase.get() == MatchState.PVP || phase.get() == MatchState.SUDDEN_DEATH)) {
             state.veinGranted = true;
             grantAbsorption(player, "vein-absorption");
+            art.cue(player,"vein_overload");
         }
         if (!state.apple && owns(player, "mineral_devourer")
                 && (phase.get() == MatchState.PVP || phase.get() == MatchState.SUDDEN_DEATH)
                 && player.getInventory().firstEmpty() >= 0) {
             state.apple = player.getInventory().addItem(new ItemStack(Material.GOLDEN_APPLE)).isEmpty();
+            if (state.apple) art.cue(player,"mineral_devourer");
         }
     }
 
@@ -1047,6 +1055,7 @@ final class PaperOfficialCombat implements Listener {
         if (owns(attacker, "bounty_hunter") && ready(attacker, state, "bounty_hunter")) {
             state.bountyTarget = target.getUniqueId();
             state.bountyUntil = now() + rule("bounty_hunter").duration();
+            art.cue(attacker,"bounty_hunter");
         }
         if (owns(attacker, "time_thief") && ready(attacker, state, "time_thief")) stealTime(attacker, target);
         if (owns(attacker, "blood_trace")) {
@@ -1076,6 +1085,7 @@ final class PaperOfficialCombat implements Listener {
             boolean upgraded = evolved(state, AugmentEvolution.BERSERK.counter, AugmentEvolution.BERSERK.goal);
             state.progress.add("berserk_engine", 1, upgraded ? catalog.count("berserk-evolved-cap") : rule("berserk_engine").cap());
             state.lastBerserkHit = now();
+            art.cue(attacker,"berserk_engine");
         }
         if (owns(attacker, "infernal_conductor")) {
             ignite(state, target, burnEvolved(state) ? catalog.count("burn-evolved-add") : 1);
@@ -1596,8 +1606,11 @@ final class PaperOfficialCombat implements Listener {
         for (var target : opponents(player, player.getLocation(), catalog.setting("erosion-radius"))) {
             absorption += erosion.drain(player.getUniqueId(), target, now(), rule.amount(), rule.duration());
         }
-        if (absorption > 0) addAbsorption(player, absorption * catalog.setting("erosion-absorption-ratio"),
-                catalog.setting("erosion-absorption-cap"));
+        if (absorption > 0) {
+            addAbsorption(player, absorption * catalog.setting("erosion-absorption-ratio"),
+                    catalog.setting("erosion-absorption-cap"));
+            art.cue(player,"world_erosion");
+        }
     }
 
     private boolean trackedBomb(Snowball projectile) {
@@ -1638,6 +1651,7 @@ final class PaperOfficialCombat implements Listener {
         }
         target.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, catalog.count("time-thief-slow-seconds") * 20, 1));
         player.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, rule("time_thief").duration() * 20, 1));
+        art.cue(player,"time_thief");
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -2341,6 +2355,7 @@ final class PaperOfficialCombat implements Listener {
             if (ward.charges() < rule("ore_ward").cap() && every(s, "ore_ward")) {
                 ward.store(rule("ore_ward").cap());
                 hud.proc(player, "광맥 방벽 · " + ward.charges());
+                art.cue(player,"ore_ward");
             }
         }
         for (String id : List.of("mineral_addiction", "mineral_devourer", "vein_overload")) {
@@ -2437,6 +2452,7 @@ final class PaperOfficialCombat implements Listener {
                 var target = PaperAugmentMovement.toward(player, direction, catalog.setting("reflex-max-distance"), safe);
                 if ((target != null && teleport.test(player, target)) || catalog.config.getBoolean("settings.reflex-fallback-dodge")) {
                     ready(player, state, "reflex");
+                    art.cue(player,"reflex");
                     if (follow("reflex")) charge(player, state, "reflex");
                     triad(player, state, Action.REACTION);
                     event.setCancelled(true);
@@ -2541,6 +2557,7 @@ final class PaperOfficialCombat implements Listener {
             Location point = player.getLocation();
             var rule = rule("final_judgment");
             state.zones.add(new Zone("final_judgment", point, point, now() + rule.duration(), (1 - fraction) * rule.amount()));
+            art.cue(player,"final_judgment");
             player.sendMessage("최후의 심판 · " + rule.duration() + "초 후 발동");
             for (var enemy : opponents(player, point, catalog.setting("judgment-radius"))) {
                 if (enemy instanceof Player nearby) nearby.sendMessage("최후의 심판 예정 지역입니다. " + rule.duration() + "초 후 발동합니다.");

@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 import zipfile
 from pathlib import Path
+from xml.etree import ElementTree
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "resource-pack/source"
@@ -51,7 +52,17 @@ def inputs():
         assert path.is_relative_to(SOURCE)
         assert asset["modification_allowed"] and asset["redistribution_allowed"]
         assert asset["license"] in ("CC-BY-3.0", "CC0-1.0")
-        assert hashlib.sha256(path.read_bytes()).hexdigest() == asset["sha256"], path
+        raw = path.read_bytes()
+        assert hashlib.sha256(raw).hexdigest() == asset["sha256"], path
+        if path.suffix == ".svg":
+            assert b"<!" not in raw and b"<?" not in raw
+            svg = ElementTree.fromstring(raw)
+            ns = "{http://www.w3.org/2000/svg}"
+            assert svg.tag == ns + "svg" and svg.attrib == {"viewBox":"0 0 512 512"}, path
+            assert len(svg) == 2 and all(node.tag == ns + "path" and not len(node)
+                                         and set(node.attrib) <= {"d","fill"} for node in svg), path
+        else:
+            assert path.suffix == ".ogg" and raw.startswith(b"OggS"), path
         assert asset["output"] not in outputs
         outputs.add(asset["output"])
     return rarities, motifs, sources
@@ -63,12 +74,10 @@ def item(key, model):
 
 def badge(path, original, rarity, motif, profile):
     from PIL import Image, ImageDraw, ImageChops, ImageColor
-    svg = original.read_text()
     # Render only the upstream mask. Input comes from the pinned, hashed source tree.
     render = subprocess.run(["inkscape", str(original), "--export-width=80", "--export-type=png",
                              "--export-filename=-"], capture_output=True, check=True,
                             env={**os.environ, "INKSCAPE_PROFILE_DIR": profile}).stdout
-    assert svg.lstrip().startswith("<svg"), original
     art = Image.open(io.BytesIO(render)).convert("RGBA")
     silhouette = ImageChops.multiply(art.convert("L"), art.getchannel("A"))
     silhouette = silhouette.crop(silhouette.getbbox())
@@ -147,7 +156,7 @@ def verify(rarities, motifs, sources):
                 assert all(0 <= a < b <= 16 for a,b in zip(part["from"],part["to"])), (key,part)
     assert len({hashlib.sha256((ASSETS / f"textures/item/augment/{key}.png").read_bytes()).digest()
                 for key in rarities}) == 84, "Icons must be distinct"
-    assert set(json.loads((ASSETS / "sounds.json").read_text())) == SOUNDS
+    assert json.loads((ASSETS / "sounds.json").read_text()) == {key: {"sounds":[f"augmentwild:{key}"]} for key in SOUNDS}
     for asset in sources:
         assert (PACK / asset["output"]).is_file(), asset["output"]
     for key in SOUNDS:

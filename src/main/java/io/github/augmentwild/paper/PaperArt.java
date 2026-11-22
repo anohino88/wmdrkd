@@ -5,6 +5,9 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.function.Predicate;
+import net.kyori.adventure.resource.ResourcePackInfo;
+import net.kyori.adventure.resource.ResourcePackRequest;
+import net.kyori.adventure.text.Component;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
@@ -36,11 +39,10 @@ public final class PaperArt implements Listener {
     private final Map<Location, Marker> supply = new HashMap<>();
     private final Map<UUID, Long> nextCue = new HashMap<>();
     private final Properties motifs = new Properties();
-    private final Pack pack;
+    private final ResourcePackInfo pack;
     private long tick;
     private boolean displaysAvailable = true;
 
-    private record Pack(UUID id, String url, byte[] sha1) {}
     private record Animation(ItemDisplay entity, Location at, long began, Motion motion) {}
     private record Marker(ItemDisplay entity, Set<UUID> viewers) {}
     private record Motion(float[] scales, float rise, float spin, float travel) {}
@@ -83,7 +85,7 @@ public final class PaperArt implements Listener {
         }
     }
 
-    private static Pack settings(JavaPlugin plugin) {
+    private static ResourcePackInfo settings(JavaPlugin plugin) {
         String url = plugin.getConfig().getString("art.url","");
         if (url.isBlank()) return null;
         try {
@@ -93,8 +95,9 @@ public final class PaperArt implements Listener {
             String hash = plugin.getConfig().getString("art.sha1","");
             byte[] sha1 = HexFormat.of().parseHex(hash);
             if (sha1.length != 20) throw new IllegalArgumentException("art.sha1 must contain 40 hexadecimal digits");
-            return new Pack(UUID.nameUUIDFromBytes(("augmentwild-art:" + hash.toLowerCase(Locale.ROOT))
-                    .getBytes(StandardCharsets.UTF_8)),uri.toASCIIString(),sha1);
+            hash = hash.toLowerCase(Locale.ROOT);
+            UUID id = UUID.nameUUIDFromBytes(("augmentwild-art:" + hash).getBytes(StandardCharsets.UTF_8));
+            return ResourcePackInfo.resourcePackInfo(id,uri,hash);
         } catch (IllegalArgumentException failure) {
             plugin.getLogger().warning(failure.getMessage());
             return null;
@@ -103,10 +106,10 @@ public final class PaperArt implements Listener {
 
     @EventHandler public void join(PlayerJoinEvent event) { offer(event.getPlayer()); }
 
-    @SuppressWarnings("deprecation")
-    void offer(Player player) {
-        if (pack != null) player.addResourcePack(pack.id(),pack.url(),pack.sha1(),
-                "AugmentWild 장식 리소스팩 (선택 사항)",false);
+    private void offer(Player player) {
+        if (pack == null) return;
+        player.sendResourcePacks(ResourcePackRequest.resourcePackRequest().packs(pack)
+                .replace(false).required(false).prompt(Component.text("AugmentWild 장식 리소스팩 (선택 사항)")).build());
     }
 
     @EventHandler public void quit(PlayerQuitEvent event) {
@@ -136,6 +139,12 @@ public final class PaperArt implements Listener {
         return item;
     }
 
+    void cue(UUID owner, String id) {
+        if (!loaded.contains(owner)) return;
+        Player player = plugin.getServer().getPlayer(owner);
+        if (player != null) cue(player,id);
+    }
+
     void cue(Player player, String id) {
         if (pack == null || !loaded.contains(player.getUniqueId())) return;
         String motif = motifs.getProperty(id);
@@ -158,7 +167,7 @@ public final class PaperArt implements Listener {
         for (Player player : at.getNearbyPlayers(32)) {
             if (loaded.contains(player.getUniqueId()) && playable.test(player)) {
                 if (PlayerUi.enabled(player,PlayerUi.Option.SOUND)) player.playSound(at,"augmentwild:supply",.65f,1f);
-                render(player,at.clone().add(.5,1.75,.5),premium ? "premium" : "supply",ARRIVE,true);
+                render(player,supplyCenter(at,1.75),premium ? "premium" : "supply",ARRIVE,true);
             } else if (PlayerUi.enabled(player,PlayerUi.Option.SOUND)) {
                 player.playSound(at,Sound.BLOCK_CHEST_OPEN,1,.8f);
             }
@@ -180,7 +189,7 @@ public final class PaperArt implements Listener {
             Marker marker = supply.get(at);
             if (marker == null || !marker.entity().isValid()) {
                 removeSupply(at);
-                var center = at.clone().add(.5,1.15,.5);
+                var center = supplyCenter(at,1.15);
                 marker = new Marker(spawn(center,premium ? "premium" : "supply",
                         new Transformation(new Vector3f(),new Quaternionf(),new Vector3f(.7f),new Quaternionf())),new HashSet<>());
                 supply.put(at,marker);
@@ -199,6 +208,10 @@ public final class PaperArt implements Listener {
         }
     }
 
+    private static Location supplyCenter(Location at, double height) {
+        return new Location(at.getWorld(),at.getBlockX() + .5,at.getBlockY() + height,at.getBlockZ() + .5);
+    }
+
     void removeSupply(Location at) {
         var marker = supply.remove(at);
         if (marker != null) marker.entity().remove();
@@ -206,8 +219,9 @@ public final class PaperArt implements Listener {
 
     void sound(Player player, String key, Sound fallback) {
         if (!PlayerUi.enabled(player,PlayerUi.Option.SOUND)) return;
-        var sound = loaded.contains(player.getUniqueId()) ? "augmentwild:" + key : fallback.getKey().toString();
-        player.playSound(player.getLocation(),sound,.48f,1f);
+        var at = player.getLocation();
+        if (loaded.contains(player.getUniqueId())) player.playSound(at,"augmentwild:" + key,.48f,1f);
+        else player.playSound(at,fallback,.48f,1f);
     }
 
     private static Location near(Player player) {
@@ -295,6 +309,7 @@ public final class PaperArt implements Listener {
     void forget(UUID id) {
         removeCue(id);
         nextCue.remove(id);
+        if (supply.isEmpty()) return;
         Player viewer = plugin.getServer().getPlayer(id);
         for (Marker marker : supply.values()) {
             if (marker.viewers().remove(id) && viewer != null) viewer.hideEntity(plugin,marker.entity());

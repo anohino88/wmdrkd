@@ -315,4 +315,5 @@ PHASE 2B의 GitHub Actions #6에서 Java 버전 확인, `./gradlew clean build -
 
 - 기준 원격 `ce79fff1b13580e49a8e7976cce96b5d2be4940d`. Game-icons.net의 라이선스가 확인된 증강 84개·GUI 7개 심볼과 Kenney CC0 음원 3개를 가공했다. Blender에서 최적화한 공통 연출·일반 및 고급 보급 모델 14개를 만들고 Minecraft 26.3 형식 97.1로 내보냈다.
 - 선택형 팩의 로드 상태를 확인하는 Paper 연동을 추가했다. 증강 선택·도감, 주요 GUI, 액티브 7종, 진화 6종, 고유 시너지 5종, 계열 공명 2종과 보급 표식에 시각 에셋을 연결했다. [설치·제작·출처](docs/phase71-resources-ko.md)
-- 로컬 Blender·Inkscape·FFmpeg 베이크와 ZIP 검증을 실행했다. 로컬 Gradle은 저장소 DNS 제약으로 Paper API 해석에서 중단됐다. 실제 네트워크 클라이언트 렌더 및 타 모델 엔진은 `NOT_RUN`.
+- Blender 4.3.2·Inkscape 1.4·FFmpeg 베이크, 입력 라이선스·SHA-256, ZIP 및 모델 참조 검증을 통과했다. Java 25에서 Paper 26.3 공식 소스 `d81ca50aeb956bccd912c124638f556b564ea8af`로 API를 컴파일해 로컬 Gradle `clean build paperProbeJar`를 완료했다. JUnit 42건과 독립 회귀·시나리오 A–G가 통과했다.
+- Maven 기본 의존성 해석은 DNS 실패로 차단됐다. Paper 서버 다운로드 API는 HTTP 403을 반환해 서버 부팅과 프로브 실행이 중단됐다. 실제 네트워크 클라이언트 렌더와 다른 모델 엔진은 `NOT_RUN`. GitHub 푸시는 HTTPS 인증 실패로 차단됐다.

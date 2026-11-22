@@ -1,6 +1,7 @@
 # Third-party asset notices
 
-Icons made by Lorc, Delapouite and the contributors named in the per-icon table in
+Icons made by Lorc, Delapouite, Skoll, Sbed, Faithtoken, Carl Olsen and
+Willdabeast. See the per-icon table in
 [ASSET_MANIFEST.json](ASSET_MANIFEST.json). The original icons are from
 [Game-icons.net](https://game-icons.net) and their [pinned public repository](https://github.com/game-icons/icons/tree/82d948812bfe3f269ef8f731dcdb07b08160edc4).
 The manifest identifies the creator and original file for every derivative.
