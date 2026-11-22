@@ -54,7 +54,13 @@ public final class PaperArt implements Listener {
     private long tick;
     private boolean displaysAvailable = true;
 
-    private record Animation(Player viewer, ItemDisplay entity, Location at, long began, Motion motion) {}
+    private record Animation(Player viewer, ItemDisplay entity, Location at, long began, Motion motion,
+                             List<ItemDisplay> ornaments) {
+        void remove() {
+            entity.remove();
+            ornaments.forEach(ItemDisplay::remove);
+        }
+    }
     private record Marker(ItemDisplay entity, Set<UUID> viewers) {}
     private record Motion(float[] scales, float rise, float spin, float travel) {
         int attack() { return scales == SWEEP ? 3 : scales == HOLD ? 5 : 4; }
@@ -312,7 +318,25 @@ public final class PaperArt implements Listener {
         }
     }
 
-    private void spark(Player viewer, Location at, Particle particle) {
+    void impact(Player viewer, String id, Location at) {
+        String motif = motifs.getProperty(id,id);
+        Particle particle = switch (motif) {
+            case "fire" -> Particle.FLAME;
+            case "blade","rush","impact" -> Particle.CRIT;
+            case "bolt","time" -> Particle.ELECTRIC_SPARK;
+            default -> Particle.END_ROD;
+        };
+        ring(viewer,at,.68,particle,false);
+    }
+
+    void link(Player viewer, Location start, Location end, Particle particle) {
+        if (!start.getWorld().equals(end.getWorld())) return;
+        var delta = end.toVector().subtract(start.toVector());
+        for (int i = 1; i <= 5; i++)
+            spark(viewer,start.clone().add(delta.clone().multiply(i / 6d)),particle);
+    }
+
+    void spark(Player viewer, Location at, Particle particle) {
         if (!viewer.getWorld().equals(at.getWorld()) || viewer.getLocation().distanceSquared(at) > 32*32
                 || !PlayerUi.enabled(viewer,PlayerUi.Option.PARTICLES)) return;
         int used = particleUnits.getOrDefault(viewer.getUniqueId(),0);
@@ -429,16 +453,37 @@ public final class PaperArt implements Listener {
         if (pack == null || !loaded.contains(id) || !displaysAvailable || !playable.test(viewer)
                 || !PlayerUi.enabled(viewer,PlayerUi.Option.PARTICLES)
                 || !at.getWorld().equals(viewer.getWorld()) || !at.isChunkLoaded()) return;
-        if (!cues.containsKey(id) && cues.size() >= MAX_DISPLAYS) return;
+        if (!cues.containsKey(id)) {
+            int occupied = supply.size();
+            for (var active : cues.values()) occupied += 1 + active.ornaments().size();
+            if (occupied >= MAX_DISPLAYS) return;
+        }
         removeCue(id);
         ItemDisplay display = null;
+        List<ItemDisplay> ornaments = new ArrayList<>();
         try {
             display = spawn(at,motif,pose(at,motion,0));
-            cues.put(id,new Animation(viewer,display,at,tick,motion));
+            var quality = PlayerUi.quality(viewer);
+            int layers = quality == PlayerUi.Quality.ULTRA ? 2 : quality == PlayerUi.Quality.HIGH ? 1 : 0;
+            if (layers > 0 && Bukkit.getAverageTickTime() < 45 && motif.startsWith("proc/")) {
+                String key = motif.substring(5);
+                int occupied = 1 + supply.size();
+                for (var active : cues.values()) occupied += 1 + active.ornaments().size();
+                if (occupied + layers < MAX_DISPLAYS) {
+                    String family = motifs.getProperty(key,"rune");
+                    for (int i = 0; i < layers; i++) {
+                        var satellite = spawn(at,i == 0 ? family : "rune",orbitPose(motion,0,i));
+                        ornaments.add(satellite);
+                        viewer.showEntity(plugin,satellite);
+                    }
+                }
+            }
+            cues.put(id,new Animation(viewer,display,at,tick,motion,ornaments));
             nextCue.put(id,tick + 20);
             viewer.showEntity(plugin,display);
         } catch (RuntimeException failure) {
             if (display != null) display.remove();
+            ornaments.forEach(ItemDisplay::remove);
             disableDisplays(failure);
         }
     }
@@ -462,6 +507,16 @@ public final class PaperArt implements Listener {
                 new Vector3f(motion.scales()[frame], motion.scales()[frame] * (motion.scales() == SWEEP && frame == 1 ? .55f : 1f), motion.scales()[frame]), new Quaternionf());
     }
 
+    private static Transformation orbitPose(Motion motion, float t, int layer) {
+        float phase = (layer == 0 ? 1 : -1) * (t * 4.2f + motion.spin()) + layer * 2;
+        float envelope = (float)Math.sin(Math.PI * t);
+        float radius = .13f + envelope * (motion.scales() == SWEEP ? .95f : .52f);
+        return new Transformation(new Vector3f(radius * (float)Math.cos(phase),
+                .22f * layer + envelope * motion.rise(), radius * (float)Math.sin(phase)),
+                new Quaternionf().rotateY(-phase).rotateX(envelope * .8f),
+                new Vector3f(.08f + envelope * .45f),new Quaternionf());
+    }
+
     void tick() {
         tick++;
         particleUnits.clear();
@@ -475,8 +530,18 @@ public final class PaperArt implements Listener {
                 if (age >= animation.motion().attack() + animation.motion().release() + 1 || !entity.isValid() || !player.isOnline() || !playable.test(player)
                         || !player.getWorld().equals(animation.at().getWorld())
                         || !PlayerUi.enabled(player,PlayerUi.Option.PARTICLES)) {
-                    entity.remove();
+                    animation.remove();
                     return true;
+                }
+                if (!animation.ornaments().isEmpty() && (age & 1) == 1) {
+                    int duration = animation.motion().attack() + animation.motion().release();
+                    float t = Math.min(1f,(age + 1f) / duration);
+                    for (int i = 0; i < animation.ornaments().size(); i++) {
+                        var layer = animation.ornaments().get(i);
+                        layer.setInterpolationDuration(2);
+                        layer.setInterpolationDelay(0);
+                        layer.setTransformation(orbitPose(animation.motion(),t,i));
+                    }
                 }
                 if (age == 1 || age == animation.motion().attack() + 1) {
                     entity.setInterpolationDuration(age == 1 ? animation.motion().attack() : animation.motion().release());
@@ -496,9 +561,11 @@ public final class PaperArt implements Listener {
         plugin.getLogger().log(java.util.logging.Level.WARNING,"AugmentWild artwork displays disabled",failure);
     }
 
+    void stopPreview(Player player) { removeCue(player.getUniqueId()); }
+
     private void removeCue(UUID id) {
         var animation = cues.remove(id);
-        if (animation != null) animation.entity().remove();
+        if (animation != null) animation.remove();
     }
 
     void forget(UUID id) {
@@ -512,7 +579,7 @@ public final class PaperArt implements Listener {
     }
 
     void clear() {
-        cues.values().forEach(animation -> animation.entity().remove());
+        cues.values().forEach(Animation::remove);
         cues.clear();
         particleUnits.clear();
         nextCue.clear();

@@ -126,7 +126,8 @@ public final class PaperQuickMenu implements Listener {
         art.button(player,menu.inventory,26,"reroll");
         if (player.hasPermission("augmentwild.admin") && player.hasPermission("augmentwild.admin.test")) {
             if (matches.soloInProgress(player)) {
-                item(menu,20,Material.SPYGLASS,"연출 실험실");
+                item(menu,20,Material.SPYGLASS,"전투 실험실");
+                item(menu,17,Material.TARGET,"고체력 연습 표적 설치");
                 art.button(player,menu.inventory,20,"lab");
             }
             if (matches.soloInProgress(player)) item(menu, 24, Material.BARRIER, "1인 전투 실험 종료");
@@ -274,6 +275,7 @@ public final class PaperQuickMenu implements Listener {
             case 15 -> player.hasPermission("augmentwild.track")
                     ? matches.locate(player) : "위치 추적 권한이 없습니다.";
             case 16 -> matches.guide(player);
+            case 17 -> matches.labCommand(player,new String[]{"dummy","high"});
             case 19 -> matches.art().retry(player);
             case 20 -> matches.labCommand(player,new String[]{"preview"});
             case 21 -> matches.combatLog(player);

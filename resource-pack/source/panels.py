@@ -17,6 +17,10 @@ def bake(pack):
             draw.polygon([(166-5*x,5),(168-5*x,7),(166-5*x,9),(164-5*x,7)], fill=accent)
         for slot in slots:
             x, y = 7 + slot % 9 * 18, 17 + slot // 9 * 18
+            # Inset backing and bevel remain inside their native 18 px control cell.
+            draw.rounded_rectangle((x+1,y+1,x+16,y+16),radius=3,fill=(21,33,46,170))
+            draw.line((x+4,y+2,x+12,y+2),fill=(145,171,186,150))
+            draw.line((x+4,y+15,x+12,y+15),fill=(4,11,18,215))
             for dx, dy in ((0,0),(17,17)):
                 k = 1 if dx == 0 else -1
                 draw.line([(x+dx+3*k,y+dy),(x+dx,y+dy),(x+dx,y+dy+3*k)],fill=accent)

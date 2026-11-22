@@ -159,9 +159,9 @@ final class SyntheticCombatLoad implements Listener {
                     + " expected=" + oldSize * samples + " remaining=" + remaining + " tick_samples=" + serverTicks.size());
         }
         plugin.getLogger().info(String.format(Locale.ROOT,
-                "SYNTHETIC_LOAD_TEST seed=%d repetition=%d entities=%d warmup=%d ticks=%d attempts=%d events=%d landed=%d health_damage=%.1f callback_p95_ms=%.3f server_tick_p50_ms=%.3f server_tick_p95_ms=%.3f server_tick_p99_ms=%.3f server_tick_max_ms=%.3f server_ticks_over_50=%d/%d entities_remaining=%d",
+                "SYNTHETIC_LOAD_TEST seed=%d repetition=%d entities=%d warmup=%d ticks=%d attempts=%d events=%d landed=%d health_damage=%.1f callback_p95_ms=%.3f server_tick_mean_ms=%.3f server_tick_p50_ms=%.3f server_tick_p95_ms=%.3f server_tick_p99_ms=%.3f server_tick_max_ms=%.3f server_ticks_over_50=%d/%d entities_remaining=%d",
                 SEED, repetition, oldSize, warmup, samples, attempted, events, landed, healthDamage, percentile(steps, .95),
-                percentile(serverTicks, .5), percentile(serverTicks, .95), percentile(serverTicks, .99),
+                serverTicks.stream().mapToDouble(Double::doubleValue).average().orElseThrow(), percentile(serverTicks, .5), percentile(serverTicks, .95), percentile(serverTicks, .99),
                 Collections.max(serverTicks), serverTicks.stream().filter(ms -> ms > 50).count(), serverTicks.size(), remaining));
         if (oldSize == 16) {
             if (repetition == repetitions) {

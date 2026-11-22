@@ -27,6 +27,9 @@ final class ArtGallery implements PaperMenu {
             46,"augment/",47,"model/",48,"growth/",50,"rarity/",51,"sound/",52,"screen/");
     private Runnable back;
     private int page;
+    private Mode mode = Mode.PREVIEW;
+    private enum Mode { PREVIEW, GRANT, REMOVE, CAST }
+    private static final int PAGE_SIZE = 44;
     private boolean simple;
 
     private ArtGallery(Player p, PaperArt art, PaperArt.Screen screen, String title, int rows,
@@ -41,8 +44,15 @@ final class ArtGallery implements PaperMenu {
     @Override public Inventory getInventory() { return inventory; }
     @Override public boolean availableWhileRestricted() { return true; }
 
-    static void browse(Player p, PaperArt art, BooleanSupplier allowed) {
-        var view = new ArtGallery(p,art,PaperArt.Screen.LAB,"연출 실험실",6,art.previewKeys(),allowed);
+    static void browse(Player p, PaperArt art, BooleanSupplier allowed, String filter) {
+        var keys = new java.util.ArrayList<>(art.previewKeys());
+        for (String action : List.of("stationary","moving","high","shield","report","clear")) keys.add("dummy/" + action);
+        for (String preset : io.github.augmentwild.augment.AugmentCombinations.PRESETS.keySet()) keys.add("preset/" + preset);
+        keys.add("control/cooldowns");
+        keys.add("control/stopfx");
+        if (!filter.isBlank()) keys.removeIf(key -> !key.contains(filter) && !art.label(key).contains(filter));
+        if (keys.isEmpty()) { p.sendMessage("일치하는 실험 항목이 없습니다."); return; }
+        var view = new ArtGallery(p,art,PaperArt.Screen.LAB,"전투 실험실",6,keys,allowed);
         view.paint(p);
         p.openInventory(view.inventory);
     }
@@ -87,8 +97,8 @@ final class ArtGallery implements PaperMenu {
 
     private void paint(Player p) {
         inventory.clear();
-        for (int i = 0; i < 45 && page * 45 + i < entries.size(); i++) {
-            String key = entries.get(page * 45 + i);
+        for (int i = 0; i < PAGE_SIZE && page * PAGE_SIZE + i < entries.size(); i++) {
+            String key = entries.get(page * PAGE_SIZE + i);
             String model = switch (key.split("/")[0]) {
                 case "augment" -> key;
                 case "model" -> key.replace("model/","fx/");
@@ -96,14 +106,16 @@ final class ArtGallery implements PaperMenu {
                 case "screen" -> "gui/menu";
                 default -> "gui/choice";
             };
-            put(p,i,Material.AMETHYST_SHARD,model,art.label(key),key,"클릭 · 나에게만 미리보기");
+            put(p,i,Material.AMETHYST_SHARD,model,art.label(key),key,key.startsWith("augment/") ? "현재 동작 · " + mode : "클릭 · " + key);
         }
+        put(p,44,Material.LEVER,"gui/settings","증강 클릭 동작 · " + mode,
+                "클릭 · 미리보기 / 실제 지급 / 제거 / 보유 스킬 발동");
         SECTIONS.forEach((slot,type) -> put(p,slot,Material.BOOK,"gui/codex",
                 switch (type) { case "augment/" -> "증강"; case "model/" -> "모델"; case "growth/" -> "성장";
                     case "rarity/" -> "선택 등급"; case "sound/" -> "효과음"; default -> "화면"; }));
         if (page > 0) put(p,45,Material.ARROW,"gui/previous","이전 페이지");
         put(p,49,Material.COMPARATOR,"gui/settings",simple ? "간소 연출" : "리소스팩 연출",art.packStatus(p),"클릭 · 품질 전환");
-        if ((page + 1) * 45 < entries.size()) put(p,53,Material.ARROW,"gui/next","다음 페이지");
+        if ((page + 1) * PAGE_SIZE < entries.size()) put(p,53,Material.ARROW,"gui/next","다음 페이지");
     }
 
     private void activate(Player p, int slot) {
@@ -112,17 +124,33 @@ final class ArtGallery implements PaperMenu {
             return;
         }
         if (!allowed.getAsBoolean()) return;
-        if (slot == 49) simple = !simple;
+        if (slot == 44) mode = Mode.values()[(mode.ordinal()+1) % Mode.values().length];
+        else if (slot == 49) simple = !simple;
         else if (SECTIONS.containsKey(slot)) {
             String type = SECTIONS.get(slot);
             for (int i = 0; i < entries.size(); i++) {
-                if (entries.get(i).startsWith(type)) { page = i / 45; break; }
+                if (entries.get(i).startsWith(type)) { page = i / PAGE_SIZE; break; }
             }
         }
         else if (slot == 45 && page > 0) page--;
-        else if (slot == 53 && (page + 1) * 45 < entries.size()) page++;
-        else if (slot < 45 && page * 45 + slot < entries.size()) {
-            String key = entries.get(page * 45 + slot);
+        else if (slot == 53 && (page + 1) * PAGE_SIZE < entries.size()) page++;
+        else if (slot < PAGE_SIZE && page * PAGE_SIZE + slot < entries.size()) {
+            String key = entries.get(page * PAGE_SIZE + slot);
+            var parts = key.split("/",2);
+            if (parts[0].equals("dummy") || parts[0].equals("preset") || parts[0].equals("control")
+                    || parts[0].equals("augment") && mode != Mode.PREVIEW) {
+                if (key.equals("control/stopfx")) art.stopPreview(p);
+                else {
+                    String command = switch (parts[0]) {
+                        case "dummy" -> "dummy " + parts[1];
+                        case "control" -> "cooldowns " + p.getName();
+                        case "preset" -> "preset " + p.getName() + " " + parts[1];
+                        default -> mode.name().toLowerCase(Locale.ROOT) + " " + p.getName() + " " + parts[1];
+                    };
+                    p.performCommand("aw admin test " + command);
+                }
+                return;
+            }
             if (key.startsWith("screen/") || key.startsWith("rarity/")) sample(p,key);
             else {
                 p.closeInventory();

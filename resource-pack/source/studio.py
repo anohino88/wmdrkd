@@ -91,23 +91,25 @@ scales = {key:[float(n.strip().rstrip("f")) for n in values.split(",")]
 casts = java.split("Map<String, Motion> CASTS")[1].split("Map<String, Motion> GROWTH")[0]
 for key, scale, rise, spin, travel in re.findall(r'"(\w+)", new Motion\((\w+),([^,]+),([^,]+),([^\)]+)\)',casts):
     group,pivot = build(key,json.loads((assets/f"models/proc/{key}.json").read_text()))
+    attack,release = {"GROW":(4,7),"HOLD":(5,10),"SWEEP":(3,5)}[scale]
+    frames = (1,1+attack,1+attack+release)
     for i,stage in enumerate(scales[scale]):
         t = i/2
         # Model units are 1/16 of a block. Keep the camera wide enough for the full path.
-        pivot.scale = (stage,)*3
+        pivot.scale = (stage,stage,stage * (.55 if scale == "SWEEP" and i == 1 else 1))
         pivot.location = (0,-float(travel.strip("f"))*16*t,float(rise.strip("f"))*16*t)
         pivot.rotation_euler.z = float(spin.strip("f"))*t
         for path in ("scale","location","rotation_euler"):
-            pivot.keyframe_insert(data_path=path,frame=1+6*i)
+            pivot.keyframe_insert(data_path=path,frame=frames[i])
         camera.ortho_scale = 52
-        scene.frame_set(1+6*i)
+        scene.frame_set(frames[i])
         render(key+"-"+str(i))
     group.hide_render = True
     groups.append((group,pivot))
 for index,(group,pivot) in enumerate(groups):
     group.hide_render = False
     pivot.delta_location = ((index%5)*20,(index//5)*20,0)
-scene.frame_start,scene.frame_end = 1,13
+scene.frame_start,scene.frame_end = 1,16
 scene.frame_set(1)
 bpy.ops.file.pack_all()
 bpy.ops.wm.save_as_mainfile(filepath=str(output/"augmentwild-studio.blend"),compress=True)

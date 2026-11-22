@@ -156,7 +156,7 @@ final class CombatFeedback implements Listener {
             Hit h = entry.getValue();
             Player p = Bukkit.getPlayer(entry.getKey().attacker());
             if (p != null && eligible(p) && PlayerUi.enabled(p,PlayerUi.Option.DAMAGE)) {
-                String text = h.target + " · " + (h.critical ? "치명타! " : "") + h.label
+                String text = (h.blocked || h.shield > 0 ? "⬡ " : h.critical ? "✦ " : "⚔ ") + h.target + " · " + (h.critical ? "치명타! " : "") + h.label
                         + (h.hp > 0 ? " −" + fmt(h.hp) + " HP" : "")
                         + (h.absorption > 0 ? " · 흡수 −" + fmt(h.absorption) : "")
                         + (h.shield > 0 ? " · 보호막 −" + fmt(h.shield) : "") + (h.blocked ? " · 방패 방어" : "");
@@ -166,10 +166,20 @@ final class CombatFeedback implements Listener {
                 if (h.shield > 0 && PlayerUi.enabled(p,PlayerUi.Option.PARTICLES)) p.spawnParticle(Particle.END_ROD,h.at,3);
                 if (floating && numbers.size() < maxNumbers && p.getWorld().equals(h.at.getWorld()) && h.at.isChunkLoaded()) {
                     try {
-                        var number = h.at.getWorld().spawn(h.at,TextDisplay.class, d -> {
+                        double offset = (entry.getKey().hashCode() % 5) * .09;
+                        var number = h.at.getWorld().spawn(h.at.clone().add(offset,0,-offset),TextDisplay.class, d -> {
                         d.setVisibleByDefault(false); d.setPersistent(false);
-                        d.setBillboard(Display.Billboard.CENTER); d.text(Component.text(text));
+                        d.setBillboard(Display.Billboard.CENTER);
+                        d.setSeeThrough(false);
+                        d.text(Component.text(text,h.shield > 0 ? net.kyori.adventure.text.format.NamedTextColor.AQUA
+                                : h.critical ? net.kyori.adventure.text.format.NamedTextColor.GOLD : net.kyori.adventure.text.format.NamedTextColor.WHITE));
                     });
+                        var pose = number.getTransformation();
+                        pose.getTranslation().y = .55f;
+                        pose.getScale().mul(1.12f);
+                        number.setInterpolationDelay(0);
+                        number.setInterpolationDuration(12);
+                        number.setTransformation(pose);
                         numbers.put(number,now+CombatView.DAMAGE_VISIBLE);
                         p.showEntity(plugin, number);
                     } catch (RuntimeException failure) {

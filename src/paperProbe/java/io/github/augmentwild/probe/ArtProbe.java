@@ -35,6 +35,7 @@ final class ArtProbe {
         }
         ItemDisplay[] shown = new ItemDisplay[1];
         int[] particles = {0};
+        var observed = new java.util.ArrayList<ItemDisplay>();
         var p = (Player) Proxy.newProxyInstance(Player.class.getClassLoader(),new Class<?>[]{Player.class},(proxy,method,args) -> {
             return switch (method.getName()) {
                 case "getUniqueId" -> pig.getUniqueId();
@@ -44,7 +45,7 @@ final class ArtProbe {
                 case "isOnline" -> true;
                 case "playSound" -> null;
                 case "spawnParticle" -> { particles[0]++; yield null; }
-                case "showEntity" -> { shown[0] = (ItemDisplay)args[1]; yield null; }
+                case "showEntity" -> { shown[0] = (ItemDisplay)args[1]; observed.add(shown[0]); yield null; }
                 default -> throw new AssertionError("Unexpected artwork probe operation: " + method);
             };
         });
@@ -96,6 +97,29 @@ final class ArtProbe {
             shown[0] = null;
             preview.invoke(art,p,"augment/steel_heart",true);
             require(shown[0] == null && particles[0] == 1);
+            var qualityKey = new org.bukkit.NamespacedKey("augmentwild","art_quality");
+            var storage = pig.getPersistentDataContainer();
+            int cycles = 0;
+            for (String quality : java.util.List.of("LOW","STANDARD","HIGH","ULTRA")) {
+                storage.set(qualityKey,org.bukkit.persistence.PersistentDataType.STRING,quality);
+                int peak = 0;
+                int shownCount = 0;
+                for (String key : ids.stringPropertyNames()) {
+                    observed.clear();
+                    preview.invoke(art,p,"augment/" + key,false);
+                    int visible = observed.size();
+                    require(quality.equals("LOW") ? visible == 0 : visible >= 1 && visible <= 3);
+                    shownCount += visible;
+                    peak = Math.max(peak,visible);
+                    for (int step = 0; step < 20; step++) tick.invoke(art);
+                    require(observed.stream().noneMatch(ItemDisplay::isValid));
+                    cycles++;
+                }
+                Bukkit.getLogger().info("AW_ART_QUALITY quality=" + quality + " displays_created=" + shownCount
+                        + " peak_private_displays=" + peak + " adapter_ticks=1680 remaining=0");
+            }
+            storage.remove(qualityKey);
+            require(cycles == 336);
             Bukkit.getLogger().info("AW_ART_LIFECYCLE_PASS models=84 variable_timing=true remaining=0");
         } catch (ReflectiveOperationException | java.io.IOException failure) {
             throw new AssertionError("Paper cosmetic lifecycle",failure);

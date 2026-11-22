@@ -91,6 +91,7 @@ public final class PaperMatchService implements Listener {
             plugin.getLogger().log(Level.WARNING,"개인 경기 화면 갱신 중단",failure);
         }
     }
+    private final PracticeTarget target = new PracticeTarget();
     private final MatchTelemetry telemetry = new MatchTelemetry();
 
     public PaperMatchService(JavaPlugin plugin, PaperMatchSettings settings, ArenaSearchService search) {
@@ -347,19 +348,28 @@ public final class PaperMatchService implements Listener {
         if (!lab.allows(true, labWorld != null && task != null, clock == null || clock.isPaused())) {
             return "증강 실험 명령은 진행 중이며 일시정지 상태가 아닌 테스트 경기에서만 사용할 수 있습니다.";
         }
-        if (action.equals("preview") && args.length == 1 && sender instanceof Player viewer) {
+        if (action.equals("preview") && args.length <= 2 && sender instanceof Player viewer) {
             UUID thisMatch = session.matchId();
             java.util.function.BooleanSupplier allowed = () -> viewer.hasPermission("augmentwild.admin")
                     && viewer.hasPermission("augmentwild.admin.test") && thisMatch.equals(session.matchId())
                     && labWorld != null && labWorld.equals(viewer.getWorld().getUID()) && labParticipant(viewer)
                     && augmentActive(viewer) && clock != null && !clock.isPaused();
             if (!allowed.getAsBoolean()) return "살아 있는 테스트 참가자만 연출을 볼 수 있습니다.";
-            ArtGallery.browse(viewer,art,allowed);
+            ArtGallery.browse(viewer,art,allowed,args.length == 2 ? args[1].toLowerCase(java.util.Locale.ROOT) : "");
             return "연출 실험실";
         }
+        if (action.equals("dummy") && args.length == 2 && sender instanceof Player owner) {
+            if (!soloInProgress(owner) || !augmentActive(owner)) return "1인 테스트 참가자만 사용할 수 있습니다.";
+            return switch (args[1]) {
+                case "stationary","moving","high","shield" -> target.create(owner,args[1],this::insideAugmentBorder);
+                case "report" -> target.report();
+                case "clear" -> { target.clear(); yield "표적 제거"; }
+                default -> "dummy stationary|moving|high|shield|report|clear";
+            };
+        }
         int length = switch (action) {
-            case "list", "clear", "report", "reset" -> 2;
-            case "grant", "remove", "health", "preset" -> 3;
+            case "list", "clear", "report", "reset","cooldowns" -> 2;
+            case "grant", "remove", "health", "preset","cast" -> 3;
             case "progress" -> 4;
             default -> 0;
         };
@@ -369,6 +379,8 @@ public final class PaperMatchService implements Listener {
                 || !labWorld.equals(player.getWorld().getUID())) return "살아 있는 테스트 참가자를 지정하세요.";
         String id = args.length > 2 ? args[2].toLowerCase(java.util.Locale.ROOT) : "";
         return switch (action) {
+            case "cooldowns" -> augments.labResetSkills(player);
+            case "cast" -> augments.cast(player,id);
             case "grant" -> augments.labGrant(player, id);
             case "preset" -> augments.labPreset(player, id);
             case "remove" -> augments.labRemove(player, id);
@@ -550,6 +562,14 @@ public final class PaperMatchService implements Listener {
         sender.sendMessage("경기 준비가 중단됐습니다. 자세한 이유는 서버 로그를 확인하세요.");
     }
 
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void targetDeath(org.bukkit.event.entity.EntityDeathEvent event) {
+        if (!target.owns(event.getEntity())) return;
+        event.getDrops().clear();
+        event.setDroppedExp(0);
+        target.died();
+    }
+
     public String stop() {
         if (session.state() == MatchState.WAITING) return "진행 중인 경기가 없습니다.";
         clearMatch();
@@ -564,6 +584,7 @@ public final class PaperMatchService implements Listener {
     private void clearMatch() {
         boolean played = clock != null;
         if (played) feedback.finishSamples();
+        target.clear();
         art.clear();
         for (Player viewer : plugin.getServer().getOnlinePlayers()) {
             if (viewer.getOpenInventory().getTopInventory().getHolder() instanceof ArtGallery) viewer.closeInventory();
@@ -767,6 +788,7 @@ public final class PaperMatchService implements Listener {
             intel.tick();
             long realTime = System.nanoTime();
             feedback.tick(realTime);
+            target.tick(this::insideAugmentBorder,clock.isPaused());
             art.tick();
             var round = clock.selection().orElse(null);
             for (UUID id : activeSession.participantIds()) {

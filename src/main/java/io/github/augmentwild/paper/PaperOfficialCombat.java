@@ -122,7 +122,8 @@ final class PaperOfficialCombat implements Listener {
         final SkillSlots slots = new SkillSlots();
         final Set<String> growthNotices = new HashSet<>();
         String completingMember;
-        String coolingSkill;
+        final Set<String> coolingSlots = new HashSet<>();
+        final Map<String,Integer> cooldownLengths = new HashMap<>();
         long hudSecond = -1, bastionVisualSecond = -1;
         boolean hudAvailable;
         final Map<String, Long> lastVisual = new HashMap<>();
@@ -326,6 +327,8 @@ final class PaperOfficialCombat implements Listener {
         if (augment.equals("gigantification")) state.giantApplied = false;
         state.pending.removeIf(task -> task.id().equals(augment));
         state.slots.remove(augment);
+        state.coolingSlots.remove(augment);
+        state.cooldownLengths.remove(augment);
         state.hudSecond = -1;
         hud.remove(id, Layer.SKILL);
         state.progress.reset(augment);
@@ -702,12 +705,17 @@ final class PaperOfficialCombat implements Listener {
         double points = state.shield.remaining(clock.get().elapsedNanos());
         UUID id = player.getUniqueId();
         if (points <= 0) {
-            if (state.shieldShownPoints > 0) hud.proc(player, "생명의 잔향 보호막 종료");
+            if (state.shieldShownPoints > 0) {
+                hud.proc(player, "생명의 잔향 보호막 종료");
+                if (active.test(player)) art.ring(player,player.getLocation().add(0,.8,0),.85,Particle.END_ROD,true);
+            }
             hud.remove(id, Layer.SHIELD);
             state.shieldShownPoints = 0;
         } else {
             long seconds = Math.ceilDiv(state.shield.timeLeft(clock.get().elapsedNanos()),1_000_000_000L);
             if (points == state.shieldShownPoints && seconds == state.shieldShownSeconds) return;
+            if (state.shieldShownPoints != points)
+                art.ring(player,player.getLocation().add(0,.8,0),.65,Particle.ENCHANTED_HIT,false);
             state.shieldShownSeconds = seconds;
             state.shieldShownPoints = points;
             hud.set(id, Layer.SHIELD, net.kyori.adventure.text.Component.text(resonance.families().revival().name()
@@ -845,6 +853,13 @@ final class PaperOfficialCombat implements Listener {
             tickZones(player, state, second);
             remember(player, state, second);
             worldErosion(player, state);
+            if (state.bomb != null && state.bomb.isValid() && tick % 3 == 0)
+                art.spark(player,state.bomb.getLocation(),Particle.WITCH);
+            if (state.duelUntil > now() && tick % 10 == 0 && state.duelTarget != null) {
+                var rival = plugin.getServer().getPlayer(state.duelTarget);
+                if (rival != null && opponent(player,rival) && player.canSee(rival) && player.hasLineOfSight(rival))
+                    art.link(player,player.getEyeLocation(),rival.getEyeLocation(),Particle.ENCHANTED_HIT);
+            }
             if (state.bomb != null && Bukkit.getCurrentTick() - state.bombLaunchTick >= catalog.count("bomb-lifetime-ticks")) removeBomb(state);
             if (state.instinctPending) {
                 state.instinctPending = false;
@@ -1394,6 +1409,13 @@ final class PaperOfficialCombat implements Listener {
         return ACTIVE_SKILLS.stream().filter(id -> owns(player, id)).sorted().toList();
     }
 
+    void resetSkillCooldowns(Player player) {
+        var state = fighters.get(player.getUniqueId());
+        if (state == null) return;
+        for (String id : ACTIVE_SKILLS) state.progress.resetCooldown(id);
+        state.hudSecond = -1;
+    }
+
     String skill(Player player, String[] args) {
         var state = fighters.get(player.getUniqueId());
         if (state == null) return "지정한 발동형 스킬이 없습니다.";
@@ -1440,11 +1462,19 @@ final class PaperOfficialCombat implements Listener {
         state.hudAvailable = available;
         state.hudSecond = now();
         var lines = slotLines(player,state,true);
-        String current = state.slots.current();
-        boolean cooling = current != null && !state.progress.ready(current,now());
-        if (!cooling && current != null && current.equals(state.coolingSkill))
-            hud.proc(player,rule(current).definition().name() + " 준비 완료");
-        state.coolingSkill = cooling ? current : null;
+        var stillBound = new HashSet<String>();
+        for (int slot = 1; slot <= SkillSlots.COUNT; slot++) {
+            String id = state.slots.at(slot);
+            if (id == null) continue;
+            stillBound.add(id);
+            if (!state.progress.ready(id,now())) state.coolingSlots.add(id);
+            else if (state.coolingSlots.remove(id) && available && PlayerUi.enabled(player,PlayerUi.Option.SKILL)) {
+                hud.proc(player,rule(id).definition().name() + " 준비 완료");
+                if (PlayerUi.enabled(player,PlayerUi.Option.SOUND))
+                    player.playSound(player.getLocation(),Sound.BLOCK_NOTE_BLOCK_CHIME,.23f,1.5f);
+            }
+        }
+        state.coolingSlots.retainAll(stillBound);
         if (active.test(player)) {
             checkGrowth(player,state);
             var automatic = new ArrayList<String>();
@@ -1470,7 +1500,12 @@ final class PaperOfficialCombat implements Listener {
             for (int slot = 1; slot <= SkillSlots.COUNT; slot++) {
                 if (slot > 1) message.append(net.kyori.adventure.text.Component.text(" · "));
                 String id = state.slots.at(slot);
-                if (id != null) message.append(art.slotIcon(player,id));
+                if (id != null) {
+                    long remaining = state.progress.cooldownRemaining(id,now());
+                    var icon = art.slotIcon(player,id);
+                    if (remaining > 0) icon = icon.color(net.kyori.adventure.text.format.NamedTextColor.DARK_GRAY);
+                    message.append(icon);
+                }
                 message.append(net.kyori.adventure.text.Component.text(lines.get(slot - 1)));
             }
             hud.set(player.getUniqueId(),Layer.SKILL,message.build());
@@ -1491,7 +1526,11 @@ final class PaperOfficialCombat implements Listener {
         if (clock.get().isPaused()) status = "경기 일시정지";
         else if (protectedPlayer.test(player)) status = "부활 보호 중";
         else if (!valid(player) || player.getGameMode() == org.bukkit.GameMode.SPECTATOR) status = "경기 참여 불가";
-        else if (remaining > 0) status = "재사용 " + remaining + "초";
+        else if (remaining > 0) {
+            int duration = state.cooldownLengths.getOrDefault(id,0);
+            int filled = duration > 0 ? Math.clamp((duration - remaining) * 4 / duration,0,4) : 0;
+            status = "▰".repeat(filled) + "▱".repeat(4-filled) + " " + remaining + "초";
+        }
         else status = "사용 가능";
         if (remaining == 0 && status.equals("사용 가능")) {
             if (id.equals("calamity_giant") && !player.isOnGround()) status = "지상 전용";
@@ -1543,8 +1582,12 @@ final class PaperOfficialCombat implements Listener {
             case "time_rewind" -> rewind(player, state);
             case "calamity_giant" -> {
                 if (!player.isOnGround()) yield false;
-                yield afterDamage(player, () -> area(player, player.getLocation(), catalog.setting("calamity-slam-radius"),
-                        id, catalog.setting("calamity-slam-damage"), target -> { }));
+                yield afterDamage(player, () -> {
+                    Location center = player.getLocation();
+                    double radius = catalog.setting("calamity-slam-radius");
+                    area(player,center,radius,id,catalog.setting("calamity-slam-damage"),target -> { });
+                    art.ring(player,center,radius,Particle.CRIT,false);
+                });
             }
             case "duel_contract" -> {
                 var eye = player.getEyeLocation();
@@ -1598,6 +1641,8 @@ final class PaperOfficialCombat implements Listener {
         var record = state.history.stream().filter(item -> item.second() == past).findFirst().orElse(null);
         if (record == null || !safe.test(record.location()) || !SafeArenaSurface.valid(record.location())
                 || !teleport.test(player, record.location())) return false;
+        for (var sample : state.history)
+            if (sample.second() >= past) art.spark(player,sample.location().clone().add(0,.8,0),Particle.END_ROD);
         if (record.health() > player.getHealth()) {
             gainHealth(player,Math.min(record.health()-player.getHealth(),rule("time_rewind").amount()),"time_rewind");
         }
@@ -1662,6 +1707,8 @@ final class PaperOfficialCombat implements Listener {
                 syntheticHit(player, target, zone.augment(), zone.damage());
             }
         }
+        art.link(player,zone.start(),zone.end(),Particle.CRIT);
+        art.ring(player,zone.end(),1.1,Particle.CRIT,false);
         particle(player, state, Particle.EXPLOSION, zone.end());
     }
 
@@ -2123,6 +2170,7 @@ final class PaperOfficialCombat implements Listener {
         int base = rule(id).cooldown();
         int adjusted = cooldown(player,base);
         boolean started = state.progress.cooldown(id,now(),adjusted);
+        if (started && ACTIVE_SKILLS.contains(id)) state.cooldownLengths.put(id,adjusted);
         if (started && adjusted < base) art.cue(player,"eureka");
         return started;
     }
@@ -2236,6 +2284,10 @@ final class PaperOfficialCombat implements Listener {
             if (crit) art.cue(source,"jeweled_gauntlet");
             audit.add(id, Metric.PROC, 1);
             announceProc(source, id);
+            var evolution = AugmentEvolution.of(id);
+            if (evolution != null && evolution.complete(evolution.progress(state.progress,state.burned),evolutionThreshold(evolution))
+                    && source.hasLineOfSight(victim))
+                art.impact(source,id,victim.getLocation().add(0,.6,0));
             audit.add(id, Metric.DAMAGE, syntheticFinalDamage);
         }
         if (budget != null) {
@@ -2585,7 +2637,11 @@ final class PaperOfficialCombat implements Listener {
         if (spent != null) {
             double confirmed = spent.confirm(event);
             state.shield.consume(clock.get().elapsedNanos(), confirmed);
-            if (confirmed > 0) reviewShields.put(event, confirmed);
+            if (confirmed > 0) {
+                reviewShields.put(event, confirmed);
+                if (state.shield.remaining(clock.get().elapsedNanos()) == 0)
+                    art.impact(player,"ward",player.getLocation().add(0,.85,0));
+            }
             audit.add("resonance_revival", Metric.SHIELDED, confirmed);
             if (audit.sampleAvailable()) audit.sample(now(), "shield actor=" + audit.actor(player.getUniqueId())
                     + " reserved=" + spent.reserved() + " absorbed=" + confirmed);

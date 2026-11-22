@@ -199,6 +199,11 @@ final class PaperAugments implements Listener {
     String skill(Player player, String[] args) { return official.skill(player, args); }
     String effectName(String id) { var def = id == null ? null : registry.get(id); return def == null ? "증강" : def.name(); }
     List<String> ownedNames(UUID id) { var p = profiles.get(id); return p == null ? List.of() : p.acquired.stream().map(this::effectName).toList(); }
+    String labResetSkills(Player player) {
+        official.resetSkillCooldowns(player);
+        return "보유 액티브 스킬 쿨다운 초기화";
+    }
+
     String cast(Player player, String id) { return official.cast(player, id); }
 
     Listener officialListener() { return official; }
