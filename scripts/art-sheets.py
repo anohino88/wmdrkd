@@ -50,7 +50,7 @@ def main():
     sheet("icons","증강 도감","84종  /  실버 · 골드 · 프리즘  /  리소스팩 텍스처",cards,7,138,108,75)
     models=sorted(p.stem for p in (TEXTURES.parent/"models/fx").glob("*.json"))
     rendered=lambda k: read(args.renders/(k+".png"))
-    sheet("models","형태 라이브러리","14개  /  내보낸 Minecraft 큐보이드의 Blender 정사영 렌더",
+    sheet("models","형태 라이브러리",f"{len(models)}개  /  내보낸 Minecraft 큐보이드의 Blender 정사영 렌더",
           [(k,rendered(k),"#85c7c0") for k in models],5,172,158,127)
     active=["shadow_dash","earthquake_mage","time_rewind","calamity_giant","duel_contract","bomb_alchemy","void_lord"]
     frames = {}

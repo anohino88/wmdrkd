@@ -33,6 +33,27 @@ def stepped_line(count, point, color):
 
 
 def form(kind):
+    if kind == "helix":
+        for i in range(20):
+            angle = i * math.tau / 10
+            radius = 2.5 + i * .12
+            bar(8+radius*math.cos(angle),3+i*.47,8+radius*math.sin(angle),
+                .82,.33,.82,"accent" if i%3 else "light")
+        return
+    if kind == "fracture":
+        # Six separate pieces of a bowed shield leave a visible central break.
+        for i in range(6):
+            angle = i * math.tau / 6
+            bar(8+4.2*math.cos(angle),8+4.2*math.sin(angle),8+.3*i,
+                1.3+.16*i,2.1,.72,"metal" if i%2 else "light")
+        return
+    if kind == "crescent":
+        for i in range(15):
+            angle = .55 + i*.30
+            thickness = .42 + .85*math.sin(math.pi*i/14)
+            bar(8+5.4*math.cos(angle),7.5+.11*i,8+5.4*math.sin(angle),
+                thickness,thickness*.7,thickness,"light" if i%3 else "accent")
+        return
     if kind in ("supply", "premium"):
         bar(8, 7, 8, 9, 4, 7, "dark")
         bar(8, 9.6, 8, 9.5, 1.2, 7.5, "metal")
@@ -140,5 +161,5 @@ def export(kind):
 
 
 for name in ("rune", "blade", "ward", "growth", "bolt", "impact", "fire", "frost",
-             "void", "blood", "time", "rush", "supply", "premium"):
+             "void", "blood", "time", "rush", "supply", "premium", "helix","fracture","crescent"):
     export(name)

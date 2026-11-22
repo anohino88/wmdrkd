@@ -19,3 +19,5 @@ See [Kenney's original notice](resource-pack/source/kenney-license.txt).
 The 84 combat models reuse the corresponding credited icon on their front seal.
 The five countdown gauges reuse Lorc’s hourglass icon. Interface control sources
 and their individual authors are listed under the gui/ entries in the manifest.
+
+The seven active-skill HUD glyphs reference the corresponding licensed icon textures listed in ASSET_MANIFEST.json.

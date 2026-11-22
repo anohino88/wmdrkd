@@ -36,6 +36,8 @@ public final class PaperArt implements Listener {
     private static final float[] GROW = {.3f, 1.45f, .25f};
     private static final float[] SWEEP = {.35f, 1.7f, .5f};
     private static final float[] HOLD = {.45f, 1.2f, .85f};
+    private long privateParticles, displaySpawns, displayUpdates;
+    private int peakDisplays;
     private final Map<UUID,Integer> particleUnits = new HashMap<>();
     private static final int MAX_DISPLAYS = 24;
     private final JavaPlugin plugin;
@@ -275,6 +277,7 @@ public final class PaperArt implements Listener {
                 default -> Particle.ELECTRIC_SPARK;
             };
             player.spawnParticle(particle,at,4,.17,.16,.17,.01);
+            privateParticles++;
         }
         if (quiet.contains(id) || !PlayerUi.enabled(player,PlayerUi.Option.SOUND)) return;
         float pitch = switch (motif) {
@@ -283,7 +286,21 @@ public final class PaperArt implements Listener {
             case "growth","ward" -> .95f;
             default -> 1.12f;
         };
-        if (!simple && loaded.contains(player.getUniqueId())) player.playSound(at,"augmentwild:cast",.36f,pitch);
+        if (!simple && loaded.contains(player.getUniqueId())) {
+            player.playSound(at,"augmentwild:cast",.30f,pitch);
+            if (PlayerUi.quality(player).ordinal() >= PlayerUi.Quality.HIGH.ordinal()) {
+                Sound material = switch (motif) {
+                    case "frost" -> Sound.BLOCK_GLASS_HIT;
+                    case "fire" -> Sound.BLOCK_FIRE_AMBIENT;
+                    case "void" -> Sound.BLOCK_PORTAL_AMBIENT;
+                    case "time" -> Sound.BLOCK_NOTE_BLOCK_CHIME;
+                    case "impact" -> Sound.BLOCK_BASALT_HIT;
+                    case "blade","ward" -> Sound.BLOCK_CHAIN_HIT;
+                    default -> Sound.BLOCK_AMETHYST_BLOCK_HIT;
+                };
+                player.playSound(at,material,.18f,pitch);
+            }
+        }
         else player.playSound(at,Sound.BLOCK_AMETHYST_BLOCK_CHIME,.32f,pitch);
     }
 
@@ -318,6 +335,93 @@ public final class PaperArt implements Listener {
         }
     }
 
+    private record FieldKey(UUID owner,String effect) {}
+    private record Field(ItemDisplay model,Location source,long lastSeen) {}
+    private final Map<FieldKey,Field> fields = new HashMap<>();
+
+    /** Call from the live mechanic each running tick. No damage or gameplay timers live here. */
+    void sustain(Player viewer,String effect,Location source,boolean moving) {
+        var key = new FieldKey(viewer.getUniqueId(),effect);
+        var previous = fields.get(key);
+        if (pack == null || !displaysAvailable || !loaded.contains(key.owner()) || !PlayerUi.auras(viewer)
+                || !PlayerUi.enabled(viewer,PlayerUi.Option.PARTICLES) || noVisual.contains(effect)
+                || PlayerUi.quality(viewer) == PlayerUi.Quality.LOW || !viewer.getWorld().equals(source.getWorld())
+                || viewer.getLocation().distanceSquared(source)>24*24 || !source.isChunkLoaded()) {
+            endField(key);
+            return;
+        }
+        try {
+            var at = source.clone().add(0,moving ? 0 : .5,0);
+            if (previous == null || !previous.model.isValid()) {
+                endField(key);
+                if (displayCount() >= MAX_DISPLAYS) return;
+                var model = spawn(at,"proc/" + effect,fieldPose(moving));
+                fields.put(key,new Field(model,at,tick));
+                viewer.showEntity(plugin,model);
+                peakDisplays = Math.max(peakDisplays,displayCount());
+                return;
+            }
+            var model = previous.model;
+            if (moving && previous.source.distanceSquared(at) > .01) {
+                model.setTeleportDuration(1);
+                model.teleport(at);
+            }
+            if (tick % 4 == 0) {
+                model.setInterpolationDelay(0);
+                model.setInterpolationDuration(4);
+                model.setTransformation(fieldPose(moving));
+                displayUpdates++;
+            }
+            fields.put(key,new Field(model,at,tick));
+        } catch (RuntimeException failure) {
+            disableDisplays(failure);
+        }
+    }
+
+    private Transformation fieldPose(boolean moving) {
+        float angle = (float)(tick % 160) * (float)Math.PI / 80;
+        float size = moving ? .55f : .95f + .16f * (float)Math.sin(3 * angle);
+        return new Transformation(new Vector3f(),new Quaternionf().rotateY(angle).rotateZ(moving ? angle : .22f),
+                new Vector3f(size),new Quaternionf());
+    }
+
+    private void endField(FieldKey key) {
+        var previous = fields.remove(key);
+        if (previous != null) previous.model.remove();
+    }
+
+    private record Aura(long second, long remaining) {}
+    private final Map<UUID, Map<String,Aura>> auras = new HashMap<>();
+
+    void aura(Player owner, String id, long second, long remaining) {
+        var states = auras.get(owner.getUniqueId());
+        var previous = states == null ? null : states.get(id);
+        if (previous == null && remaining <= 0 || previous != null
+                && previous.second == second && previous.remaining == remaining) return;
+        if (remaining <= 0) {
+            states.remove(id);
+            if (states.isEmpty()) auras.remove(owner.getUniqueId());
+        } else {
+            if (states == null) states = auras.computeIfAbsent(owner.getUniqueId(),unused -> new HashMap<>());
+            states.put(id,new Aura(second,remaining));
+        }
+        if (!PlayerUi.auras(owner) || noVisual.contains(id)) return;
+        boolean renewed = previous != null && remaining > previous.remaining;
+        if (previous == null || renewed || remaining <= 1)
+            ring(owner,owner.getLocation().add(0,.45,0),remaining == 0 ? .25 : .58,
+                    remaining == 0 ? Particle.ASH : Particle.ENCHANTED_HIT,remaining <= 1);
+        else if (second % 2 == 0)
+            spark(owner,owner.getLocation().add(.45*Math.cos(second),.65,.45*Math.sin(second)),Particle.END_ROD);
+    }
+
+    void cancelAura(UUID owner,String id) {
+        endField(new FieldKey(owner,id));
+        var states = auras.get(owner);
+        if (states == null) return;
+        states.remove(id);
+        if (states.isEmpty()) auras.remove(owner);
+    }
+
     void impact(Player viewer, String id, Location at) {
         String motif = motifs.getProperty(id,id);
         Particle particle = switch (motif) {
@@ -337,21 +441,26 @@ public final class PaperArt implements Listener {
     }
 
     void spark(Player viewer, Location at, Particle particle) {
-        if (!viewer.getWorld().equals(at.getWorld()) || viewer.getLocation().distanceSquared(at) > 32*32
-                || !PlayerUi.enabled(viewer,PlayerUi.Option.PARTICLES)) return;
+        if (!viewer.getWorld().equals(at.getWorld()) || !PlayerUi.enabled(viewer,PlayerUi.Option.PARTICLES)) return;
+        Location eye = viewer.getLocation();
+        double distance = eye.distanceSquared(at);
+        if (distance > 32*32) return;
+        if (distance > 8*8 && eye.getDirection().dot(at.toVector().subtract(eye.toVector())) < 0) return;
         int used = particleUnits.getOrDefault(viewer.getUniqueId(),0);
         int budget = PlayerUi.quality(viewer).samples * 2;
-        if (Bukkit.getAverageTickTime() > 45) budget = Math.min(budget,4);
+        if (PlayerUi.reducedFlash(viewer) || Bukkit.getAverageTickTime() > 45) budget = Math.min(budget,4);
+        if (distance > 16*16) budget = Math.max(2,budget/3);
         if (used >= budget) return;
         particleUnits.put(viewer.getUniqueId(),used + 1);
         viewer.spawnParticle(particle,at,1,0,0,0,0);
+        privateParticles++;
     }
 
     List<String> previewKeys() {
         var entries = new ArrayList<String>();
         motifs.stringPropertyNames().stream().sorted().map(id -> "augment/" + id).forEach(entries::add);
         new TreeSet<>(MOTIONS.keySet()).forEach(id -> entries.add("model/" + id));
-        entries.addAll(List.of("model/supply","model/premium"));
+        entries.addAll(List.of("model/supply","model/premium","model/helix","model/fracture","model/crescent"));
         new TreeSet<>(GROWTH.keySet()).forEach(id -> entries.add("growth/" + id));
         entries.addAll(List.of("rarity/silver","rarity/gold","rarity/prismatic","sound/cast","sound/evolve","sound/supply"));
         for (Screen screen : Screen.values()) entries.add("screen/" + screen.name().toLowerCase(Locale.ROOT));
@@ -408,6 +517,7 @@ public final class PaperArt implements Listener {
             Marker marker = supply.get(at);
             if (marker == null || !marker.entity().isValid()) {
                 removeSupply(at);
+                if (displayCount() >= MAX_DISPLAYS) return;
                 var center = supplyCenter(at,1.15);
                 marker = new Marker(spawn(center,premium ? "premium" : "supply",
                         new Transformation(new Vector3f(),new Quaternionf(),new Vector3f(.7f),new Quaternionf())),new HashSet<>());
@@ -453,11 +563,7 @@ public final class PaperArt implements Listener {
         if (pack == null || !loaded.contains(id) || !displaysAvailable || !playable.test(viewer)
                 || !PlayerUi.enabled(viewer,PlayerUi.Option.PARTICLES)
                 || !at.getWorld().equals(viewer.getWorld()) || !at.isChunkLoaded()) return;
-        if (!cues.containsKey(id)) {
-            int occupied = supply.size();
-            for (var active : cues.values()) occupied += 1 + active.ornaments().size();
-            if (occupied >= MAX_DISPLAYS) return;
-        }
+        if (!cues.containsKey(id) && displayCount() >= MAX_DISPLAYS) return;
         removeCue(id);
         ItemDisplay display = null;
         List<ItemDisplay> ornaments = new ArrayList<>();
@@ -465,14 +571,18 @@ public final class PaperArt implements Listener {
             display = spawn(at,motif,pose(at,motion,0));
             var quality = PlayerUi.quality(viewer);
             int layers = quality == PlayerUi.Quality.ULTRA ? 2 : quality == PlayerUi.Quality.HIGH ? 1 : 0;
-            if (layers > 0 && Bukkit.getAverageTickTime() < 45 && motif.startsWith("proc/")) {
+            if (layers > 0 && !PlayerUi.reducedFlash(viewer) && Bukkit.getAverageTickTime() < 45 && motif.startsWith("proc/")) {
                 String key = motif.substring(5);
-                int occupied = 1 + supply.size();
-                for (var active : cues.values()) occupied += 1 + active.ornaments().size();
-                if (occupied + layers < MAX_DISPLAYS) {
+                int occupied = 1 + displayCount();
+                if (occupied + layers <= MAX_DISPLAYS) {
                     String family = motifs.getProperty(key,"rune");
                     for (int i = 0; i < layers; i++) {
-                        var satellite = spawn(at,i == 0 ? family : "rune",orbitPose(motion,0,i));
+                        String outer = switch (family) {
+                            case "blade","rush" -> "crescent";
+                            case "ward","impact","frost" -> "fracture";
+                            default -> "helix";
+                        };
+                        var satellite = spawn(at,i == 0 ? outer : "rune",orbitPose(motion,0,i));
                         ornaments.add(satellite);
                         viewer.showEntity(plugin,satellite);
                     }
@@ -481,6 +591,7 @@ public final class PaperArt implements Listener {
             cues.put(id,new Animation(viewer,display,at,tick,motion,ornaments));
             nextCue.put(id,tick + 20);
             viewer.showEntity(plugin,display);
+            peakDisplays = Math.max(peakDisplays,displayCount());
         } catch (RuntimeException failure) {
             if (display != null) display.remove();
             ornaments.forEach(ItemDisplay::remove);
@@ -488,14 +599,19 @@ public final class PaperArt implements Listener {
         }
     }
 
-    private static ItemDisplay spawn(Location at, String motif, Transformation pose) {
-        return at.getWorld().spawn(at,ItemDisplay.class,entity -> {
+    private ItemDisplay spawn(Location at, String motif, Transformation pose) {
+        Location anchor = at.clone();
+        anchor.setYaw(0);
+        anchor.setPitch(0);
+        var result = at.getWorld().spawn(anchor,ItemDisplay.class,entity -> {
             entity.setVisibleByDefault(false);
             entity.setPersistent(false);
             entity.setItemStack(model(new ItemStack(Material.AMETHYST_SHARD),motif.startsWith("proc/") ? motif : "fx/" + motif));
             entity.setViewRange(1.0f);
             entity.setTransformation(pose);
         });
+        displaySpawns++;
+        return result;
     }
 
     private static Transformation pose(Location at, Motion motion, int frame) {
@@ -517,7 +633,24 @@ public final class PaperArt implements Listener {
                 new Vector3f(.08f + envelope * .45f),new Quaternionf());
     }
 
+    private int displayCount() {
+        int count = supply.size() + fields.size();
+        for (var animation : cues.values()) count += 1 + animation.ornaments().size();
+        return count;
+    }
+
+    String metrics() {
+        return "display_spawns=" + displaySpawns + " display_transforms=" + displayUpdates
+                + " peak_displays=" + peakDisplays + " active_displays=" + displayCount()
+                + " private_particle_sends=" + privateParticles;
+    }
+
     void tick() {
+        fields.entrySet().removeIf(entry -> {
+            if (entry.getValue().lastSeen == tick) return false;
+            entry.getValue().model.remove();
+            return true;
+        });
         tick++;
         particleUnits.clear();
         if (cues.isEmpty()) return;
@@ -540,12 +673,14 @@ public final class PaperArt implements Listener {
                         var layer = animation.ornaments().get(i);
                         layer.setInterpolationDuration(2);
                         layer.setInterpolationDelay(0);
+                        displayUpdates++;
                         layer.setTransformation(orbitPose(animation.motion(),t,i));
                     }
                 }
                 if (age == 1 || age == animation.motion().attack() + 1) {
                     entity.setInterpolationDuration(age == 1 ? animation.motion().attack() : animation.motion().release());
                     entity.setInterpolationDelay(0);
+                    displayUpdates++;
                     entity.setTransformation(pose(animation.at(),animation.motion(),age == 1 ? 1 : 2));
                 }
                 return false;
@@ -569,6 +704,8 @@ public final class PaperArt implements Listener {
     }
 
     void forget(UUID id) {
+        auras.remove(id);
+        for (var key : Set.copyOf(fields.keySet())) if (key.owner.equals(id)) endField(key);
         removeCue(id);
         nextCue.remove(id);
         if (supply.isEmpty()) return;
@@ -580,10 +717,15 @@ public final class PaperArt implements Listener {
 
     void clear() {
         cues.values().forEach(Animation::remove);
+        for (var field : fields.values()) field.model.remove();
+        fields.clear();
         cues.clear();
+        auras.clear();
         particleUnits.clear();
         nextCue.clear();
         supply.values().forEach(marker -> marker.entity().remove());
         supply.clear();
+        displaySpawns = displayUpdates = privateParticles = 0;
+        peakDisplays = 0;
     }
 }

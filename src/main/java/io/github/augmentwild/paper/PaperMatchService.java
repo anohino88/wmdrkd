@@ -43,6 +43,7 @@ public final class PaperMatchService implements Listener {
     private final Set<UUID> departures = new LinkedHashSet<>();
     private GameSession session;
     private MatchSimulationClock clock;
+    private long labAdvanceNanos;
     private BukkitTask task;
     private BukkitTask preparation;
     private final ArenaSearchService search;
@@ -358,6 +359,16 @@ public final class PaperMatchService implements Listener {
             ArtGallery.browse(viewer,art,allowed,args.length == 2 ? args[1].toLowerCase(java.util.Locale.ROOT) : "");
             return "연출 실험실";
         }
+        if (action.equals("advance") && args.length == 1 && sender instanceof Player owner) {
+            if (!soloInProgress(owner) || !augmentActive(owner) || session.state() != MatchState.GATHERING)
+                return "1인 실험의 파밍 단계에서만 다음 증강 선택으로 이동할 수 있습니다.";
+            long interval = settings.rules().selectionInterval();
+            long next = (clock.elapsedSeconds() / interval + 1) * interval;
+            if (next > settings.rules().gatheringSeconds()) return "남은 선택 회차가 없습니다.";
+            labAdvanceNanos += next * 1_000_000_000L - clock.elapsedNanos();
+            clock.tick();
+            return "다음 증강 선택 도달";
+        }
         if (action.equals("dummy") && args.length == 2 && sender instanceof Player owner) {
             if (!soloInProgress(owner) || !augmentActive(owner)) return "1인 테스트 참가자만 사용할 수 있습니다.";
             return switch (args[1]) {
@@ -368,7 +379,7 @@ public final class PaperMatchService implements Listener {
             };
         }
         int length = switch (action) {
-            case "list", "clear", "report", "reset","cooldowns" -> 2;
+            case "list", "clear", "report", "reset","cooldowns","gear","heal","shield" -> 2;
             case "grant", "remove", "health", "preset","cast" -> 3;
             case "progress" -> 4;
             default -> 0;
@@ -379,6 +390,22 @@ public final class PaperMatchService implements Listener {
                 || !labWorld.equals(player.getWorld().getUID())) return "살아 있는 테스트 참가자를 지정하세요.";
         String id = args.length > 2 ? args[2].toLowerCase(java.util.Locale.ROOT) : "";
         return switch (action) {
+            case "gear" -> {
+                if (!soloInProgress(player) || player.getInventory().firstEmpty() == -1)
+                    yield "빈 슬롯이 있는 1인 실험에서만 장비를 받을 수 있습니다.";
+                player.getInventory().setItem(player.getInventory().firstEmpty(),
+                        new org.bukkit.inventory.ItemStack(org.bukkit.Material.IRON_SWORD));
+                yield "실험용 철검 지급";
+            }
+            case "heal" -> {
+                player.setHealth(player.getAttribute(org.bukkit.attribute.Attribute.MAX_HEALTH).getValue());
+                yield "실험 체력 복구";
+            }
+            case "shield" -> {
+                var effect = new org.bukkit.potion.PotionEffect(org.bukkit.potion.PotionEffectType.ABSORPTION,200,1);
+                player.addPotionEffect(effect);
+                yield "바닐라 흡수 실험";
+            }
             case "cooldowns" -> augments.labResetSkills(player);
             case "cast" -> augments.cast(player,id);
             case "grant" -> augments.labGrant(player, id);
@@ -532,7 +559,10 @@ public final class PaperMatchService implements Listener {
             plugin.getLogger().info("Combat lab started match=" + session.matchId());
         }
         lastSurvivorSample = Long.MIN_VALUE;
-        clock = new MatchSimulationClock(session, settings.rules(), () -> System.nanoTime() - started,
+        labAdvanceNanos = 0;
+        java.util.function.LongSupplier elapsed = labWorld == null ? () -> System.nanoTime() - started
+                : () -> System.nanoTime() - started + labAdvanceNanos;
+        clock = new MatchSimulationClock(session, settings.rules(), elapsed,
                 settings.selectionSeconds(), supply.start(session.matchId(), context.spawns()));
         augments.start(session.matchId(), clock, labWorld != null);
         entrants.clear();
@@ -583,7 +613,10 @@ public final class PaperMatchService implements Listener {
 
     private void clearMatch() {
         boolean played = clock != null;
-        if (played) feedback.finishSamples();
+        if (played) {
+            feedback.finishSamples();
+            plugin.getLogger().info("AW_ART_MATCH " + art.metrics());
+        }
         target.clear();
         art.clear();
         for (Player viewer : plugin.getServer().getOnlinePlayers()) {
@@ -795,7 +828,12 @@ public final class PaperMatchService implements Listener {
                 Player player = plugin.getServer().getPlayer(id);
                 if (player != null) updateDisplay(player,() -> {
                     overhead.update(player,tickNumber);
-                    if (tickNumber % 20 == 1) displays.sidebar(player,sidebar(player));
+                    if (tickNumber % 20 == 1) {
+                        displays.sidebar(player,sidebar(player));
+                        if (player.getOpenInventory().getTopInventory().getHolder() instanceof ArtGallery gallery
+                                && gallery.isGuideFor(player))
+                            gallery.updateGuide(player,List.of(supply.guide(player,true).split(" / ")));
+                    }
                 });
                 if (player == null || !augmentActive(player)) {
                     hud.clear(id, player);

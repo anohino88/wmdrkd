@@ -31,6 +31,10 @@ public final class PlayerUi implements Listener {
         final int samples;
         Quality(int samples) { this.samples = samples; }
     }
+    private static final NamespacedKey HIDE_AURAS = new NamespacedKey("augmentwild","hide_auras");
+    private static final NamespacedKey REDUCE_FLASH = new NamespacedKey("augmentwild","reduce_flash");
+    static boolean auras(Player p) { return !p.getPersistentDataContainer().has(HIDE_AURAS); }
+    static boolean reducedFlash(Player p) { return p.getPersistentDataContainer().has(REDUCE_FLASH); }
     private static final NamespacedKey QUALITY = new NamespacedKey("augmentwild","art_quality");
     static Quality quality(Player p) {
         String value = p.getPersistentDataContainer().getOrDefault(QUALITY, PersistentDataType.STRING, "STANDARD");
@@ -38,6 +42,8 @@ public final class PlayerUi implements Listener {
         catch (IllegalArgumentException ignored) { return Quality.STANDARD; }
     }
     private static void qualityButton(Player p, Menu menu) {
+        menu.inventory.setItem(19,PaperIntel.item(PaperIntel.card(Material.ENDER_EYE,"지속 오라 · " + (auras(p) ? "ON" : "OFF"))));
+        menu.inventory.setItem(21,PaperIntel.item(PaperIntel.card(Material.GLOWSTONE_DUST,"발광 최소화 · " + (reducedFlash(p) ? "ON" : "OFF"))));
         menu.inventory.setItem(24,PaperIntel.item(PaperIntel.card(Material.AMETHYST_SHARD,
                 "연출 품질 · " + quality(p), "클릭 · 다음 단계")));
     }
@@ -144,6 +150,13 @@ public final class PlayerUi implements Listener {
         if (cancelled) return;
         if (!menu.settings || slot < 0 || !(e.getWhoClicked() instanceof Player p)
                 || !p.getUniqueId().equals(menu.owner)) return;
+        if (slot == 19 || slot == 21) {
+            var key = slot == 19 ? HIDE_AURAS : REDUCE_FLASH;
+            if (p.getPersistentDataContainer().has(key)) p.getPersistentDataContainer().remove(key);
+            else p.getPersistentDataContainer().set(key,PersistentDataType.BYTE,(byte)1);
+            qualityButton(p,menu);
+            return;
+        }
         if (slot == 24) {
             var levels = Quality.values();
             var next = levels[(quality(p).ordinal() + 1) % levels.length];

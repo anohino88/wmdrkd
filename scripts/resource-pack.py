@@ -23,6 +23,7 @@ PALETTE = {
     "rune": "#e9cf83", "blade": "#8de4dc", "ward": "#76b8fa", "growth": "#92dc9e",
     "bolt": "#ebe2a3", "impact": "#f8b578", "fire": "#ff8768", "frost": "#acefff",
     "void": "#c69ef8", "blood": "#f4889f", "time": "#91dec6", "rush": "#bddcfb",
+    "helix":"#b59eee", "fracture":"#91dbea", "crescent":"#e7b9fc",
     "supply": "#82d7bc", "premium": "#ffe19c",
 }
 SOUNDS = {"cast", "evolve", "supply"}

@@ -118,6 +118,19 @@ final class ArtProbe {
                 Bukkit.getLogger().info("AW_ART_QUALITY quality=" + quality + " displays_created=" + shownCount
                         + " peak_private_displays=" + peak + " adapter_ticks=1680 remaining=0");
             }
+            var sustain = PaperArt.class.getDeclaredMethod("sustain",Player.class,String.class,org.bukkit.Location.class,boolean.class);
+            sustain.setAccessible(true);
+            observed.clear();
+            for (int i = 0; i < 1200; i++) {
+                sustain.invoke(art,p,"void_lord",pig.getLocation(),false);
+                tick.invoke(art);
+                require(observed.size() == 1 && observed.getFirst().isValid());
+            }
+            tick.invoke(art);
+            require(!observed.getFirst().isValid());
+            var metrics = PaperArt.class.getDeclaredMethod("metrics");
+            metrics.setAccessible(true);
+            Bukkit.getLogger().info("AW_ART_SUSTAIN ticks=1200 created=1 remaining=0 " + metrics.invoke(art));
             storage.remove(qualityKey);
             require(cycles == 336);
             Bukkit.getLogger().info("AW_ART_LIFECYCLE_PASS models=84 variable_timing=true remaining=0");

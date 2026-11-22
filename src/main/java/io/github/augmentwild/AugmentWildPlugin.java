@@ -98,6 +98,11 @@ public final class AugmentWildPlugin extends JavaPlugin {
             sender.sendMessage("권한이 없습니다.");
             return true;
         }
+        if (args.length == 2 && args[0].equalsIgnoreCase("skill") && args[1].equalsIgnoreCase("menu")
+                && sender instanceof Player player) {
+            sender.sendMessage(quickMenu.openSkills(player));
+            return true;
+        }
         if (args.length >= 2 && args[0].equalsIgnoreCase("skill")) {
             sender.sendMessage(sender instanceof Player player ? matches.skill(player, args) : "플레이어 전용 명령입니다.");
             return true;

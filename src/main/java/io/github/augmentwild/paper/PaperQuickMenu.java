@@ -139,7 +139,8 @@ public final class PaperQuickMenu implements Listener {
         return "빠른 메뉴 · 웅크리기 + 빈손 우클릭(공중)으로 다시 열 수 있습니다.";
     }
 
-    private String openSkills(Player player) {
+    public String openSkills(Player player) {
+        if (matches.picking(player)) return matches.openAugments(player);
         Menu menu = new Menu(matches.art(),player, matches.menuSession(), true, matches.availableSkills(player));
         item(menu, 10, Material.IRON_SWORD, "1번 스킬 슬롯 선택");
         item(menu, 11, Material.IRON_SWORD, "2번 스킬 슬롯 선택");

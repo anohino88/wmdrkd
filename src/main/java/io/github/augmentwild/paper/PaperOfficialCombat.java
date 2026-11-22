@@ -282,7 +282,8 @@ final class PaperOfficialCombat implements Listener {
                 int slot = state.slots.autoBind(augment);
                 if (slot > 0) owner.sendMessage(rule(augment).definition().name() + " · " + slot + "번 슬롯 등록");
                 else if (state.slots.at(1) != null && state.slots.at(2) != null && state.slots.at(3) != null)
-                    owner.sendMessage("스킬 슬롯이 가득 찼습니다. 빠른 메뉴의 스킬 설정에서 교체하세요.");
+                    owner.sendMessage(net.kyori.adventure.text.Component.text("스킬 슬롯이 가득 찼습니다 · [교체할 슬롯 선택]")
+                            .clickEvent(net.kyori.adventure.text.event.ClickEvent.runCommand("/aw skill menu")));
                 state.hudSecond = -1;
             }
         }
@@ -326,6 +327,7 @@ final class PaperOfficialCombat implements Listener {
         if (augment.equals("overgrowth")) state.visibleGrowthStep = -1;
         if (augment.equals("gigantification")) state.giantApplied = false;
         state.pending.removeIf(task -> task.id().equals(augment));
+        art.cancelAura(id,augment);
         state.slots.remove(augment);
         state.coolingSlots.remove(augment);
         state.cooldownLengths.remove(augment);
@@ -809,6 +811,7 @@ final class PaperOfficialCombat implements Listener {
             state.counterReady = false;
             state.shadowUntil = 0;
             state.history.clear();
+            art.forget(player.getUniqueId());
             state.zones.clear();
             state.missiles.clear();
             state.arrows.clear();
@@ -818,6 +821,10 @@ final class PaperOfficialCombat implements Listener {
         }
         long second = now();
         updateShieldDisplay(player, state);
+        art.aura(player,"shadow_dash",second,state.shadowUntil-second);
+        art.aura(player,"duel_contract",second,state.duelTarget == null ? 0 : state.duelUntil-second);
+        art.aura(player,"immortal_berserker",second,state.immortalUntil-second);
+        art.aura(player,"last_demon",second,state.lastDemonUntil-second);
         erosion.tick(second);
         int tick = Bukkit.getCurrentTick();
         if (expiredArrowsAt != tick) {
@@ -853,6 +860,13 @@ final class PaperOfficialCombat implements Listener {
             tickZones(player, state, second);
             remember(player, state, second);
             worldErosion(player, state);
+            if (owns(player,"calamity_giant") && player.isSprinting() && player.isOnGround() && tick % 12 == 0)
+                art.spark(player,player.getLocation(),Particle.CLOUD);
+            if (state.bomb != null && state.bomb.isValid())
+                art.sustain(player,"bomb_alchemy",state.bomb.getLocation(),true);
+            for (var zone : state.zones)
+                if (zone.augment().equals("void_lord") && second < zone.expiresAt() && safe.test(zone.start()))
+                    art.sustain(player,"void_lord",zone.start(),false);
             if (state.bomb != null && state.bomb.isValid() && tick % 3 == 0)
                 art.spark(player,state.bomb.getLocation(),Particle.WITCH);
             if (state.duelUntil > now() && tick % 10 == 0 && state.duelTarget != null) {

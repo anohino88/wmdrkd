@@ -31,6 +31,7 @@ final class ArtGallery implements PaperMenu {
     private enum Mode { PREVIEW, GRANT, REMOVE, CAST }
     private static final int PAGE_SIZE = 44;
     private boolean simple;
+    private boolean liveGuide;
 
     private ArtGallery(Player p, PaperArt art, PaperArt.Screen screen, String title, int rows,
                        List<String> entries, BooleanSupplier allowed) {
@@ -48,7 +49,8 @@ final class ArtGallery implements PaperMenu {
         var keys = new java.util.ArrayList<>(art.previewKeys());
         for (String action : List.of("stationary","moving","high","shield","report","clear")) keys.add("dummy/" + action);
         for (String preset : io.github.augmentwild.augment.AugmentCombinations.PRESETS.keySet()) keys.add("preset/" + preset);
-        keys.add("control/cooldowns");
+        for (String control : List.of("gear","heal","shield","advance","cooldowns")) keys.add("control/" + control);
+        for (var evolution : io.github.augmentwild.augment.AugmentEvolution.values()) keys.add("evolve/" + evolution.augment);
         keys.add("control/stopfx");
         if (!filter.isBlank()) keys.removeIf(key -> !key.contains(filter) && !art.label(key).contains(filter));
         if (keys.isEmpty()) { p.sendMessage("일치하는 실험 항목이 없습니다."); return; }
@@ -60,6 +62,7 @@ final class ArtGallery implements PaperMenu {
     static void read(Player p, PaperArt art, PaperArt.Screen screen, String title, List<String> rows) {
         boolean journal = screen == PaperArt.Screen.JOURNAL;
         var view = new ArtGallery(p,art,screen,title,journal ? 5 : 3,List.of(),() -> false);
+        view.liveGuide = screen == PaperArt.Screen.SUPPLY;
         int index = 0;
         for (String row : rows) {
             int slot = journal ? index : 10 + index * 3;
@@ -69,6 +72,15 @@ final class ArtGallery implements PaperMenu {
         }
         view.returnTo(p,() -> p.performCommand("aw menu"));
         p.openInventory(view.inventory);
+    }
+
+    boolean isGuideFor(Player player) { return liveGuide && owner.equals(player.getUniqueId()); }
+    void updateGuide(Player player, List<String> lines) {
+        for (int i = 0; i < 3; i++) {
+            int slot = 10 + i * 3;
+            if (i < lines.size()) put(player,slot,Material.COMPASS,"gui/supply",lines.get(i));
+            else inventory.clear(slot);
+        }
     }
 
     static void detail(Player p, PaperArt art, String title, ItemStack card, Runnable back) {
@@ -137,13 +149,14 @@ final class ArtGallery implements PaperMenu {
         else if (slot < PAGE_SIZE && page * PAGE_SIZE + slot < entries.size()) {
             String key = entries.get(page * PAGE_SIZE + slot);
             var parts = key.split("/",2);
-            if (parts[0].equals("dummy") || parts[0].equals("preset") || parts[0].equals("control")
+            if (parts[0].equals("evolve") || parts[0].equals("dummy") || parts[0].equals("preset") || parts[0].equals("control")
                     || parts[0].equals("augment") && mode != Mode.PREVIEW) {
                 if (key.equals("control/stopfx")) art.stopPreview(p);
                 else {
                     String command = switch (parts[0]) {
                         case "dummy" -> "dummy " + parts[1];
-                        case "control" -> "cooldowns " + p.getName();
+                        case "control" -> parts[1].equals("advance") ? "advance" : parts[1] + " " + p.getName();
+                        case "evolve" -> "progress " + p.getName() + " " + parts[1] + " " + Integer.MAX_VALUE;
                         case "preset" -> "preset " + p.getName() + " " + parts[1];
                         default -> mode.name().toLowerCase(Locale.ROOT) + " " + p.getName() + " " + parts[1];
                     };

@@ -97,6 +97,8 @@ final class PaperAugments implements Listener {
         final List<SelectionRound.Offer> offers;
         Inventory inventory;
         long lastSeconds = -1;
+        int openedTick;
+        int revealMask;
 
         Menu(UUID match, UUID owner, int round, List<SelectionRound.Offer> offers) {
             this.match = match;
@@ -293,7 +295,10 @@ final class PaperAugments implements Listener {
             if (menu != null) player.closeInventory();
         } else if (menu != null && menu.round == round.round() && menu.match.equals(match)) {
             if (!menu.offers.equals(choice.offers())) show(player, round, choice, profile);
-            else setCountdown(menu, timer.selectionRemainingSeconds());
+            else {
+                setCountdown(menu, timer.selectionRemainingSeconds());
+                revealCards(player,menu);
+            }
         } else if (profile.shown != round.round()) {
             show(player, round, choice, profile);
         }
@@ -397,6 +402,7 @@ final class PaperAugments implements Listener {
         var definition = registry.get(id);
         if (profile.modifiers.contains(id)) setModifier(player, profile, definition, attribute(definition.effect()), false);
         profile.timers.remove(id);
+        art.cancelAura(player.getUniqueId(),id);
         official.lost(player.getUniqueId(), id, experiment);
     }
 
@@ -480,6 +486,7 @@ final class PaperAugments implements Listener {
     private void show(Player player, SelectionRound round, SelectionRound.Choice choice, Profile profile) {
         var menu = new Menu(round.matchId(), player.getUniqueId(), round.round(), choice.offers());
         menu.inventory = plugin.getServer().createInventory(menu, 27, art.title(player,PaperArt.Screen.CHOICE,"증강 선택 · " + round.round() + "회차"));
+        menu.openedTick = org.bukkit.Bukkit.getCurrentTick();
         for (int i = 0; i < choice.offers().size(); i++) {
             var augment = registry.get(choice.offers().get(i).id());
             menu.inventory.setItem(SLOTS[i], augmentItem(player, profile, augment));
@@ -644,6 +651,25 @@ final class PaperAugments implements Listener {
         official.acquired(player.getUniqueId(), exchangeId);
         official.exchangeCommitted(player, exchangeId);
         player.sendMessage(registry.get(exchangeId).name() + " 완료");
+    }
+
+    private void revealCards(Player player, Menu menu) {
+        if (PlayerUi.reducedFlash(player)) return;
+        int age = org.bukkit.Bukkit.getCurrentTick() - menu.openedTick;
+        for (int i = 0; i < menu.offers.size(); i++) {
+            int bit = 1 << i;
+            if (age < 2 + 2*i || (menu.revealMask & bit) != 0) continue;
+            menu.revealMask |= bit;
+            var tier = registry.get(menu.offers.get(i).id()).rarity();
+            var material = switch (tier) {
+                case SILVER -> Material.IRON_NUGGET;
+                case GOLD -> Material.GOLD_NUGGET;
+                case PRISMATIC -> Material.AMETHYST_SHARD;
+            };
+            var badge = item(material,Component.text(tier.name()),List.of());
+            if (tier == AugmentRarity.PRISMATIC) badge.editMeta(meta -> meta.setEnchantmentGlintOverride(true));
+            menu.inventory.setItem(SLOTS[i]-9,badge);
+        }
     }
 
     private void setCountdown(Menu menu, long seconds) {
@@ -885,6 +911,7 @@ final class PaperAugments implements Listener {
         if (!active.test(player)) {
             removeModifiers(player, profile);
             // Acquisition and cooldown persist, but active buffs end on death or elimination.
+            for (String id : profile.owned) art.cancelAura(player.getUniqueId(),id);
             profile.timers.clearActive();
             return;
         }
@@ -896,6 +923,8 @@ final class PaperAugments implements Listener {
                 player.setHealth(Math.min(maxHealth(player),previous + a.amount()));
                 hud.heal(player,previous,player.getHealth());
             }
+            if (a.duration() > 0 && a.effect() != Effect.OFFICIAL)
+                art.aura(player,id,now,profile.timers.remainingActive(id,now));
             profile.timers.expire(id, now);
             var attribute = attribute(a.effect());
             if (attribute != null && (enabled || profile.modifiers.contains(id))) {

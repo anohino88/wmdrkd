@@ -1389,6 +1389,7 @@
     "output": "assets/augmentwild/models/fx/",
     "used_by": "공통 연출 라이브러리, 액티브, 진화, 시너지, 공명, 보급",
     "panels": "resource-pack/source/panels.py + screens.json",
-    "derivatives": "84 proc items combine each attributed augment icon with its Blender mesh. Five gauge states derive from the credited GUI hourglass."
+    "derivatives": "84 proc items combine each attributed augment icon with its Blender mesh. Five gauge states derive from the credited GUI hourglass.",
+    "skill_hud": "Seven bitmap glyphs reuse the credited active-skill icons; references and codepoints in font/skills.json."
   }
 }

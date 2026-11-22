@@ -89,6 +89,7 @@ with log.open("wb") as output:
                 wait_for("관리자 권한이 없습니다", 15)
                 wait_for("AW_PHASE68_MENU_PASS", 15)
                 wait_for("AW_ART_PROBE_PASS", 15)
+                wait_for("AW_ART_SUSTAIN ticks=1200 created=1 remaining=0", 20)
                 wait_for("AW_ART_LIFECYCLE_PASS models=84 variable_timing=true remaining=0", 15)
                 for size in (2, 4, 8, 16):
                     wait_for(f"AW_HUD_LOAD_PASS synthetic={size} ticks=40 scans={8*size}", 15)
