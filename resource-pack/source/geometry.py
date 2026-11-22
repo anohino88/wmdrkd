@@ -39,6 +39,9 @@ def form(kind):
             radius = 2.5 + i * .12
             bar(8+radius*math.cos(angle),3+i*.47,8+radius*math.sin(angle),
                 .82,.33,.82,"accent" if i%3 else "light")
+        for i in range(11):
+            angle = math.pi + i * math.tau / 8
+            bar(8+2.15*math.cos(angle),3.38+i*.81,8+2.15*math.sin(angle),.47,.24,.47,"metal")
         return
     if kind == "fracture":
         # Six separate pieces of a bowed shield leave a visible central break.
@@ -46,6 +49,8 @@ def form(kind):
             angle = i * math.tau / 6
             bar(8+4.2*math.cos(angle),8+4.2*math.sin(angle),8+.3*i,
                 1.3+.16*i,2.1,.72,"metal" if i%2 else "light")
+            bar(8+4.2*math.cos(angle),8+4.2*math.sin(angle)+.16,7.54+.3*i,
+                .62+.09*i,1.25,.18,"accent")
         return
     if kind == "crescent":
         for i in range(15):
@@ -53,6 +58,9 @@ def form(kind):
             thickness = .42 + .85*math.sin(math.pi*i/14)
             bar(8+5.4*math.cos(angle),7.5+.11*i,8+5.4*math.sin(angle),
                 thickness,thickness*.7,thickness,"light" if i%3 else "accent")
+        for i in range(7):
+            angle = .78 + i*.52
+            bar(8+3.75*math.cos(angle),7.26+.21*i,8+3.75*math.sin(angle),.57,.27,.61,"metal")
         return
     if kind in ("supply", "premium"):
         bar(8, 7, 8, 9, 4, 7, "dark")

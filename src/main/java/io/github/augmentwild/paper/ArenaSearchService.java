@@ -50,18 +50,18 @@ public final class ArenaSearchService implements Listener {
     }
 
     public String preview(CommandSender sender, int players) {
-        return begin(sender, players, null, plugin.getConfig().getString("arena.world", ""), result -> { });
+        return begin(sender, players, null, plugin.getConfig().getString("arena.world", ""), false, result -> { });
     }
 
-    public String search(CommandSender sender, int players, UUID matchId, String worldName, Consumer<ArenaContext> done) {
-        return begin(sender, players, matchId, worldName, done);
+    public String search(CommandSender sender, int players, UUID matchId, String worldName, boolean lab, Consumer<ArenaContext> done) {
+        return begin(sender, players, matchId, worldName, lab, done);
     }
 
     public boolean busy() {
         return task != null || abandoned.stream().anyMatch(request -> !request.isDone());
     }
 
-    private String begin(CommandSender sender, int players, UUID matchId, String worldName, Consumer<ArenaContext> done) {
+    private String begin(CommandSender sender,int players,UUID matchId,String worldName,boolean lab,Consumer<ArenaContext> done) {
         if (busy()) return "경기장 탐색 또는 청크 요청 정리가 진행 중입니다.";
         abandoned = List.of();
         var cfg = plugin.getConfig();
@@ -71,12 +71,13 @@ public final class ArenaSearchService implements Listener {
         if (matchId != null && !world.getPVP()) return "경기 월드에서 PvP를 허용해야 합니다.";
         if (!"ZERO".equalsIgnoreCase(cfg.getString("arena.biome.ocean-policy"))) return "ZERO 검사 정책을 지정하세요.";
         try {
-            scan = new Scan(sender, world, players, matchId, done);
+            scan = new Scan(sender,world,players,matchId,lab,done);
         } catch (IllegalArgumentException | org.bukkit.configuration.InvalidConfigurationException | java.io.IOException failure) {
             return "경기장 탐색 설정 또는 기록을 읽지 못했습니다. " + failure.getMessage();
         }
         task = plugin.getServer().getScheduler().runTaskTimer(plugin, this::tick, 1L, 1L);
-        return "경기장 탐색을 시작했습니다.";
+        return "경기장 탐색을 시작했습니다." + (lab ? " · 실험 월드 " + world.getName()
+                + " · 미생성 청크 " + (scan.generate ? "생성 허용" : "생성 금지") : "");
     }
 
     public boolean running() { return task != null; }
@@ -121,7 +122,7 @@ public final class ArenaSearchService implements Listener {
         private final int players;
         private final UUID matchId;
         private final Consumer<ArenaContext> done;
-        private final boolean generate;
+        private final boolean generate,lab;
         private final int progressTicks, spawnSamplesPerChunk, spawnPoolSize;
         private int ticks;
         private boolean finished, reported;
@@ -145,20 +146,23 @@ public final class ArenaSearchService implements Listener {
         private List<Cell> cells = List.of();
         private int next, attempt, minX, maxX, minZ, maxZ, samples, safeColumns;
 
-        Scan(CommandSender sender, World world, int players, UUID matchId, Consumer<ArenaContext> done)
+        Scan(CommandSender sender,World world,int players,UUID matchId,boolean lab,Consumer<ArenaContext> done)
                 throws org.bukkit.configuration.InvalidConfigurationException, java.io.IOException {
             this.sender = sender;
             this.world = world;
             this.players = players;
             this.matchId = matchId;
             this.done = done;
+            this.lab = lab;
             var cfg = plugin.getConfig();
-            width = cfg.getInt("arena.width");
-            height = cfg.getInt("arena.height");
+            int labSize = lab ? cfg.getInt("dev.combat-lab.arena-size",0) : 0;
+            width = labSize == 0 ? cfg.getInt("arena.width") : labSize;
+            height = labSize == 0 ? cfg.getInt("arena.height") : labSize;
             int limit = Math.min(5000, cfg.getInt("arena.maximum-size"));
-            radius = cfg.getInt("arena.search.radius");
+            radius = lab ? cfg.getInt("dev.combat-lab.search-radius",128) : cfg.getInt("arena.search.radius");
             attempts = cfg.getInt("arena.search.max-candidate-attempts");
-            generate = matchId != null && cfg.getBoolean("arena.search.generate-missing-chunks");
+            generate = matchId != null && cfg.getBoolean(lab ? "dev.combat-lab.generate-missing-chunks"
+                    : "arena.search.generate-missing-chunks");
             stride = cfg.getInt(matchId == null ? "arena.search.surface-sample-step" : "arena.search.commit-surface-step");
             progressTicks = cfg.getInt("arena.search.progress-ticks");
             spawnSamplesPerChunk = cfg.getInt("arena.search.spawn-probes-per-chunk");
@@ -167,10 +171,11 @@ public final class ArenaSearchService implements Listener {
             int micros = cfg.getInt("arena.search.inspection-budget-micros",1500);
             inspectionBudget = TimeUnit.MICROSECONDS.toNanos(Math.clamp(micros,250,5000));
             spacing = cfg.getInt("arena.spawn.min-player-distance");
-            margin = cfg.getInt("arena.spawn.border-margin");
+            margin = lab ? cfg.getInt("dev.combat-lab.spawn-margin",8) : cfg.getInt("arena.spawn.border-margin");
             historyBuffer = cfg.getDouble("arena.search.used-region-buffer-blocks");
             int seconds = cfg.getInt("arena.search.max-search-seconds");
-            if (width < 1 || height < 1 || width > limit || height > limit || radius < 1 || radius > 1_000_000
+            if (width < 1 || height < 1 || width > limit || height > limit || radius < (lab ? 0 : 1) || radius > 1_000_000
+                    || lab && cfg.getInt("border.final-size") > Math.min(width,height)
                     || attempts < 1 || progressTicks < 1 || spawnSamplesPerChunk < 1 || spawnSamplesPerChunk > 16
                     || spawnPoolSize < players || spawnPoolSize > 4096 || stride < 1 || stride > 16 || pipeline < 1 || pipeline > 8
                     || spacing < 0 || margin < 1 || 2L * margin >= Math.min(width, height)
@@ -182,7 +187,7 @@ public final class ArenaSearchService implements Listener {
             originX = origin.getBlockX();
             originZ = origin.getBlockZ();
             var historyFile = new java.io.File(plugin.getDataFolder(), "used-regions.yml");
-            if (historyFile.isFile()) {
+            if (!lab && historyFile.isFile()) {
                 var history = new YamlConfiguration();
                 history.load(historyFile);
                 for (var entry : history.getMapList("regions")) {
@@ -199,9 +204,12 @@ public final class ArenaSearchService implements Listener {
         }
 
         boolean advance() {
-            if (System.nanoTime() - started >= timeout || (cells.isEmpty() && attempt >= attempts)) {
+            if (System.nanoTime() - started >= timeout || (cells.isEmpty() && attempt >= (radius == 0 ? 1 : attempts))) {
                 rejected.merge(System.nanoTime() - started >= timeout ? "timeout" : "candidate-limit", 1, Integer::sum);
                 sender.sendMessage("경기장 탐색 실패. 후보 " + attempt + "개, 거부 사유 " + rejected);
+                if (lab) sender.sendMessage(generate
+                        ? "실험 월드의 육지 지형과 스폰 간격, arena-size 및 search-radius를 확인하세요."
+                        : "미생성 구역이라면 실험 월드를 미리 생성하거나 dev.combat-lab.generate-missing-chunks를 설정하세요.");
                 return true;
             }
             if (cells.isEmpty()) {
@@ -230,7 +238,7 @@ public final class ArenaSearchService implements Listener {
                 Cell cell = request.getKey();
                 iterator.remove();
                 if (chunk == null) {
-                    reject("생성 또는 로드되지 않은 청크");
+                    reject(generate ? "청크 로드 불가" : "미생성 또는 로드 불가 청크 (생성 금지)");
                     return false;
                 }
                 if (!world.isChunkLoaded(chunk.getX(),chunk.getZ())) {
@@ -254,7 +262,7 @@ public final class ArenaSearchService implements Listener {
             if (next == cells.size() && pending.isEmpty()) {
                 var spaced = spacedSpawns();
                 if (spaced.size() < players) {
-                    reject("안전 스폰 부족");
+                    reject("안전한 3×3 지표 또는 배치 간격 부족");
                     return false;
                 }
                 sender.sendMessage("경기장 후보 중심 " + ((minX + maxX + 1.0) / 2) + ", " + ((minZ + maxZ + 1.0) / 2)
@@ -277,8 +285,10 @@ public final class ArenaSearchService implements Listener {
 
         void prepareCandidate() {
             attempt++;
-            minX = originX + random.nextInt(-radius, radius + 1) - width / 2;
-            minZ = originZ + random.nextInt(-radius, radius + 1) - height / 2;
+            int offsetX = lab && attempt == 1 ? 0 : random.nextInt(-radius,radius+1);
+            int offsetZ = lab && attempt == 1 ? 0 : random.nextInt(-radius,radius+1);
+            minX = originX + offsetX - width / 2;
+            minZ = originZ + offsetZ - height / 2;
             maxX = minX + width - 1;
             maxZ = minZ + height - 1;
             var border = world.getWorldBorder();

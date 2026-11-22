@@ -36,7 +36,8 @@ final class PublicArtProbe {
                     case "getWorld" -> eye.getWorld();
                     case "getGameMode" -> GameMode.SURVIVAL;
                     case "getPersistentDataContainer" -> pigment.getPersistentDataContainer();
-                    case "isOnline" -> online;
+                    case "getOpenInventory" -> null;
+                case "isOnline" -> online;
                     case "isInvisible" -> invisible;
                     case "canSee" -> true;
                     case "playSound" -> null;

@@ -3,7 +3,6 @@ package io.github.augmentwild.paper;
 import io.github.augmentwild.augment.AugmentDefinition;
 import io.github.augmentwild.augment.EffectGeometry;
 import java.io.IOException;
-import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.function.Predicate;
@@ -27,6 +26,8 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerResourcePackStatusEvent;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.persistence.PersistentDataType;
+import org.bukkit.command.CommandSender;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.util.Transformation;
 import org.joml.Quaternionf;
@@ -57,6 +58,11 @@ public final class PaperArt implements Listener {
     private final Properties screens = new Properties();
     private final Properties motifs = new Properties();
     private final ResourcePackInfo pack;
+    private final String settingsIssue;
+    private String validation = "서버 다운로드 검증 전";
+    private boolean validating;
+    private static final NamespacedKey SAFE = new NamespacedKey("augmentwild","art_safe");
+    private static final NamespacedKey LAST_PACK = new NamespacedKey("augmentwild","last_pack");
     private long tick;
     private boolean displaysAvailable = true;
 
@@ -113,15 +119,47 @@ public final class PaperArt implements Listener {
 
     Component slotIcon(Player player, String id) {
         int index = GLYPHS.indexOf(id);
-        if (index < 0 || !loaded.contains(player.getUniqueId())) return Component.empty();
+        if (index < 0 || !custom(player)) return Component.empty();
         return Component.text(String.valueOf((char)(0xe100 + index))).font(Key.key("augmentwild:skills"));
     }
 
     Component title(Player p, Screen screen, String label) {
-        if (!loaded.contains(p.getUniqueId())) return Component.text(label);
-        String panel = "\ue000" + (char)(0xe010 + screen.ordinal()) + "\ue001";
-        return Component.text(panel,NamedTextColor.WHITE).font(Key.key("augmentwild:interface"))
-                .append(Component.text(label,NamedTextColor.WHITE).font(Key.key("minecraft:default")));
+        // Inventory text uses the native baseline and layout. Large title glyphs can paint across slots.
+        return Component.text(label).font(Key.key("minecraft:default"));
+    }
+
+    private boolean custom(Player player) {
+        return loaded.contains(player.getUniqueId()) && !safe(player);
+    }
+
+    static boolean safe(Player player) {
+        return player.getPersistentDataContainer().has(SAFE,PersistentDataType.BYTE);
+    }
+
+    String toggleSafe(Player player) {
+        if (safe(player)) player.getPersistentDataContainer().remove(SAFE);
+        else {
+            player.getPersistentDataContainer().set(SAFE,PersistentDataType.BYTE,(byte)1);
+            forget(player.getUniqueId());
+            restoreMenuIcons(player);
+        }
+        return packStatus(player);
+    }
+
+    private void restoreMenuIcons(Player player) {
+        var view = player.getOpenInventory();
+        if (view == null || !PaperMenu.protectedInventory(view.getTopInventory())) return;
+        var inventory = view.getTopInventory();
+        for (int i = 0; i < inventory.getSize(); i++) {
+            var stack = inventory.getItem(i);
+            if (stack == null || !stack.hasItemMeta()) continue;
+            var meta = stack.getItemMeta();
+            var model = meta.getItemModel();
+            if (model == null || !model.getNamespace().equals("augmentwild")) continue;
+            meta.setItemModel(null);
+            stack.setItemMeta(meta);
+            inventory.setItem(i,stack);
+        }
     }
 
     void button(Player p, Inventory inv, int slot, String key) {
@@ -130,12 +168,13 @@ public final class PaperArt implements Listener {
     }
 
     String packStatus(Player p) {
-        if (pack == null) return "팩 배포 미설정 · 바닐라 표시";
-        if (loaded.contains(p.getUniqueId())) return "리소스팩 적용 · " + pack.hash().substring(0,8);
+        if (pack == null) return settingsIssue + " · 기본 표시";
+        String mode = safe(p) ? " · 안전 모드" : "";
+        if (loaded.contains(p.getUniqueId())) return "클라이언트 로드 응답 · " + pack.hash().substring(0,8) + mode;
         var status = reports.get(p.getUniqueId());
-        if (status == null) return "클라이언트 응답 대기";
+        if (status == null) return (lastOffer.containsKey(p.getUniqueId()) ? "클라이언트 응답 대기" : "요청 전") + mode;
         return switch (status) {
-            case ACCEPTED, DOWNLOADED -> "팩 적용 중";
+            case ACCEPTED, DOWNLOADED -> "팩 적용 중 · " + status.name();
             case DECLINED -> "팩 거절 · 바닐라 표시";
             default -> "팩 미적용 · " + status.name() + " · 바닐라 표시";
         };
@@ -149,9 +188,11 @@ public final class PaperArt implements Listener {
              CombatCinematics.Audience audience) {
         this.plugin = plugin;
         this.playable = playable;
-        combat = new CombatCinematics(plugin,playable,p -> loaded.contains(p.getUniqueId()),running,
+        combat = new CombatCinematics(plugin,playable,this::custom,running,
                 this::roomForCombat,this::spawn,audience);
-        pack = settings(plugin);
+        var configured = settings(plugin);
+        pack = configured.pack();
+        settingsIssue = configured.issue();
         try (var input = plugin.getResource("art-motifs.properties")) {
             if (input != null) motifs.load(input);
             try (var layouts = plugin.getResource("art-screen-samples.properties")) {
@@ -162,29 +203,120 @@ public final class PaperArt implements Listener {
         }
     }
 
-    private static ResourcePackInfo settings(JavaPlugin plugin) {
-        String url = plugin.getConfig().getString("art.url","");
-        if (url.isBlank()) return null;
-        try {
-            var uri = URI.create(url);
-            if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getHost() == null || uri.getUserInfo() != null)
-                throw new IllegalArgumentException("art.url must be a direct HTTPS ZIP URL");
-            String hash = plugin.getConfig().getString("art.sha1","");
-            byte[] sha1 = HexFormat.of().parseHex(hash);
-            if (sha1.length != 20) throw new IllegalArgumentException("art.sha1 must contain 40 hexadecimal digits");
-            hash = hash.toLowerCase(Locale.ROOT);
-            UUID id = UUID.nameUUIDFromBytes(("augmentwild-art:" + hash).getBytes(StandardCharsets.UTF_8));
-            return ResourcePackInfo.resourcePackInfo(id,uri,hash);
-        } catch (IllegalArgumentException failure) {
-            plugin.getLogger().warning(failure.getMessage());
-            return null;
+    private static final class DiagnosticsMenu implements PaperMenu {
+        final UUID owner;
+        final Inventory inventory;
+        DiagnosticsMenu(Player player) {
+            owner = player.getUniqueId();
+            inventory = Bukkit.createInventory(this,27,Component.text("리소스팩 진단"));
         }
+        @Override public Inventory getInventory() { return inventory; }
+        @Override public boolean availableWhileRestricted() { return true; }
+    }
+
+    String openDiagnostics(Player player,boolean admin) {
+        var menu = new DiagnosticsMenu(player);
+        menu.inventory.setItem(4,PaperIntel.item(PaperIntel.card(Material.MAP,"클라이언트 상태",packStatus(player))));
+        menu.inventory.setItem(10,PaperIntel.item(PaperIntel.card(Material.LIME_DYE,"리소스팩 다시 요청")));
+        menu.inventory.setItem(12,PaperIntel.item(PaperIntel.card(Material.SHIELD,
+                "안전 모드 · " + (safe(player) ? "켜짐" : "꺼짐"),"기본 글꼴·아이템·전투 연출 사용")));
+        if (admin) {
+            menu.inventory.setItem(14,PaperIntel.item(PaperIntel.card(Material.SPYGLASS,"서버 다운로드 검증",validation)));
+            menu.inventory.setItem(16,PaperIntel.item(PaperIntel.card(Material.WRITABLE_BOOK,"접속 세션 상태 보고")));
+        }
+        menu.inventory.setItem(26,PaperIntel.item(PaperIntel.card(Material.ARROW,"메인 메뉴")));
+        player.openInventory(menu.inventory);
+        return "리소스팩 진단 메뉴를 열었습니다.";
+    }
+
+    @EventHandler public void diagnosticsClick(org.bukkit.event.inventory.InventoryClickEvent event) {
+        if (!(event.getView().getTopInventory().getHolder() instanceof DiagnosticsMenu menu)) return;
+        boolean alreadyCancelled = event.isCancelled();
+        int slot = PaperMenu.lock(event,false);
+        if (alreadyCancelled || !(event.getWhoClicked() instanceof Player player)
+                || !menu.owner.equals(player.getUniqueId()) || !player.hasPermission("augmentwild.play")) return;
+        boolean admin = player.hasPermission("augmentwild.admin");
+        switch (slot) {
+            case 10 -> player.sendMessage(retry(player));
+            case 12 -> {
+                player.sendMessage(toggleSafe(player));
+                plugin.getServer().getScheduler().runTask(plugin,() -> {
+                    if (player.isOnline() && player.getOpenInventory().getTopInventory().getHolder() == menu)
+                        openDiagnostics(player,player.hasPermission("augmentwild.admin"));
+                });
+            }
+            case 14 -> { if (admin) player.sendMessage(validate(player)); }
+            case 16 -> { if (admin) player.sendMessage(diagnostics(true)); }
+            case 26 -> plugin.getServer().getScheduler().runTask(plugin,() -> {
+                if (player.isOnline() && player.getOpenInventory().getTopInventory().getHolder() == menu) player.performCommand("aw menu");
+            });
+            default -> { }
+        }
+    }
+
+    @EventHandler public void diagnosticsDrag(org.bukkit.event.inventory.InventoryDragEvent event) {
+        if (event.getView().getTopInventory().getHolder() instanceof DiagnosticsMenu) event.setCancelled(true);
+    }
+
+    private record Settings(ResourcePackInfo pack,String issue) {}
+
+    private static Settings settings(JavaPlugin plugin) {
+        String url = plugin.getConfig().getString("art.url","").strip();
+        if (url.isEmpty()) return new Settings(null,"art.url 미설정");
+        try {
+            var uri = PackInspection.directUri(url);
+            String hash = plugin.getConfig().getString("art.sha1","").strip().toLowerCase(Locale.ROOT);
+            if (!hash.matches("[0-9a-f]{40}")) return new Settings(null,"art.sha1 오류 · 40자리 16진수 필요");
+            UUID id = UUID.nameUUIDFromBytes(("augmentwild-art:" + hash).getBytes(StandardCharsets.UTF_8));
+            return new Settings(ResourcePackInfo.resourcePackInfo(id,uri,hash),"");
+        } catch (IllegalArgumentException failure) {
+            return new Settings(null,"art.url 오류 · 직접 HTTPS ZIP 필요");
+        }
+    }
+
+    String diagnostics(boolean detail) {
+        if (pack == null) return settingsIssue + " · 클라이언트 기본 표시";
+        var counts = new EnumMap<PlayerResourcePackStatusEvent.Status,Integer>(PlayerResourcePackStatusEvent.Status.class);
+        reports.values().forEach(status -> counts.merge(status,1,Integer::sum));
+        String report = "HTTPS 팩 · SHA-1 " + pack.hash() + " · UUID " + pack.id()
+                + "\n서버 다운로드 · " + validation + "\n접속 세션 응답 · " + counts;
+        if (!detail) return report;
+        var uri = pack.uri();
+        report += "\n" + uri.getScheme() + "://" + uri.getHost() + uri.getPath()
+                + (uri.getRawQuery() == null ? "" : " · 쿼리 생략");
+        for (Player player : plugin.getServer().getOnlinePlayers())
+            report += "\n" + player.getName() + " · " + packStatus(player);
+        return report;
+    }
+
+    String validate(CommandSender sender) {
+        if (pack == null) return settingsIssue;
+        if (validating) return "검증 중입니다.";
+        validating = true;
+        validation = "검증 중";
+        plugin.getServer().getScheduler().runTaskAsynchronously(plugin,() -> {
+            String result;
+            try { result = PackInspection.download(pack.uri(),pack.hash()); }
+            catch (IOException failure) {
+                String message = failure.getMessage();
+                // TLS/connection error messages may contain URLs or address details.
+                result = "검증 실패 · " + (message != null && message.matches("^[가-힣A-Z0-9].{0,110}$")
+                        && !message.contains("://") ? message : failure.getClass().getSimpleName());
+            }
+            String completed = result;
+            if (plugin.isEnabled()) plugin.getServer().getScheduler().runTask(plugin,() -> {
+                validation = completed;
+                validating = false;
+                if (sender.hasPermission("augmentwild.admin")) sender.sendMessage(completed);
+            });
+        });
+        return "서버에서 HTTPS ZIP 검증을 시작했습니다. 결과를 채팅에 표시합니다.";
     }
 
     @EventHandler public void join(PlayerJoinEvent event) { offer(event.getPlayer()); }
 
     String retry(Player player) {
-        if (pack == null || loaded.contains(player.getUniqueId())) return packStatus(player);
+        if (pack == null) return packStatus(player);
         Long last = lastOffer.get(player.getUniqueId());
         if (last != null && System.nanoTime() - last < 10_000_000_000L) return "최근 요청을 보냈습니다. 잠시 후 다시 시도하세요.";
         offer(player);
@@ -192,7 +324,20 @@ public final class PaperArt implements Listener {
     }
 
     void offer(Player player) {
-        if (pack == null) return;
+        var storage = player.getPersistentDataContainer();
+        var previous = storage.get(LAST_PACK,PersistentDataType.STRING);
+        if (previous != null) {
+            try { player.removeResourcePacks(UUID.fromString(previous)); }
+            catch (IllegalArgumentException invalid) { storage.remove(LAST_PACK); }
+        }
+        if (pack == null) {
+            storage.remove(LAST_PACK);
+            return;
+        }
+        storage.set(LAST_PACK,PersistentDataType.STRING,pack.id().toString());
+        loaded.remove(player.getUniqueId());
+        forget(player.getUniqueId());
+        restoreMenuIcons(player);
         lastOffer.put(player.getUniqueId(),System.nanoTime());
         reports.remove(player.getUniqueId());
         player.sendResourcePacks(ResourcePackRequest.resourcePackRequest().packs(pack)
@@ -213,13 +358,14 @@ public final class PaperArt implements Listener {
         reports.put(player,event.getStatus());
         if (event.getStatus() == PlayerResourcePackStatusEvent.Status.SUCCESSFULLY_LOADED) loaded.add(player);
         else {
-            loaded.remove(player);
+            boolean previouslyLoaded = loaded.remove(player);
             forget(player);
+            if (previouslyLoaded) restoreMenuIcons(event.getPlayer());
         }
     }
 
     public ItemStack icon(Player viewer, ItemStack item, String key) {
-        if (!loaded.contains(viewer.getUniqueId())) return item;
+        if (!custom(viewer)) return item;
         if (key.startsWith("augment/") && !motifs.containsKey(key.substring("augment/".length()))) return item;
         return model(item,key);
     }
@@ -279,7 +425,7 @@ public final class PaperArt implements Listener {
     }
 
     private void showProc(Player player,String id,String motif,boolean simple,Location at) {
-        if (!noVisual.contains(id) && !simple && PlayerUi.quality(player) != PlayerUi.Quality.LOW && loaded.contains(player.getUniqueId()) && displaysAvailable) {
+        if (!noVisual.contains(id) && !simple && PlayerUi.quality(player) != PlayerUi.Quality.LOW && custom(player) && displaysAvailable) {
             render(player,at,"proc/" + id,CASTS.getOrDefault(id,MOTIONS.getOrDefault(motif,PULSE)));
         } else if (!noVisual.contains(id) && PlayerUi.enabled(player,PlayerUi.Option.PARTICLES)) {
             Particle particle = switch (motif) {
@@ -311,14 +457,14 @@ public final class PaperArt implements Listener {
             default -> Sound.BLOCK_ENCHANTMENT_TABLE_USE;
         };
         player.playSound(at,cue,.28f,1f);
-        if (!simple && loaded.contains(player.getUniqueId()) && used == 0
+        if (!simple && custom(player) && used == 0
                 && PlayerUi.quality(player).ordinal() >= PlayerUi.Quality.HIGH.ordinal())
             player.playSound(at,"augmentwild:cast",.13f,1.15f);
 
     }
 
     void choice(Player p, String id, String rarity) {
-        if (!playable.test(p) || !loaded.contains(p.getUniqueId())) return;
+        if (!playable.test(p) || !custom(p)) return;
         var motion = switch (rarity) { case "PRISMATIC" -> GROWTH.get("magic_missile"); case "GOLD" -> MOTIONS.get("ward"); default -> PULSE; };
         render(p,near(p),"proc/" + id,motion);
     }
@@ -371,7 +517,7 @@ public final class PaperArt implements Listener {
     void sustain(Player viewer,String effect,Location source,boolean moving) {
         var key = new FieldKey(viewer.getUniqueId(),effect);
         var previous = fields.get(key);
-        if (pack == null || !displaysAvailable || !loaded.contains(key.owner()) || !PlayerUi.auras(viewer)
+        if (pack == null || !displaysAvailable || !custom(viewer) || !PlayerUi.auras(viewer)
                 || !PlayerUi.enabled(viewer,PlayerUi.Option.PARTICLES) || noVisual.contains(effect)
                 || PlayerUi.quality(viewer) == PlayerUi.Quality.LOW || !viewer.getWorld().equals(source.getWorld())
                 || viewer.getLocation().distanceSquared(source)>24*24 || !source.isChunkLoaded()) {
@@ -532,11 +678,11 @@ public final class PaperArt implements Listener {
             case "augment" -> showProc(p,id,motifs.getProperty(id),simple);
             case "growth" -> {
                 var motif = SIGNATURES.getOrDefault(id,motifs.getProperty(id,"growth"));
-                if (simple || !loaded.contains(p.getUniqueId())) showProc(p,id,motif,true);
+                if (simple || !custom(p)) showProc(p,id,motif,true);
                 else { growth(p,id,true); sound(p,"evolve",Sound.ENTITY_PLAYER_LEVELUP); }
             }
             case "model" -> {
-                if (simple || !loaded.contains(p.getUniqueId())) showProc(p,id,id,true);
+                if (simple || !custom(p)) showProc(p,id,id,true);
                 else render(p,near(p),id,MOTIONS.getOrDefault(id,ARRIVE));
             }
             case "sound" -> sound(p,id,Sound.BLOCK_NOTE_BLOCK_CHIME);
@@ -544,7 +690,7 @@ public final class PaperArt implements Listener {
     }
 
     void growth(Player player, String id, boolean visible) {
-        if (!visible || pack == null || !loaded.contains(player.getUniqueId())) return;
+        if (!visible || pack == null || !custom(player)) return;
         String motif = SIGNATURES.getOrDefault(id,motifs.getProperty(id,"growth"));
         render(player,near(player),motif,GROWTH.getOrDefault(id,PULSE));
         if (PlayerUi.quality(player).ordinal() >= PlayerUi.Quality.HIGH.ordinal())
@@ -553,7 +699,7 @@ public final class PaperArt implements Listener {
 
     void supply(Location at, boolean premium) {
         for (Player player : at.getNearbyPlayers(32)) {
-            if (loaded.contains(player.getUniqueId()) && playable.test(player)) {
+            if (custom(player) && playable.test(player)) {
                 if (PlayerUi.enabled(player,PlayerUi.Option.SOUND)) player.playSound(at,"augmentwild:supply",.65f,1f);
                 render(player,supplyCenter(at,1.75),premium ? "premium" : "supply",ARRIVE);
             } else if (playable.test(player) && PlayerUi.enabled(player,PlayerUi.Option.SOUND)) {
@@ -567,7 +713,7 @@ public final class PaperArt implements Listener {
         var eligible = new HashMap<UUID,Player>();
         for (Player p : at.getNearbyPlayers(24)) {
             UUID id = p.getUniqueId();
-            if (loaded.contains(id) && playable.test(p) && PlayerUi.enabled(p,PlayerUi.Option.PARTICLES)) eligible.put(id,p);
+            if (custom(p) && playable.test(p) && PlayerUi.enabled(p,PlayerUi.Option.PARTICLES)) eligible.put(id,p);
         }
         if (eligible.isEmpty()) {
             removeSupply(at);
@@ -609,7 +755,7 @@ public final class PaperArt implements Listener {
     void sound(Player player, String key, Sound fallback) {
         if (!PlayerUi.enabled(player,PlayerUi.Option.SOUND)) return;
         var at = player.getLocation();
-        if (loaded.contains(player.getUniqueId())) player.playSound(at,"augmentwild:" + key,.48f,1f);
+        if (custom(player)) player.playSound(at,"augmentwild:" + key,.48f,1f);
         else player.playSound(at,fallback,.48f,1f);
     }
 
@@ -641,7 +787,7 @@ public final class PaperArt implements Listener {
 
     private void render(Player viewer, Location at, String motif, Motion motion) {
         UUID id = viewer.getUniqueId();
-        if (pack == null || !loaded.contains(id) || !displaysAvailable || !playable.test(viewer)
+        if (pack == null || !custom(viewer) || !displaysAvailable || !playable.test(viewer)
                 || !PlayerUi.enabled(viewer,PlayerUi.Option.PARTICLES)
                 || !at.getWorld().equals(viewer.getWorld()) || !at.isChunkLoaded()) return;
         var key = new PrivateCue(id,motif);

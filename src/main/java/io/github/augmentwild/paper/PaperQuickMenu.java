@@ -106,8 +106,9 @@ public final class PaperQuickMenu implements Listener {
                 matches.inMatch(player) ? "경기 나가기 · 확인 필요" : "경기 참가",
                 matches.inMatch(player) ? "실수 방지를 위해 종료 여부를 다시 확인합니다" : "대기 중인 일반 경기에 참가합니다");
         item(menu, 11, Material.CLOCK, "경기 현황", matches.status(player).split(" [|] "));
-        item(menu, 12, Material.ENCHANTED_BOOK, "증강 선택 / 도감", "선택 시간이면 선택창 · 그 외에는 도감",
-                "선택창은 5분마다 자동으로 열립니다");
+        item(menu,12,Material.ENCHANTED_BOOK,"증강 선택",
+                matches.inMatch(player) ? "현재 선택 또는 교환 주문 확인" : "경기에 참가하면 회차별 선택 가능");
+        item(menu,18,Material.BOOK,"증강 도감 · 84종","희귀도·능력·보유 상태별 필터");
         item(menu, 13, Material.COMPARATOR, "화면 설정 · 프리셋 지원", "전체 표시 / 전투 집중 / 최소 표시");
         item(menu, 14, Material.NETHER_STAR, "증강 스킬 / 퀵슬롯", "1~3번 슬롯을 클릭으로 선택하고 지정합니다");
         item(menu, 15, Material.DIAMOND, "가까운 적 추적 · 다이아몬드 소비", "평소에는 다이아몬드를 들고 우클릭");
@@ -115,11 +116,11 @@ public final class PaperQuickMenu implements Listener {
         item(menu, 21, Material.WRITABLE_BOOK, "전투 기록");
         item(menu, 22, Material.PAPER, "최근 경기 결과");
         PaperArt art = matches.art();
-        for (var control : java.util.Map.of(4,"menu",12,"choice",13,"settings",16,"supply",21,"report",22,"result").entrySet()) {
+        for (var control : java.util.Map.of(4,"menu",12,"choice",13,"settings",16,"supply",18,"codex",21,"report",22,"result").entrySet()) {
             int slot = control.getKey();
             menu.inventory.setItem(slot,art.icon(player,menu.inventory.getItem(slot),"gui/" + control.getValue()));
         }
-        item(menu,19,Material.PAINTING,"리소스팩",art.packStatus(player),"클릭 · 적용 상태 확인 또는 다시 요청");
+        item(menu,19,Material.PAINTING,"리소스팩",art.packStatus(player),"클릭 · 상태, 재요청, 안전 모드");
         art.button(player,menu.inventory,19,"detail");
         item(menu, 26, Material.ARROW, "메뉴 새로고침");
         art.button(player,menu.inventory,14,"slots");
@@ -142,6 +143,8 @@ public final class PaperQuickMenu implements Listener {
     public String openSkills(Player player) {
         if (matches.picking(player)) return matches.openAugments(player);
         Menu menu = new Menu(matches.art(),player, matches.menuSession(), true, matches.availableSkills(player));
+        item(menu,4,Material.CLOCK,"스킬 전환 입력",PlayerUi.skillInput(player).label,
+                "화면 설정 또는 /aw skill input 에서 변경");
         item(menu, 10, Material.IRON_SWORD, "1번 스킬 슬롯 선택");
         item(menu, 11, Material.IRON_SWORD, "2번 스킬 슬롯 선택");
         item(menu, 12, Material.IRON_SWORD, "3번 스킬 슬롯 선택");
@@ -151,13 +154,14 @@ public final class PaperQuickMenu implements Listener {
         int index = 0;
         for (String id : menu.available) {
             if (index >= 9) break;
-            item(menu, 18 + index++, Material.ENCHANTED_BOOK, "지정: " + id);
+            item(menu, 18 + index++, Material.ENCHANTED_BOOK, "지정 · " + matches.art().label("augment/" + id),id);
         }
         item(menu, 26, Material.ARROW, "빠른 메뉴로 돌아가기");
         String status = matches.skill(player, new String[]{"skill", "status"});
         String[] slots = status.split(" [|] ");
         for (int i = 0; i < 3 && i < slots.length; i++) {
-            item(menu, 10 + i, Material.IRON_SWORD, slots[i], "클릭해서 이 슬롯 선택");
+            item(menu,10+i,slots[i].startsWith("▶") ? Material.GOLDEN_SWORD : Material.IRON_SWORD,
+                    slots[i],"클릭해서 이 슬롯 선택");
         }
         for (int i = 0; i < Math.min(menu.available.size(),8); i++) {
             int slot = 18 + i;
@@ -255,7 +259,7 @@ public final class PaperQuickMenu implements Listener {
         if (!(event.getView().getTopInventory().getHolder() instanceof Menu menu)) return;
         boolean blocked = event.isCancelled();
         int slot = PaperMenu.lock(event, false);
-        if (blocked || slot < 0 || !(event.getWhoClicked() instanceof Player player)
+        if (blocked || slot < 0 || menu.inventory.getItem(slot) == null || !(event.getWhoClicked() instanceof Player player)
                 || !player.getUniqueId().equals(menu.owner)) return;
         Bukkit.getScheduler().runTask(plugin, () -> {
             if (!player.isOnline() || !menu.match.equals(matches.menuSession())) return;
@@ -277,7 +281,8 @@ public final class PaperQuickMenu implements Listener {
                     ? matches.locate(player) : "위치 추적 권한이 없습니다.";
             case 16 -> matches.guide(player);
             case 17 -> matches.labCommand(player,new String[]{"dummy","high"});
-            case 19 -> matches.art().retry(player);
+            case 18 -> matches.openCodex(player);
+            case 19 -> matches.artCommand(player,"menu",false);
             case 20 -> matches.labCommand(player,new String[]{"preview"});
             case 21 -> matches.combatLog(player);
             case 22 -> matches.result(player);

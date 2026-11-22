@@ -2,6 +2,8 @@
 
 Java Edition 26.3의 리소스팩 형식은 97.1이다. [Mojang 26.3 릴리스 노트](https://www.minecraft.net/en-us/article/minecraft-java-edition-26-3)
 
+PHASE 7.4는 기본 인벤토리 제목, 안전 모드 및 서버 다운로드 진단을 사용한다. 최신 팩과 문제 해결은 [PHASE 7.4 안내](phase74-recovery-ko.md)를 참고한다.
+
 ## 설치
 
 1. Actions의 `augmentwild-resource-pack` 아티팩트에서 `augmentwild-26.3.zip`을 꺼낸다. 로컬에서는 `python3 scripts/resource-pack.py`가 같은 ZIP을 만든다.

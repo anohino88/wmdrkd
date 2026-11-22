@@ -66,10 +66,34 @@ final class PaperAugments implements Listener {
 
     private static final int CODEX_CARDS = 45;
 
+    private enum Filter {
+        ALL("전체",Material.BOOK), SILVER("실버",Material.IRON_INGOT), GOLD("골드",Material.GOLD_INGOT),
+        PRISMATIC("프리즘",Material.AMETHYST_SHARD), ATTACK("공격",Material.IRON_SWORD),
+        SURVIVAL("방어",Material.SHIELD), MOBILITY("이동",Material.FEATHER), GROWTH("성장",Material.WHEAT),
+        MINING("채광",Material.IRON_PICKAXE), ACTIVE("액티브",Material.BLAZE_POWDER),
+        EVOLUTION("진화",Material.NETHER_STAR), SYNERGY("시너지",Material.END_CRYSTAL),
+        RESONANCE("공명",Material.ECHO_SHARD), FAVORITES("즐겨찾기",Material.NAME_TAG), OWNED("보유 중",Material.CHEST);
+        final String label;
+        final Material material;
+        Filter(String label,Material material) { this.label = label; this.material = material; }
+    }
+
+    private static final class FilterMenu implements PaperMenu {
+        final SummaryMenu codex;
+        final Inventory inventory;
+        FilterMenu(SummaryMenu codex) {
+            this.codex = codex;
+            inventory = org.bukkit.Bukkit.createInventory(this,27,Component.text("증강 도감 필터"));
+        }
+        @Override public boolean availableWhileRestricted() { return true; }
+        @Override public Inventory getInventory() { return inventory; }
+    }
+
     private static final class SummaryMenu implements PaperMenu {
         final UUID owner, match;
         final Map<Integer,String> favoriteButtons = new HashMap<>();
-        int page;
+        int page, lastPage;
+        Filter filter = Filter.ALL;
         long updated = -1;
         Inventory inventory;
         SummaryMenu(UUID owner, UUID match) { this.owner = owner; this.match = match; }
@@ -517,6 +541,34 @@ final class PaperAugments implements Listener {
         return "증강 도감을 열었습니다.";
     }
 
+    private static final Set<String> MINING_AUGMENTS = Set.of("miner","mineral_addiction","mineral_devourer","ore_ward","vein_overload");
+
+    private boolean matchesFilter(Filter filter,AugmentDefinition augment,Set<String> owned,Set<String> favorites) {
+        String id = augment.id();
+        return switch (filter) {
+            case ALL -> true;
+            case SILVER,GOLD,PRISMATIC -> filter.name().equals(augment.rarity().name());
+            case ATTACK,SURVIVAL,MOBILITY,GROWTH -> filter.name().equals(AugmentRole.of(id).name());
+            case MINING -> MINING_AUGMENTS.contains(id);
+            case ACTIVE -> PaperOfficialCombat.activeSkill(id);
+            case EVOLUTION -> AugmentEvolution.of(id) != null;
+            case SYNERGY -> AugmentCombinations.UNIQUE.values().stream().anyMatch(members -> members.contains(id));
+            case RESONANCE -> official.resonanceMember(id);
+            case FAVORITES -> favorites.contains(id);
+            case OWNED -> owned.contains(id);
+        };
+    }
+
+    private void openCodexFilters(Player player,SummaryMenu codex) {
+        var menu = new FilterMenu(codex);
+        for (Filter filter : Filter.values()) {
+            menu.inventory.setItem(filter.ordinal(),PaperIntel.item(PaperIntel.card(filter.material,
+                    filter.label,filter == codex.filter ? "현재 선택" : "클릭하여 표시")));
+        }
+        menu.inventory.setItem(26,PaperIntel.item(PaperIntel.card(Material.ARROW,"도감으로 돌아가기")));
+        player.openInventory(menu.inventory);
+    }
+
     private void renderCodex(Player player, SummaryMenu menu) {
         var stored = profiles.get(menu.owner);
         var profile = stored == null ? new Profile() : stored;
@@ -525,10 +577,14 @@ final class PaperAugments implements Listener {
         menu.favoriteButtons.clear();
         var favorites = PlayerUi.favorites(player);
         var definitions = registry.all().stream()
+                .filter(a -> matchesFilter(menu.filter,a,profile.owned,favorites))
                 .sorted(Comparator.comparing((AugmentDefinition a) -> !favorites.contains(a.id()))
                         .thenComparing(a -> !profile.owned.contains(a.id()))
                         .thenComparing(AugmentDefinition::rarity).thenComparing(AugmentDefinition::id)).toList();
-        int last = (definitions.size() + CODEX_CARDS - 1) / CODEX_CARDS;
+        int firstPage = menu.filter == Filter.ALL ? 0 : 1;
+        int last = Math.max(firstPage,(definitions.size() + CODEX_CARDS - 1) / CODEX_CARDS);
+        menu.lastPage = last;
+        menu.page = Math.clamp(menu.page,firstPage,last);
         if (menu.page == 0) {
             int slot = 0;
             for (var definition : definitions) {
@@ -542,9 +598,12 @@ final class PaperAugments implements Listener {
                 placeCodexCard(player,profile,menu,i-offset,definitions.get(i),favorites);
             }
         }
-        if (menu.page > 0) menu.inventory.setItem(45, item(Material.ARROW, Component.text("이전 페이지"), List.of()));
-        menu.inventory.setItem(49, item(Material.BOOK, Component.text(menu.page == 0 ? "조합 · 진화 · 공명" : "증강 목록 " + menu.page + "/" + last),
-                List.of(Component.text("보유 " + profile.owned.size() + "/" + definitions.size()))));
+        if (definitions.isEmpty()) menu.inventory.setItem(22,PaperIntel.item(PaperIntel.card(Material.PAPER,"이 필터에 해당하는 증강 없음")));
+        if (menu.page > firstPage) menu.inventory.setItem(45, item(Material.ARROW, Component.text("이전 페이지"), List.of()));
+        menu.inventory.setItem(49,item(Material.COMPASS,Component.text("필터 · " + menu.filter.label),
+                List.of(Component.text(menu.page == 0 ? "조합 · 진화 · 공명 요약" : menu.page + "/" + last + "쪽"),
+                        Component.text("조건 일치 " + definitions.size() + "종 · 전체 보유 " + profile.owned.size() + "종"),
+                        Component.text("클릭하여 분류 선택"))));
         if (menu.page < last) menu.inventory.setItem(53, item(Material.ARROW, Component.text("다음 페이지"), List.of()));
         art.button(player,menu.inventory,45,"previous");
         art.button(player,menu.inventory,49,"codex");
@@ -581,8 +640,10 @@ final class PaperAugments implements Listener {
         };
         double shown = augment.unit().startsWith("%") ? augment.amount() * 100 : augment.amount();
         List<Component> lore = new ArrayList<>(List.of(
-                Component.text(augment.rarity().name() + " · " + AugmentRole.of(augment.id()).label(), color), Component.text("조건: " + augment.condition()),
-                Component.text(String.format(Locale.ROOT, "효과: %.2f%s", shown, augment.unit())),
+                Component.text(augment.rarity().name() + " · " + AugmentRole.of(augment.id()).label(), color),
+                Component.text(PaperOfficialCombat.activeSkill(augment.id()) ? "액티브 · 1–3번 슬롯에 지정 가능" : "조건 충족 시 자동 발동"),
+                Component.text("조건 · " + augment.condition()),
+                Component.text(String.format(Locale.ROOT, "효과 · %.2f%s", shown, augment.unit())),
                 Component.text("지속 " + (augment.duration() == 0 ? "상시 또는 즉시" : augment.duration() + "초")
                         + " · 쿨다운 " + augment.cooldown() + "초"),
                 Component.text(profile.owned.contains(augment.id()) ? "보유 중"
@@ -591,9 +652,11 @@ final class PaperAugments implements Listener {
         if (!codex) {
             official.candidateRelations(player.getUniqueId(), augment.id(), profile.owned).forEach(line -> lore.add(Component.text(line)));
             lore.add(Component.text("상세 정보 · /aw augments"));
-        } else if (profile.owned.contains(augment.id())) {
+        } else {
+            official.candidateRelations(player.getUniqueId(),augment.id(),profile.owned).forEach(line -> lore.add(Component.text(line)));
             official.resonanceDetails(player.getUniqueId(), augment.id()).forEach(line -> lore.add(Component.text(line)));
-            official.details(player.getUniqueId(), augment.id()).forEach(line -> lore.add(Component.text(line)));
+            if (profile.owned.contains(augment.id()))
+                official.details(player.getUniqueId(),augment.id()).forEach(line -> lore.add(Component.text(line)));
         }
         return art.icon(player,item(icon, Component.text(augment.name(), color), lore),"augment/" + augment.id());
     }
@@ -695,6 +758,24 @@ final class PaperAugments implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST)
     public void click(InventoryClickEvent event) {
+        if (event.getView().getTopInventory().getHolder() instanceof FilterMenu filters) {
+            boolean cancelled = event.isCancelled();
+            int slot = PaperMenu.lock(event,false);
+            if (cancelled || !(event.getWhoClicked() instanceof Player player)
+                    || !filters.codex.owner.equals(player.getUniqueId()) || !Objects.equals(filters.codex.match,match)
+                    || slot < 0 || slot >= Filter.values().length && slot != 26) return;
+            plugin.getServer().getScheduler().runTask(plugin,() -> {
+                if (!player.isOnline() || player.getOpenInventory().getTopInventory().getHolder() != filters
+                        || !Objects.equals(filters.codex.match,match)) return;
+                if (slot != 26) {
+                    filters.codex.filter = Filter.values()[slot];
+                    filters.codex.page = filters.codex.filter == Filter.ALL ? 0 : 1;
+                }
+                renderCodex(player,filters.codex);
+                player.openInventory(filters.codex.inventory);
+            });
+            return;
+        }
         if (event.getView().getTopInventory().getHolder() instanceof SummaryMenu codex) {
             boolean cancelled = event.isCancelled();
             int slot = PaperMenu.lock(event, true);
@@ -706,7 +787,7 @@ final class PaperAugments implements Listener {
                     plugin.getServer().getScheduler().runTask(plugin,() -> {
                         if (!player.isOnline() || player.getOpenInventory().getTopInventory().getHolder() != codex) return;
                         var profile = profiles.getOrDefault(codex.owner,new Profile());
-                        ArtGallery.detail(player,art,def.name(),augmentItem(player,profile,def,true),() -> {
+                        ArtGallery.detail(player,art,def.id(),def.name(),augmentItem(player,profile,def,true),() -> {
                             if (!Objects.equals(codex.match,match)) return;
                             renderCodex(player,codex);
                             player.openInventory(codex.inventory);
@@ -715,8 +796,14 @@ final class PaperAugments implements Listener {
                     return;
                 }
                 if (!PlayerUi.toggleFavorite(player, codex.favoriteButtons.get(slot))) player.sendMessage("즐겨찾기는 최대 8개입니다.");
-            } else if (slot == 45 && codex.page > 0) codex.page--;
-            else if (slot == 53 && codex.page < (registry.all().size() + CODEX_CARDS - 1) / CODEX_CARDS) codex.page++;
+            } else if (slot == 49) {
+                plugin.getServer().getScheduler().runTask(plugin,() -> {
+                    if (player.isOnline() && player.getOpenInventory().getTopInventory().getHolder() == codex
+                            && Objects.equals(codex.match,match)) openCodexFilters(player,codex);
+                });
+                return;
+            } else if (slot == 45 && codex.page > (codex.filter == Filter.ALL ? 0 : 1)) codex.page--;
+            else if (slot == 53 && codex.page < codex.lastPage) codex.page++;
             else return;
             renderCodex(player, codex);
             return;
@@ -774,7 +861,7 @@ final class PaperAugments implements Listener {
         official.remove(id, player);
         if (player != null && profile != null) {
             var holder = player.getOpenInventory().getTopInventory().getHolder();
-            if (holder instanceof Menu || holder instanceof ExchangeMenu || holder instanceof SummaryMenu) {
+            if (holder instanceof Menu || holder instanceof ExchangeMenu || holder instanceof SummaryMenu || holder instanceof FilterMenu) {
                 player.closeInventory();
             }
             removeModifiers(player, profile);
@@ -784,7 +871,8 @@ final class PaperAugments implements Listener {
     void clear() {
         List.copyOf(profiles.keySet()).forEach(this::remove);
         for (Player player : plugin.getServer().getOnlinePlayers()) {
-            if (player.getOpenInventory().getTopInventory().getHolder() instanceof SummaryMenu) player.closeInventory();
+            var holder = player.getOpenInventory().getTopInventory().getHolder();
+            if (holder instanceof SummaryMenu || holder instanceof FilterMenu) player.closeInventory();
         }
         official.clear();
         observedProcs.clear();

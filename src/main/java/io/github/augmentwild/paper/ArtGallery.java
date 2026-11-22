@@ -84,9 +84,10 @@ final class ArtGallery implements PaperMenu {
         }
     }
 
-    static void detail(Player p, PaperArt art, String title, ItemStack card, Runnable back) {
+    static void detail(Player p,PaperArt art,String id,String title,ItemStack card,Runnable back) {
         var view = new ArtGallery(p,art,PaperArt.Screen.DETAIL,title,3,List.of(),() -> false);
         view.inventory.setItem(4,card);
+        view.put(p,6,Material.AMETHYST_SHARD,"proc/" + id,"외형 미리보기",art.packStatus(p));
         var lore = card.getItemMeta().lore();
         if (lore != null) for (int i = 0; i < Math.min(lore.size(),16); i++) {
             var note = new ItemStack(Material.PAPER);

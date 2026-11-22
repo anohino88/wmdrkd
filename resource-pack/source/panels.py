@@ -1,4 +1,4 @@
-"""Transparent title overlays in Minecraft inventory GUI coordinates."""
+"""Offline panel illustrations in native inventory coordinates. The server uses native titles."""
 import json
 from pathlib import Path
 from PIL import Image, ImageDraw
@@ -6,7 +6,6 @@ from PIL import Image, ImageDraw
 def bake(pack):
     root = pack / "assets/augmentwild"
     screens = json.loads(Path(__file__).with_name("screens.json").read_text())
-    providers = [{"type": "space", "advances": {"\ue000": -8, "\ue001": -169}}]
     for index, (name, (rows, accent, slots)) in enumerate(screens.items()):
         h = 18 * rows + 18
         im = Image.new("RGBA", (176, h))
@@ -24,13 +23,8 @@ def bake(pack):
             for dx, dy in ((0,0),(17,17)):
                 k = 1 if dx == 0 else -1
                 draw.line([(x+dx+3*k,y+dy),(x+dx,y+dy),(x+dx,y+dy+3*k)],fill=accent)
-        # Fix the bitmap provider's advance to 177 px, independent of the layout.
-        im.putpixel((175, 8), (52, 76, 87, 255))
         path = root / f"textures/gui/panels/{name}.png"
         path.parent.mkdir(parents=True, exist_ok=True)
         im.save(path, optimize=True)
-        providers.append({"type":"bitmap","file":f"augmentwild:gui/panels/{name}.png",
-                          "ascent":13,"height":h,"chars":[chr(0xe010+index)]})
-    path = root / "font/interface.json"
-    path.parent.mkdir(exist_ok=True)
-    path.write_text(json.dumps({"providers":providers},separators=(",",":"))+"\n")
+    # Keep panel artwork available for previews without registering oversized font glyphs.
+    (root / "font/interface.json").unlink(missing_ok=True)

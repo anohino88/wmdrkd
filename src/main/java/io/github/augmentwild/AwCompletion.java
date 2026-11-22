@@ -16,10 +16,10 @@ import org.bukkit.entity.Player;
 final class AwCompletion implements TabCompleter {
     private static final List<String> PLAYER = List.of(
             "menu", "join", "leave", "status", "augment", "augments", "ui", "combatlog",
-            "supply", "result", "scout", "death", "skill", "cast");
+            "supply", "result", "scout", "death", "skill", "cast", "art");
     private static final List<String> SKILL = List.of("bind", "select", "next", "unbind", "use", "status","menu","input");
     private static final List<String> LAB = List.of(
-            "status", "start", "solo", "presets", "preset", "grant", "remove",
+            "status", "check", "start", "solo", "presets", "preset", "grant", "remove",
             "list", "clear", "report", "reset", "progress", "health","preview","advance","dummy","cast","gear","heal","shield","cooldowns");
     private final PaperMatchService matches;
 
@@ -56,13 +56,17 @@ final class AwCompletion implements TabCompleter {
                     && List.of("1", "2", "3").contains(args[2]) && player != null) {
                 choices = matches.availableSkills(player);
             }
+        } else if (first.equals("art") && play && args.length == 2) {
+            choices = List.of("status","retry","safe","menu");
         } else if (first.equals("cast") && play && args.length == 2 && player != null) {
             choices = matches.availableSkills(player);
         } else if (first.equals("admin") && admin) {
             if (args.length == 2) {
-                var options = new ArrayList<>(List.of("start", "stop", "arena"));
+                var options = new ArrayList<>(List.of("start", "stop", "arena", "art"));
                 if (lab) options.add("test");
                 choices = options;
+            } else if (args[1].equalsIgnoreCase("art") && args.length == 3) {
+                choices = List.of("status","report","validate","menu");
             } else if (args[1].equalsIgnoreCase("arena") && args.length == 3) {
                 choices = List.of("preview");
             } else if (args[1].equalsIgnoreCase("test") && lab) {

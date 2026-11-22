@@ -11,7 +11,7 @@ import zipfile
 install=runpy.run_path(str(Path(__file__).with_name("install-pack.py")))
 class PackInstallTest(unittest.TestCase):
     def test_reject_unsafe_url(self):
-        for value in ["http://example.org/p.zip","https://person:pass@example.org/p.zip","https:///p.zip"]:
+        for value in ["http://example.org/p.zip","https://person:pass@example.org/p.zip","https:///p.zip","https://github.com/anohino88/wmdrkd/actions/runs/1/artifacts/2"]:
             with self.subTest(value=value),self.assertRaises(ValueError): install["https"](value)
 
     def test_wrong_download(self):
@@ -19,15 +19,20 @@ class PackInstallTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path=Path(directory)/"p.zip"
             with zipfile.ZipFile(path,"w") as pack:
-                pack.writestr("pack.mcmeta",json.dumps({"pack":{"min_format":[97,1]}}))
+                pack.writestr("pack.mcmeta",json.dumps({"pack":{"min_format":[97,1],"max_format":[97,1]}}))
                 pack.writestr("assets/augmentwild/items/augment/steel_heart.json","{}")
+                pack.writestr("assets/augmentwild/font/skills.json","{}")
+                pack.writestr("assets/augmentwild/sounds.json","{}")
             with patch.dict(fn.__globals__,build_opener=lambda *_:self):
                 self.payload=b"error document"
                 with self.assertRaises(ValueError): fn(path,"https://example.org/p.zip")
                 self.payload=path.read_bytes()
                 self.assertEqual(len(fn(path,"https://example.org/p.zip")),40)
 
-    def open(self,*args,**kwargs): return io.BytesIO(self.payload)
+    def open(self,*args,**kwargs):
+        reply=io.BytesIO(self.payload)
+        reply.status=200
+        return reply
 
     def test_atomic_edit(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -45,6 +45,7 @@ final class ArtProbe {
                 case "getWorld" -> pig.getWorld();
                 case "getLocation" -> pig.getLocation();
                 case "getPersistentDataContainer" -> pig.getPersistentDataContainer();
+                case "getOpenInventory" -> null;
                 case "isOnline" -> true;
                 case "playSound" -> null;
                 case "spawnParticle" -> { particles[0]++; yield null; }
@@ -60,6 +61,7 @@ final class ArtProbe {
         var item = art.icon(p,new ItemStack(Material.GOLD_INGOT),model);
         require(item.getType() == Material.GOLD_INGOT &&
                 "augmentwild:augment/steel_heart".equals(item.getItemMeta().getItemModel().toString()));
+        verifyRecovery(art,p);
         try (var input = host.getResource("art-motifs.properties")) {
             var ids = new Properties();
             ids.load(input);
@@ -172,6 +174,49 @@ final class ArtProbe {
         art.status(new PlayerResourcePackStatusEvent(p,id,Status.DECLINED));
         require(art.icon(p,new ItemStack(Material.GOLD_INGOT),model).getItemMeta().getItemModel() == null);
         Bukkit.getLogger().info("AW_ART_PROBE_PASS");
+    }
+
+    @SuppressWarnings({"rawtypes","unchecked"})
+    private static void verifyRecovery(PaperArt art,Player player) {
+        try {
+            var loader = PaperArt.class.getClassLoader();
+            var screen = Class.forName("io.github.augmentwild.paper.PaperArt$Screen",true,loader).asSubclass(Enum.class);
+            var title = PaperArt.class.getDeclaredMethod("title",Player.class,screen,String.class);
+            var safe = PaperArt.class.getDeclaredMethod("toggleSafe",Player.class);
+            var glyph = PaperArt.class.getDeclaredMethod("slotIcon",Player.class,String.class);
+            for (var method : java.util.List.of(title,safe,glyph)) method.setAccessible(true);
+            for (var value : screen.getEnumConstants()) {
+                var component = (net.kyori.adventure.text.TextComponent) title.invoke(art,player,value,"AugmentWild");
+                require(component.content().equals("AugmentWild") && component.children().isEmpty()
+                        && net.kyori.adventure.key.Key.key("minecraft:default").equals(component.font()));
+            }
+            safe.invoke(art,player);
+            require(art.icon(player,new ItemStack(Material.IRON_INGOT),"augment/steel_heart").getItemMeta().getItemModel() == null);
+            require(glyph.invoke(art,player,"shadow_dash").equals(net.kyori.adventure.text.Component.empty()));
+            safe.invoke(art,player);
+            require(art.icon(player,new ItemStack(Material.IRON_INGOT),"augment/steel_heart").getItemMeta().getItemModel() != null);
+            var inspector = Class.forName("io.github.augmentwild.paper.PackInspection",true,loader);
+            var inspect = inspector.getDeclaredMethod("inspect",java.nio.file.Path.class);
+            inspect.setAccessible(true);
+            var fixture = java.nio.file.Path.of(System.getProperty("augmentwild.pack.fixture"));
+            var archive = inspect.invoke(null,fixture);
+            require(archive.toString().startsWith("Archive[release=7.4,"));
+            var invalid = java.nio.file.Files.createTempFile("aw-invalid-pack-", ".zip");
+            try {
+                java.nio.file.Files.writeString(invalid,"not a resource pack");
+                try {
+                    inspect.invoke(null,invalid);
+                    throw new AssertionError("Malformed ZIP accepted");
+                } catch (java.lang.reflect.InvocationTargetException expected) {
+                    require(expected.getCause() instanceof java.io.IOException);
+                }
+            } finally {
+                java.nio.file.Files.deleteIfExists(invalid);
+            }
+            Bukkit.getLogger().info("AW_PACK_RECOVERY_PASS native_titles=12 safe_mode=true zip_refs=true corrupt_zip_rejected=true");
+        } catch (ReflectiveOperationException | java.io.IOException failure) {
+            throw new AssertionError("Pack fallback fixture",failure);
+        }
     }
 
     private static void require(boolean condition) {

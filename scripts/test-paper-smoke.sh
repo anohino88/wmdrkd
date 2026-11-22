@@ -49,7 +49,8 @@ import time
 benchmark = os.environ.get("AW_ARENA_BENCHMARK") == "1"
 log = pathlib.Path("server.log")
 with log.open("wb") as output:
-    with subprocess.Popen(["java", "-Xms512M", "-Xmx4096M" if benchmark else "-Xmx1536M", "-jar", "paper.jar", "--nogui"],
+    fixture = pathlib.Path(sys.argv[1]) / "distribution" / "augmentwild-26.3.zip"
+    with subprocess.Popen(["java", f"-Daugmentwild.pack.fixture={fixture}", "-Xms512M", "-Xmx4096M" if benchmark else "-Xmx1536M", "-jar", "paper.jar", "--nogui"],
                           stdin=subprocess.PIPE, stdout=output, stderr=subprocess.STDOUT) as server:
         def wait_for(marker, seconds):
             deadline = time.monotonic() + seconds
@@ -72,9 +73,13 @@ with log.open("wb") as output:
             wait_for('경기 단계 WAITING', 15)
             command("aw augments")
             wait_for("플레이어 전용 명령입니다", 15)
+            command("aw admin art status")
+            wait_for("art.url 미설정", 15)
             command("aw admin test status")
             if benchmark:
                 wait_for("전투 실험실 설정됨 (fixture_lab_unloaded)", 15)
+                command("aw admin test check")
+                wait_for("테스트 월드 'fixture_lab_unloaded'를 기존 월드 관리 도구에서 로드하세요",15)
                 command("aw admin test presets")
                 wait_for("실험 프리셋 [calamity_train, hell_lord, infinite_barrage, life_echo, steel_king, thousand_swords]", 15)
                 command("aw admin test preset Missing steel_king")
@@ -90,6 +95,7 @@ with log.open("wb") as output:
                 wait_for("AW_PHASE68_MENU_PASS", 15)
                 wait_for("AW_ART_PROBE_PASS", 15)
                 wait_for("AW_PUBLIC_ART_PASS", 15)
+                wait_for("AW_PACK_RECOVERY_PASS", 15)
                 wait_for("AW_ART_SUSTAIN ticks=1200 created=1 remaining=0", 20)
                 wait_for("AW_ART_LIFECYCLE_PASS models=84 variable_timing=true remaining=0", 15)
                 for size in (2, 4, 8, 16):

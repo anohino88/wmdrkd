@@ -36,10 +36,14 @@ def sheet(name, title, detail, items, cols, width, height, art_height):
 def read(path): return Image.open(path).convert("RGBA")
 def icon(key): return read(TEXTURES/("item/"+key+".png"))
 def main():
+    global OUT
     parser=argparse.ArgumentParser()
     parser.add_argument("renders",type=Path)
+    parser.add_argument("--output",type=Path,default=OUT)
+    parser.add_argument("--native",action="store_true",help="Use a native inventory wireframe with no overlay")
     args=parser.parse_args()
-    OUT.mkdir(exist_ok=True)
+    OUT = args.output
+    OUT.mkdir(parents=True,exist_ok=True)
     official=(ROOT/"src/main/resources/official-augments.yml").read_text()
     names={k:(n,r) for k,r,n in re.findall(r"^  (\w+):\n    group: \w+\n    rarity: (\w+)\n    name: '([^']+)'",official,re.M)}
     catalog=(ROOT/"src/main/java/io/github/augmentwild/paper/AugmentCatalog.java").read_text()
@@ -80,11 +84,13 @@ def main():
         for i in range(rows*9):
             x,y=7+i%9*18,17+i//9*18
             d.rectangle((x,y,x+16,y+16),fill="#414e5b",outline="#34404c")
-        canvas.alpha_composite(panel)
+        if not args.native:
+            canvas.alpha_composite(panel)
         for i,k in slots.items():
             tile=icon(k if "/" in k else "gui/"+k).resize((16,16),Image.Resampling.LANCZOS)
             canvas.alpha_composite(tile,(8+i%9*18,18+i//9*18))
-        d.text((8,0),title,font=font(9,True),fill="#f0f6f7")
+        d.text((8,4 if args.native else 0),title,font=font(9,True),fill="#f0f6f7")
         panels.append((title,canvas,accent))
-    sheet("interfaces","화면 구성","12종  /  실제 패널 텍스처와 예시 슬롯 데이터로 합성한 설계 미리보기",panels,3,279,221,181)
+    sheet("interfaces","화면 구성",("12종  /  기본 슬롯과 리소스팩 아이콘의 배치 시안" if args.native else
+           "12종  /  패널 텍스처와 예시 슬롯 데이터로 합성한 설계 미리보기"),panels,3,279,221,181)
 if __name__=="__main__": main()

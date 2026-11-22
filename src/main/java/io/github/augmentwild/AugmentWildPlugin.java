@@ -68,6 +68,16 @@ public final class AugmentWildPlugin extends JavaPlugin {
             sender.sendMessage(sender instanceof Player player ? quickMenu.open(player) : "플레이어 전용 메뉴입니다.");
             return true;
         }
+        if (args.length >= 2 && args[0].equalsIgnoreCase("admin") && args[1].equalsIgnoreCase("art")) {
+            sender.sendMessage(matches.artCommand(sender,args.length == 3 ? args[2].toLowerCase(Locale.ROOT)
+                    : args.length == 2 ? "status" : "",true));
+            return true;
+        }
+        if (args[0].equalsIgnoreCase("art")) {
+            sender.sendMessage(matches.artCommand(sender,args.length == 2 ? args[1].toLowerCase(Locale.ROOT)
+                    : args.length == 1 ? "menu" : "",false));
+            return true;
+        }
         if (args.length >= 2 && args[0].equalsIgnoreCase("admin") && args[1].equalsIgnoreCase("test")) {
             sender.sendMessage(matches.labCommand(sender, java.util.Arrays.copyOfRange(args, 2, args.length)));
             return true;

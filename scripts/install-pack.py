@@ -21,6 +21,8 @@ def https(url):
     parts = urlsplit(url)
     if parts.scheme != "https" or not parts.hostname or parts.username or parts.password or parts.fragment:
         raise ValueError("Use a directly downloadable HTTPS URL without credentials or a fragment.")
+    if parts.port not in (None,443) or parts.hostname.lower() == "github.com" and "/actions/" in parts.path:
+        raise ValueError("Use the raw HTTPS ZIP URL, not a GitHub Actions artifact or a custom port.")
     return url
 
 class SecureRedirect(HTTPRedirectHandler):
@@ -28,13 +30,23 @@ class SecureRedirect(HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, https(newurl))
 
 def verified(path, url):
+    if path.stat().st_size > 32*1024*1024:
+        raise ValueError("Resource pack exceeds 32 MiB.")
     local = path.read_bytes()
     with zipfile.ZipFile(io.BytesIO(local)) as archive:
         meta = json.loads(archive.read("pack.mcmeta"))
-        if meta["pack"]["min_format"] != [97,1] or "assets/augmentwild/items/augment/steel_heart.json" not in archive.namelist() or archive.testzip():
+        names = archive.namelist()
+        required = {"pack.mcmeta","assets/augmentwild/items/augment/steel_heart.json",
+                    "assets/augmentwild/font/skills.json","assets/augmentwild/sounds.json"}
+        if (meta.get("pack",{}).get("min_format") != [97,1] or meta["pack"].get("max_format") != [97,1]
+                or not required <= set(names) or len(set(names)) != len(names)
+                or len(names) > 4096 or sum(entry.file_size for entry in archive.infolist()) > 64*1024*1024
+                or archive.testzip()):
             raise ValueError("Invalid AugmentWild 26.3 resource pack")
     request = Request(https(url), headers={"User-Agent":"AugmentWild-pack-installer/1"})
     with build_opener(SecureRedirect).open(request,timeout=30) as reply:
+        if reply.status != 200:
+            raise ValueError(f"Resource pack download returned HTTP {reply.status}.")
         if reply.read(len(local)+1) != local:
             raise ValueError("The downloaded bytes differ from the local ZIP.")
     return hashlib.sha1(local).hexdigest()

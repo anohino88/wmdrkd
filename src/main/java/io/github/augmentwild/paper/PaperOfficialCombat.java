@@ -1258,6 +1258,12 @@ final class PaperOfficialCombat implements Listener {
     private static final Set<String> ACTIVE_SKILLS = Set.of("shadow_dash", "earthquake_mage", "time_rewind",
             "void_lord", "bomb_alchemy", "duel_contract", "calamity_giant");
 
+    static boolean activeSkill(String id) { return ACTIVE_SKILLS.contains(id); }
+
+    boolean resonanceMember(String id) {
+        return resonance.families().stacking().members().contains(id) || resonance.families().revival().members().contains(id);
+    }
+
     private record Warning(Location center, double radius, Player target) {}
     private record Pending(String id, long due, DamageChain.Root origin, Runnable action, Warning warning) {}
     private long millis() { return clock.get().elapsedNanos() / 1_000_000L; }

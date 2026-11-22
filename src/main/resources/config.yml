@@ -123,6 +123,11 @@ dev:
     enabled: false
     world: ""
     allow-solo: true
+    # Only this isolated world uses these values. 0 inherits the production arena size.
+    arena-size: 128
+    search-radius: 128
+    spawn-margin: 8
+    generate-missing-chunks: false
   combat-audit:
     enabled: false
     max-events: 1000

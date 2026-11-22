@@ -27,6 +27,7 @@ PALETTE = {
     "supply": "#82d7bc", "premium": "#ffe19c",
 }
 SOUNDS = {"cast", "evolve", "supply"}
+RELEASE_METADATA = {"release":"7.4","minecraft":"26.3","inventory_title":"native"}
 PACK_METADATA = {"pack": {"description": "AugmentWild • combat art for Java 26.3",
                           "min_format": [97, 1], "max_format": [97, 1]}}
 
@@ -93,8 +94,19 @@ def badge(path, original, rarity, motif, profile):
     im = Image.new("RGBA",(64,64))
     draw = ImageDraw.Draw(im)
     rim = {"SILVER":"#a6b9cc","GOLD":"#f1bd6f","PRISMATIC":"#dcb1ff","GUI":"#77d8c5"}[rarity]
-    draw.polygon([(17,3),(47,3),(61,17),(61,47),(47,61),(17,61),(3,47),(3,17)],fill="#121827",outline=rim,width=2)
-    draw.line([(13,45),(13,19),(20,12),(44,12),(51,19),(51,45)],fill="#303d55",width=2)
+    shapes = {
+        "SILVER": [(12,5),(52,5),(59,12),(59,52),(52,59),(12,59),(5,52),(5,12)],
+        "GOLD": [(11,3),(53,3),(59,14),(57,46),(48,57),(32,62),(16,57),(7,46),(5,14)],
+        "PRISMATIC": [(32,1),(52,10),(62,30),(56,51),(32,63),(8,51),(2,30),(12,10)],
+        "GUI": [(14,4),(50,4),(60,14),(60,50),(50,60),(14,60),(4,50),(4,14)],
+    }
+    draw.polygon(shapes[rarity],fill="#101523",outline=rim,width=2)
+    draw.polygon([(32,8),(48,14),(54,31),(48,49),(32,55),(16,49),(10,31),(16,14)],
+                 fill="#1c273a")
+    draw.polygon([(13,30),(20,16),(32,10),(31,22),(19,34)],fill="#2b3a50")
+    draw.line([(14,43),(22,51),(32,55),(42,51),(50,43)],fill="#344860",width=2)
+    if rarity == "PRISMATIC":
+        draw.line([(8,29),(15,13),(31,5),(48,13),(56,28)],fill="#f6e8fe",width=2)
     rgb = ImageColor.getrgb(PALETTE[motif])
     art = Image.new("RGBA",silhouette.size,rgb)
     art.putalpha(silhouette)
@@ -110,6 +122,7 @@ def badge(path, original, rarity, motif, profile):
 def bake(rarities, motifs, sources):
     from PIL import Image, ImageColor
     write_json(PACK / "pack.mcmeta", PACK_METADATA)
+    write_json(PACK / "augmentwild-pack.json", RELEASE_METADATA)
     with tempfile.TemporaryDirectory() as profile:
         for asset in sources:
             output = PACK / asset["output"]
@@ -171,6 +184,7 @@ def bake(rarities, motifs, sources):
 
 def verify(rarities, motifs, sources):
     assert json.loads((PACK / "pack.mcmeta").read_text()) == PACK_METADATA
+    assert json.loads((PACK / "augmentwild-pack.json").read_text()) == RELEASE_METADATA
     keys = {f"augment/{key}" if key in rarities else key for key in motifs}
     keys |= {f"fx/{key}" for key in PALETTE} | {f"proc/{key}" for key in rarities}
     keys |= {f"gui/gauge_{filled}" for filled in range(5)}
@@ -210,15 +224,15 @@ def verify(rarities, motifs, sources):
         pairs = [pair.split("=") for pair in controls.split()]
         assert len({slot for slot,key in pairs}) == len(pairs)
         assert all(0 <= int(slot) < screens[screen][0]*9 and key in keys for slot,key in pairs)
-    providers = json.loads((ASSETS / "font/interface.json").read_text())["providers"]
-    assert len(screens) == 12 and len(providers) == 13
-    for index, (screen, (rows, _, slots)) in enumerate(screens.items()):
-        provider = providers[index + 1]
-        assert all(0 <= slot < rows * 9 for slot in slots)
-        assert provider["chars"] == [chr(0xe010 + index)] and provider["height"] == 18 * rows + 18
-        assert provider["file"] == f"augmentwild:gui/panels/{screen}.png"
+    assert len(screens) == 12 and not (ASSETS / "font/interface.json").exists()
+    for screen,(rows,_,slots) in screens.items():
+        assert all(0 <= slot < rows*9 for slot in slots)
         data = (ASSETS / f"textures/gui/panels/{screen}.png").read_bytes()
-        assert (int.from_bytes(data[16:20],"big"), int.from_bytes(data[20:24],"big")) == (176,provider["height"])
+        assert (int.from_bytes(data[16:20],"big"),int.from_bytes(data[20:24],"big")) == (176,18*rows+18)
+    for provider in skill_font()["providers"]:
+        assert 0 <= provider["ascent"] <= provider["height"] <= 8
+        path = ASSETS / "textures" / provider["file"].removeprefix("augmentwild:")
+        assert path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n"), path
     assert len({hashlib.sha256((ASSETS / f"textures/item/augment/{key}.png").read_bytes()).digest()
                 for key in rarities}) == 84, "Icons must be distinct"
     assert json.loads((ASSETS / "sounds.json").read_text()) == {key: {"sounds":[f"augmentwild:{key}"]} for key in SOUNDS}
