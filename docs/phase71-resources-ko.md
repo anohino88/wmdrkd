@@ -24,3 +24,34 @@ python3 scripts/resource-pack.py --bake
 ```
 
 Blender Python이 14개 메시를 만들고 Minecraft의 모델 요소로 내보낸다. 모델당 큐보이드 상한은 32개다. 런타임 플러그인은 Paper의 ItemDisplay를 사용한다. 다른 모델 엔진은 별도 검증하지 않았다.
+
+## 배포 및 적용 확인
+
+배포용 ZIP은 `distribution/augmentwild-26.3.zip`이다. 검증기는 내려받은 바이트 전체가 이 파일과 일치할 때만 설정을 출력한다. 기본 주소는 이 ZIP이 마지막으로 변경된 GitHub 커밋에 고정된다. 자체 호스팅 시 `--url`에 공개 HTTPS 정적 파일 주소를 지정한다. Actions 아티팩트의 바깥 ZIP과 GitHub 파일 보기 페이지는 직접 배포 주소로 사용할 수 없다.
+
+```sh
+python3 scripts/install-pack.py
+python3 scripts/install-pack.py --apply /path/to/server/plugins/AugmentWild/config.yml
+```
+
+`--apply`에는 Python 3와 PyYAML이 필요하다. 서버를 정지한 상태에서 실행하고 다시 시작한다. 설치기는 기존 YAML의 다른 설정과 주석을 유지하고 같은 디렉터리의 임시 파일을 교체한다. URL 오류·TLS 오류·다른 바이트를 받으면 기존 설정을 유지한다. 플레이어는 빠른 메뉴의 **리소스팩** 버튼에서 상태를 확인하고 다운로드 실패 후 재요청할 수 있다. 팩을 수락하지 않아도 바닐라 아이템과 짧은 본인 전용 파티클을 사용한다.
+
+## 화면 및 효과 검사
+
+진행 중인 전용 실험 경기에서 관리자 참가자는 `/aw admin test preview`를 사용한다. 하단 분류로 이동하고 중앙 설정 버튼으로 원본 모델과 간소 연출을 비교한다. 모델·효과음 버튼은 보상·피해·블록 배치를 실행하지 않는다. 실제 도감에서는 좌클릭으로 즐겨찾기를 관리하고 우클릭으로 상세 카드를 연다.
+
+- [모든 발동 경로와 검사 범위](art71/augment-audit.md)
+- [84종 아이콘](art71/icons.png) · [14개 모델](art71/models.png) · [액티브 키프레임](art71/animation.png)
+- [12종 화면 시안](art71/interfaces.png) · [보급 비교](art71/supply.png) · [등급 비교](art71/rarity.png)
+- [편집용 Blender 파일](../resource-pack/studio/augmentwild-studio.blend) · [모델 생성기](../resource-pack/source/geometry.py) · [라이선스](../THIRD_PARTY_NOTICES.md)
+
+Blender 렌더와 GUI 시안은 오프라인 제작 자료다. 실제 플레이어의 창 크기, 언어 설정, 조명과 프레임률은 클라이언트에서 확인해야 한다.
+
+```sh
+python3 scripts/resource-pack.py --bake --output distribution/augmentwild-26.3.zip
+blender -b -t 4 --factory-startup --python-exit-code 1 --python resource-pack/source/studio.py -- "$PWD" build/art-studio
+python3 scripts/art-sheets.py build/art-studio
+python3 scripts/audit-art.py
+```
+
+시트 생성기는 Pillow와 Noto Sans CJK를 사용한다. Blender 스튜디오에는 Minecraft로 내보낸 큐보이드, 텍스처, 액티브 7종의 세 키프레임이 들어 있다.

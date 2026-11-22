@@ -34,13 +34,13 @@ public final class PaperQuickMenu implements Listener {
         final boolean skills;
         final Inventory inventory;
         final List<String> available;
-        Menu(Player player, UUID match, boolean skills, List<String> available) {
+        Menu(PaperArt art, Player player, UUID match, boolean skills, List<String> available) {
             this.owner = player.getUniqueId();
             this.match = match;
             this.skills = skills;
             this.available = List.copyOf(available);
             this.inventory = Bukkit.createInventory(this, 27,
-                    Component.text(skills ? "증강 스킬 · 빠른 설정" : "증강 야생 · 빠른 메뉴"));
+                    art.title(player,skills ? PaperArt.Screen.SLOTS : PaperArt.Screen.MENU,skills ? "증강 스킬 · 빠른 설정" : "증강 야생 · 빠른 메뉴"));
         }
         @Override public boolean availableWhileRestricted() { return true; }
         @Override public Inventory getInventory() { return inventory; }
@@ -50,12 +50,14 @@ public final class PaperQuickMenu implements Listener {
         final UUID owner;
         final UUID match;
         final Inventory inventory;
-        ConfirmStop(Player player, UUID match) {
+        ConfirmStop(PaperArt art, Player player, UUID match) {
             this.owner = player.getUniqueId();
             this.match = match;
-            this.inventory = Bukkit.createInventory(this, 9, Component.text("1인 전투 실험 종료 확인"));
+            this.inventory = Bukkit.createInventory(this, 9, art.title(player,PaperArt.Screen.WARNING,"1인 전투 실험 종료 확인"));
             inventory.setItem(3, PaperIntel.item(PaperIntel.card(Material.BARRIER, "실험 종료 확인")));
             inventory.setItem(5, PaperIntel.item(PaperIntel.card(Material.LIME_DYE, "취소 · 메뉴로 돌아가기")));
+            art.button(player,inventory,3,"warning");
+            art.button(player,inventory,5,"previous");
         }
         @Override public boolean availableWhileRestricted() { return true; }
         @Override public Inventory getInventory() { return inventory; }
@@ -68,15 +70,17 @@ public final class PaperQuickMenu implements Listener {
         final UUID match;
         final ConfirmKind kind;
         final Inventory inventory;
-        ConfirmDecision(Player player, UUID match, ConfirmKind kind) {
+        ConfirmDecision(PaperArt art, Player player, UUID match, ConfirmKind kind) {
             owner = player.getUniqueId();
             this.match = match;
             this.kind = kind;
-            inventory = Bukkit.createInventory(this, 9, Component.text(
+            inventory = Bukkit.createInventory(this, 9, art.title(player,PaperArt.Screen.WARNING,
                     kind == ConfirmKind.LEAVE ? "경기 탈퇴 확인" : "관리자 경기 시작 확인"));
             inventory.setItem(3, PaperIntel.item(PaperIntel.card(Material.RED_WOOL,
                     kind == ConfirmKind.LEAVE ? "확인 · 경기 나가기" : "확인 · 일반 경기 시작")));
             inventory.setItem(5, PaperIntel.item(PaperIntel.card(Material.LIME_WOOL, "취소 · 메뉴로 돌아가기")));
+            art.button(player,inventory,3,"warning");
+            art.button(player,inventory,5,"previous");
         }
         @Override public boolean availableWhileRestricted() { return true; }
         @Override public Inventory getInventory() { return inventory; }
@@ -94,7 +98,7 @@ public final class PaperQuickMenu implements Listener {
     public String open(Player player) {
         if (!player.hasPermission("augmentwild.play")) return "플레이어 권한이 없습니다.";
         if (matches.picking(player)) return matches.openAugments(player);
-        Menu menu = new Menu(player, matches.menuSession(), false, List.of());
+        Menu menu = new Menu(matches.art(),player, matches.menuSession(), false, List.of());
         item(menu, 4, Material.NETHER_STAR, "AugmentWild · 빠른 메뉴", "명령어 없이 경기를 관리하세요",
                 "다이아 우클릭 = 가까운 적 추적", "나침반 우클릭(공중) = 보급 안내",
                 "스킬 사용 = 웅크리기 + F");
@@ -115,8 +119,16 @@ public final class PaperQuickMenu implements Listener {
             int slot = control.getKey();
             menu.inventory.setItem(slot,art.icon(player,menu.inventory.getItem(slot),"gui/" + control.getValue()));
         }
+        item(menu,19,Material.PAINTING,"리소스팩",art.packStatus(player),"클릭 · 적용 상태 확인 또는 다시 요청");
+        art.button(player,menu.inventory,19,"detail");
         item(menu, 26, Material.ARROW, "메뉴 새로고침");
+        art.button(player,menu.inventory,14,"slots");
+        art.button(player,menu.inventory,26,"reroll");
         if (player.hasPermission("augmentwild.admin") && player.hasPermission("augmentwild.admin.test")) {
+            if (matches.soloInProgress(player)) {
+                item(menu,20,Material.SPYGLASS,"연출 실험실");
+                art.button(player,menu.inventory,20,"lab");
+            }
             if (matches.soloInProgress(player)) item(menu, 24, Material.BARRIER, "1인 전투 실험 종료");
             else if (matches.isLobby()) item(menu, 23, Material.ENDER_EYE, "1인 전투 실험 시작 · 관리자 전용");
         }
@@ -127,7 +139,7 @@ public final class PaperQuickMenu implements Listener {
     }
 
     private String openSkills(Player player) {
-        Menu menu = new Menu(player, matches.menuSession(), true, matches.availableSkills(player));
+        Menu menu = new Menu(matches.art(),player, matches.menuSession(), true, matches.availableSkills(player));
         item(menu, 10, Material.IRON_SWORD, "1번 스킬 슬롯 선택");
         item(menu, 11, Material.IRON_SWORD, "2번 스킬 슬롯 선택");
         item(menu, 12, Material.IRON_SWORD, "3번 스킬 슬롯 선택");
@@ -145,6 +157,13 @@ public final class PaperQuickMenu implements Listener {
         for (int i = 0; i < 3 && i < slots.length; i++) {
             item(menu, 10 + i, Material.IRON_SWORD, slots[i], "클릭해서 이 슬롯 선택");
         }
+        for (int i = 0; i < Math.min(menu.available.size(),8); i++) {
+            int slot = 18 + i;
+            menu.inventory.setItem(slot,matches.art().icon(player,menu.inventory.getItem(slot),"augment/" + menu.available.get(i)));
+        }
+        matches.art().button(player,menu.inventory,13,"next");
+        matches.art().button(player,menu.inventory,15,"disabled");
+        matches.art().button(player,menu.inventory,26,"previous");
         player.openInventory(menu.inventory);
         return "스킬 슬롯을 고른 뒤 아래 증강을 클릭해 지정하세요.";
     }
@@ -184,22 +203,23 @@ public final class PaperQuickMenu implements Listener {
             return "현재 참가한 경기가 없습니다.";
         if (kind == ConfirmKind.START && (!player.hasPermission("augmentwild.admin") || !matches.isLobby()))
             return "관리자 경기 시작을 사용할 수 없습니다.";
-        player.openInventory(new ConfirmDecision(player, matches.menuSession(), kind).inventory);
+        player.openInventory(new ConfirmDecision(matches.art(),player, matches.menuSession(), kind).inventory);
         return kind == ConfirmKind.LEAVE ? "경기에서 나갈지 확인하세요." : "일반 경기를 시작할지 확인하세요.";
     }
 
     private String confirmStop(Player player) {
         if (!player.hasPermission("augmentwild.admin") || !player.hasPermission("augmentwild.admin.test")
                 || !matches.soloInProgress(player)) return "진행 중인 본인 1인 실험이 없습니다.";
-        player.openInventory(new ConfirmStop(player, matches.menuSession()).inventory);
+        player.openInventory(new ConfirmStop(matches.art(),player, matches.menuSession()).inventory);
         return "실험 종료 여부를 확인하세요.";
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
     public void click(InventoryClickEvent event) {
         if (event.getView().getTopInventory().getHolder() instanceof ConfirmDecision confirm) {
+            boolean blocked = event.isCancelled();
             int selection = PaperMenu.lock(event, false);
-            if (selection < 0 || !(event.getWhoClicked() instanceof Player p)
+            if (blocked || selection < 0 || !(event.getWhoClicked() instanceof Player p)
                     || !p.getUniqueId().equals(confirm.owner)) return;
             Bukkit.getScheduler().runTask(plugin, () -> {
                 if (!p.isOnline() || !confirm.match.equals(matches.menuSession())
@@ -215,8 +235,9 @@ public final class PaperQuickMenu implements Listener {
             return;
         }
         if (event.getView().getTopInventory().getHolder() instanceof ConfirmStop confirm) {
+            boolean blocked = event.isCancelled();
             int selection = PaperMenu.lock(event, false);
-            if (selection < 0 || !(event.getWhoClicked() instanceof Player p)
+            if (blocked || selection < 0 || !(event.getWhoClicked() instanceof Player p)
                     || !p.getUniqueId().equals(confirm.owner)) return;
             Bukkit.getScheduler().runTask(plugin, () -> {
                 if (!p.isOnline() || !confirm.match.equals(matches.menuSession())
@@ -253,6 +274,8 @@ public final class PaperQuickMenu implements Listener {
             case 15 -> player.hasPermission("augmentwild.track")
                     ? matches.locate(player) : "위치 추적 권한이 없습니다.";
             case 16 -> matches.guide(player);
+            case 19 -> matches.art().retry(player);
+            case 20 -> matches.labCommand(player,new String[]{"preview"});
             case 21 -> matches.combatLog(player);
             case 22 -> matches.result(player);
             case 23 -> player.hasPermission("augmentwild.admin") && player.hasPermission("augmentwild.admin.test")

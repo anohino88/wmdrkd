@@ -317,3 +317,9 @@ PHASE 2B의 GitHub Actions #6에서 Java 버전 확인, `./gradlew clean build -
 - 선택형 팩의 로드 상태를 확인하는 Paper 연동을 추가했다. 증강 선택·도감, 주요 GUI, 액티브 7종, 진화 6종, 고유 시너지 5종, 계열 공명 2종과 보급 표식에 시각 에셋을 연결했다. [설치·제작·출처](docs/phase71-resources-ko.md)
 - Blender 4.3.2·Inkscape 1.4·FFmpeg 베이크, 입력 라이선스·SHA-256, ZIP 및 모델 참조 검증을 통과했다. Java 25에서 Paper 26.3 공식 소스 `d81ca50aeb956bccd912c124638f556b564ea8af`로 API를 컴파일해 로컬 Gradle `clean build paperProbeJar`를 완료했다. JUnit 42건과 독립 회귀·시나리오 A–G가 통과했다.
 - Maven 기본 의존성 해석은 DNS 실패로 차단됐다. Paper 서버 다운로드 API는 HTTP 403을 반환해 서버 부팅과 프로브 실행이 중단됐다. 실제 네트워크 클라이언트 렌더와 다른 모델 엔진은 `NOT_RUN`. GitHub 푸시는 HTTPS 인증 실패로 차단됐다.
+
+## PHASE 7.1-B 연출·화면·배포 감사
+
+- 기준 로컬 `117142fee1b08a4229b719099d520a039f95c729`. 작업 시작 시 원격은 두 커밋 뒤인 `ce79fff`였고, 기존 Git HTTPS 경로로 일반 푸시 후 기준 SHA가 일치했다. gh 환경 토큰은 유효하지 않았으며 GitHub 연결 앱과 Git 원격 접근은 가능했다.
+- 84종의 고유 아이콘과 Blender 원형을 실제 발동 모델로 결합했다. 능력 성장·속성 적용·교환 확정·방어·흡혈·확정 타격의 발동 경로를 [증강별 표](docs/art71/augment-audit.md)에 기록했다. 실험실은 연출만 재생한다. 원형 14개와 액티브 7종의 편집 파일·렌더, 패널 12종, 간소 연출 및 안전한 설치 도구를 배포한다. [한국어 안내서](docs/phase71-resources-ko.md)
+- 로컬 Gradle은 공식 Paper 26.3 소스에서 컴파일한 API로 Java 25 빌드 및 JUnit 42건을 통과했다. 독립 회귀와 A–G, 84개 발동 경로·모델 정적 검사, Blender 베이크, 배포 ZIP 재생성 대조, 설치 도구 테스트 4건을 통과했다. 실제 클라이언트 전체 발동·렌더·프레임률 시험은 NOT_RUN이다.

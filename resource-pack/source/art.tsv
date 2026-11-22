@@ -90,3 +90,15 @@ gui/scout|spyglass|bolt
 gui/report|scroll-unfurled|blood
 gui/result|trophy|growth
 gui/supply|locked-chest|ward
+gui/next|next-button|rush
+gui/previous|previous-button|rush
+gui/enabled|check-mark|growth
+gui/disabled|plain-padlock|ward
+gui/warning|cross-mark|fire
+gui/lab|bubbling-flask|void
+gui/slots|joystick|rush
+gui/codex|archive-research|rune
+gui/detail|info|bolt
+gui/gauge|hourglass|time
+gui/reroll|cycle|void
+gui/journal|bookmark|blood

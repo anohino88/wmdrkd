@@ -12,6 +12,10 @@ import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.Sound;
+import org.bukkit.Particle;
+import net.kyori.adventure.key.Key;
+import net.kyori.adventure.text.format.NamedTextColor;
+import org.bukkit.inventory.Inventory;
 import org.bukkit.entity.ItemDisplay;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -34,16 +38,20 @@ public final class PaperArt implements Listener {
     private static final int MAX_DISPLAYS = 24;
     private final JavaPlugin plugin;
     private final Predicate<Player> playable;
+    private final Map<UUID,PlayerResourcePackStatusEvent.Status> reports = new HashMap<>();
+    private final Map<UUID,Long> lastOffer = new HashMap<>();
     private final Set<UUID> loaded = new HashSet<>();
     private final Map<UUID, Animation> cues = new HashMap<>();
     private final Map<Location, Marker> supply = new HashMap<>();
     private final Map<UUID, Long> nextCue = new HashMap<>();
+    private final Set<String> quiet = new HashSet<>(), noVisual = new HashSet<>();
+    private final Map<String,String> labels = new HashMap<>();
     private final Properties motifs = new Properties();
     private final ResourcePackInfo pack;
     private long tick;
     private boolean displaysAvailable = true;
 
-    private record Animation(ItemDisplay entity, Location at, long began, Motion motion) {}
+    private record Animation(Player viewer, ItemDisplay entity, Location at, long began, Motion motion) {}
     private record Marker(ItemDisplay entity, Set<UUID> viewers) {}
     private record Motion(float[] scales, float rise, float spin, float travel) {}
     private static final Motion PULSE = new Motion(GROW,.2f,1.4f,0);
@@ -73,6 +81,38 @@ public final class PaperArt implements Listener {
     private static final Map<String, String> SIGNATURES = Map.of(
             "steel_king","ward","calamity_train","impact","infinite_barrage","bolt",
             "hell_lord","fire","thousand_swords","blade","stacking","growth","life_echo","ward");
+
+    enum Screen { MENU, CHOICE, DETAIL, CODEX, SLOTS, SETTINGS, LAB, RESULT, SUPPLY, JOURNAL, WARNING, SCOUT }
+    private static final Map<String,Motion> MOTIONS = Map.ofEntries(
+            Map.entry("blade",new Motion(SWEEP,.22f,2.7f,.6f)), Map.entry("bolt",new Motion(SWEEP,.18f,.45f,1.3f)),
+            Map.entry("fire",new Motion(GROW,.8f,1.5f,.13f)), Map.entry("frost",new Motion(HOLD,.25f,-.7f,0)),
+            Map.entry("impact",new Motion(SWEEP,-.5f,.15f,0)), Map.entry("ward",new Motion(HOLD,.13f,-.4f,0)),
+            Map.entry("rush",new Motion(SWEEP,.15f,.65f,1.1f)), Map.entry("void",new Motion(GROW,-.3f,-2.4f,-.2f)),
+            Map.entry("blood",new Motion(HOLD,.4f,.7f,-.3f)), Map.entry("growth",new Motion(GROW,.65f,.4f,0)),
+            Map.entry("time",new Motion(HOLD,.28f,-2.5f,-.15f)), Map.entry("rune",PULSE));
+    Component title(Player p, Screen screen, String label) {
+        if (!loaded.contains(p.getUniqueId())) return Component.text(label);
+        String panel = "\ue000" + (char)(0xe010 + screen.ordinal()) + "\ue001";
+        return Component.text(panel,NamedTextColor.WHITE).font(Key.key("augmentwild:interface"))
+                .append(Component.text(label,NamedTextColor.WHITE).font(Key.key("minecraft:default")));
+    }
+
+    void button(Player p, Inventory inv, int slot, String key) {
+        var item = inv.getItem(slot);
+        if (item != null) inv.setItem(slot, icon(p,item,"gui/" + key));
+    }
+
+    String packStatus(Player p) {
+        if (pack == null) return "팩 배포 미설정 · 바닐라 표시";
+        if (loaded.contains(p.getUniqueId())) return "리소스팩 적용 · " + pack.hash().substring(0,8);
+        var status = reports.get(p.getUniqueId());
+        if (status == null) return "클라이언트 응답 대기";
+        return switch (status) {
+            case ACCEPTED, DOWNLOADED -> "팩 적용 중";
+            case DECLINED -> "팩 거절 · 바닐라 표시";
+            default -> "팩 미적용 · " + status.name() + " · 바닐라 표시";
+        };
+    }
 
     public PaperArt(JavaPlugin plugin, Predicate<Player> playable) {
         this.plugin = plugin;
@@ -106,8 +146,18 @@ public final class PaperArt implements Listener {
 
     @EventHandler public void join(PlayerJoinEvent event) { offer(event.getPlayer()); }
 
-    private void offer(Player player) {
+    String retry(Player player) {
+        if (pack == null || loaded.contains(player.getUniqueId())) return packStatus(player);
+        Long last = lastOffer.get(player.getUniqueId());
+        if (last != null && System.nanoTime() - last < 10_000_000_000L) return "최근 요청을 보냈습니다. 잠시 후 다시 시도하세요.";
+        offer(player);
+        return "리소스팩을 다시 요청했습니다.";
+    }
+
+    void offer(Player player) {
         if (pack == null) return;
+        lastOffer.put(player.getUniqueId(),System.nanoTime());
+        reports.remove(player.getUniqueId());
         player.sendResourcePacks(ResourcePackRequest.resourcePackRequest().packs(pack)
                 .replace(false).required(false).prompt(Component.text("AugmentWild 장식 리소스팩 (선택 사항)")).build());
     }
@@ -115,12 +165,15 @@ public final class PaperArt implements Listener {
     @EventHandler public void quit(PlayerQuitEvent event) {
         UUID id = event.getPlayer().getUniqueId();
         loaded.remove(id);
+        reports.remove(id);
+        lastOffer.remove(id);
         forget(id);
     }
 
     @EventHandler public void status(PlayerResourcePackStatusEvent event) {
         if (pack == null || !pack.id().equals(event.getID())) return;
         UUID player = event.getPlayer().getUniqueId();
+        reports.put(player,event.getStatus());
         if (event.getStatus() == PlayerResourcePackStatusEvent.Status.SUCCESSFULLY_LOADED) loaded.add(player);
         else {
             loaded.remove(player);
@@ -139,22 +192,98 @@ public final class PaperArt implements Listener {
         return item;
     }
 
+    void label(String id, String name) { labels.put(id,name); }
+
+    String label(String key) {
+        String id = key.substring(key.indexOf('/') + 1);
+        return labels.getOrDefault(id,id.replace('_',' '));
+    }
+
+    void configure(String id, boolean particles, boolean sound) {
+        if (!particles) noVisual.add(id);
+        if (!sound) quiet.add(id);
+    }
+
     void cue(UUID owner, String id) {
-        if (!loaded.contains(owner)) return;
+        if (tick < nextCue.getOrDefault(owner,0L)) return;
         Player player = plugin.getServer().getPlayer(owner);
         if (player != null) cue(player,id);
     }
 
     void cue(Player player, String id) {
-        if (pack == null || !loaded.contains(player.getUniqueId())) return;
         String motif = motifs.getProperty(id);
-        if (motif != null) render(player, near(player), motif, PULSE, false);
+        if (motif == null || !playable.test(player) || tick < nextCue.getOrDefault(player.getUniqueId(),0L)) return;
+        nextCue.put(player.getUniqueId(),tick + 12);
+        showProc(player,id,motif,false);
+    }
+
+    private void showProc(Player player, String id, String motif, boolean simple) {
+        var at = near(player);
+        if (!noVisual.contains(id) && !simple && loaded.contains(player.getUniqueId()) && displaysAvailable) {
+            render(player,at,"proc/" + id,CASTS.getOrDefault(id,MOTIONS.getOrDefault(motif,PULSE)),true);
+        } else if (!noVisual.contains(id) && PlayerUi.enabled(player,PlayerUi.Option.PARTICLES)) {
+            Particle particle = switch (motif) {
+                case "fire" -> Particle.FLAME;
+                case "frost", "time" -> Particle.SNOWFLAKE;
+                case "blade", "impact" -> Particle.CRIT;
+                case "void" -> Particle.PORTAL;
+                case "growth", "blood" -> Particle.HAPPY_VILLAGER;
+                default -> Particle.ELECTRIC_SPARK;
+            };
+            player.spawnParticle(particle,at,4,.17,.16,.17,.01);
+        }
+        if (quiet.contains(id) || !PlayerUi.enabled(player,PlayerUi.Option.SOUND)) return;
+        float pitch = switch (motif) {
+            case "impact","blood","void" -> .78f;
+            case "time","frost","bolt" -> 1.32f;
+            case "growth","ward" -> .95f;
+            default -> 1.12f;
+        };
+        if (!simple && loaded.contains(player.getUniqueId())) player.playSound(at,"augmentwild:cast",.36f,pitch);
+        else player.playSound(at,Sound.BLOCK_AMETHYST_BLOCK_CHIME,.32f,pitch);
+    }
+
+    void choice(Player p, String id, String rarity) {
+        if (!playable.test(p) || !loaded.contains(p.getUniqueId())) return;
+        var motion = switch (rarity) { case "PRISMATIC" -> GROWTH.get("magic_missile"); case "GOLD" -> MOTIONS.get("ward"); default -> PULSE; };
+        render(p,near(p),"proc/" + id,motion,true);
     }
 
     void cast(Player player, String id) {
         String motif = motifs.getProperty(id);
-        if (motif != null) render(player, near(player), motif, CASTS.getOrDefault(id,PULSE), true);
-        sound(player,"cast",Sound.BLOCK_AMETHYST_BLOCK_CHIME);
+        if (motif != null) {
+            nextCue.put(player.getUniqueId(),tick + 12);
+            showProc(player,id,motif,false);
+        }
+    }
+
+    List<String> previewKeys() {
+        var entries = new ArrayList<String>();
+        motifs.stringPropertyNames().stream().sorted().map(id -> "augment/" + id).forEach(entries::add);
+        new TreeSet<>(MOTIONS.keySet()).forEach(id -> entries.add("model/" + id));
+        entries.addAll(List.of("model/supply","model/premium"));
+        new TreeSet<>(GROWTH.keySet()).forEach(id -> entries.add("growth/" + id));
+        entries.addAll(List.of("rarity/silver","rarity/gold","rarity/prismatic","sound/cast","sound/evolve","sound/supply"));
+        for (Screen screen : Screen.values()) entries.add("screen/" + screen.name().toLowerCase(Locale.ROOT));
+        return List.copyOf(entries);
+    }
+
+    void preview(Player p, String key, boolean simple) {
+        String[] parts = key.split("/",2);
+        String id = parts[1];
+        switch (parts[0]) {
+            case "augment" -> showProc(p,id,motifs.getProperty(id),simple);
+            case "growth" -> {
+                var motif = SIGNATURES.getOrDefault(id,motifs.getProperty(id,"growth"));
+                if (simple || !loaded.contains(p.getUniqueId())) showProc(p,id,motif,true);
+                else { growth(p,id,true); sound(p,"evolve",Sound.ENTITY_PLAYER_LEVELUP); }
+            }
+            case "model" -> {
+                if (simple || !loaded.contains(p.getUniqueId())) showProc(p,id,id,true);
+                else render(p,near(p),id,MOTIONS.getOrDefault(id,ARRIVE),true);
+            }
+            case "sound" -> sound(p,id,Sound.BLOCK_NOTE_BLOCK_CHIME);
+        }
     }
 
     void growth(Player player, String id, boolean visible) {
@@ -234,13 +363,13 @@ public final class PaperArt implements Listener {
         if (pack == null || !loaded.contains(id) || !displaysAvailable || !playable.test(viewer)
                 || !PlayerUi.enabled(viewer,PlayerUi.Option.PARTICLES)
                 || !at.getWorld().equals(viewer.getWorld()) || !at.isChunkLoaded()) return;
-        if (!priority && (cues.containsKey(id) || tick < nextCue.getOrDefault(id,0L))) return;
+        if (!priority && cues.containsKey(id)) return;
         if (!cues.containsKey(id) && cues.size() >= MAX_DISPLAYS) return;
         removeCue(id);
         ItemDisplay display = null;
         try {
             display = spawn(at,motif,pose(at,motion,0));
-            cues.put(id,new Animation(display,at,tick,motion));
+            cues.put(id,new Animation(viewer,display,at,tick,motion));
             nextCue.put(id,tick + 20);
             viewer.showEntity(plugin,display);
         } catch (RuntimeException failure) {
@@ -253,7 +382,7 @@ public final class PaperArt implements Listener {
         return at.getWorld().spawn(at,ItemDisplay.class,entity -> {
             entity.setVisibleByDefault(false);
             entity.setPersistent(false);
-            entity.setItemStack(model(new ItemStack(Material.AMETHYST_SHARD),"fx/" + motif));
+            entity.setItemStack(model(new ItemStack(Material.AMETHYST_SHARD),motif.startsWith("proc/") ? motif : "fx/" + motif));
             entity.setViewRange(1.0f);
             entity.setTransformation(pose);
         });
@@ -276,8 +405,8 @@ public final class PaperArt implements Listener {
                 var animation = entry.getValue();
                 long age = tick - animation.began();
                 var entity = animation.entity();
-                Player player = plugin.getServer().getPlayer(entry.getKey());
-                if (age >= STEP_TICKS * 2 + 1 || !entity.isValid() || player == null || !playable.test(player)
+                Player player = animation.viewer();
+                if (age >= STEP_TICKS * 2 + 1 || !entity.isValid() || !player.isOnline() || !playable.test(player)
                         || !player.getWorld().equals(animation.at().getWorld())
                         || !PlayerUi.enabled(player,PlayerUi.Option.PARTICLES)) {
                     entity.remove();

@@ -129,13 +129,17 @@ public final class PaperMatchService implements Listener {
         }
     }
 
+    public Listener galleryListener() { return new ArtGallery.Input(plugin); }
     public Listener artListener() { return art; }
     PaperArt art() { return art; }
     public Listener feedbackListener() { return feedback; }
     public Listener uiListener() { return new PlayerUi(); }
     public String ui(Player p) { return PlayerUi.open(p,art); }
-    public String guide(Player p) { return augmentActive(p) && PlayerUi.enabled(p,PlayerUi.Option.SUPPLY)
-            ? supply.guide(p,true) : "보급 안내를 사용할 수 없습니다."; }
+    public String guide(Player p) {
+        if (!augmentActive(p) || !PlayerUi.enabled(p,PlayerUi.Option.SUPPLY)) return "보급 안내를 사용할 수 없습니다.";
+        ArtGallery.read(p,art,PaperArt.Screen.SUPPLY,"보급 길잡이",List.of(supply.guide(p,true).split(" / ")));
+        return "보급 길잡이";
+    }
     public String result(Player p) {
         var lines = results.get(p.getUniqueId());
         if (lines == null || task != null || snapshots.pending(p.getUniqueId())) return "현재 확인할 경기 결과가 없습니다.";
@@ -194,7 +198,10 @@ public final class PaperMatchService implements Listener {
     public List<String> availableSkills(Player player) { return augments.availableSkills(player); }
     public List<String> registeredAugments() { return augments.registeredIds(); }
     public List<String> ownedAugments(Player player) { return augments.ownedIds(player); }
-    public String combatLog(Player p) { return hud.combatLog(p); }
+    public String combatLog(Player p) {
+        ArtGallery.read(p,art,PaperArt.Screen.JOURNAL,"나의 전투 기록 · UTC",List.of(hud.combatLog(p).split("\n")));
+        return "전투 기록";
+    }
     public String skill(Player player, String[] args) { return augments.skill(player, args); }
     public String castAugment(Player player, String id) { return augments.cast(player, id); }
     public String openAugments(Player player) { return augments.open(player); }
@@ -340,13 +347,23 @@ public final class PaperMatchService implements Listener {
         if (!lab.allows(true, labWorld != null && task != null, clock == null || clock.isPaused())) {
             return "증강 실험 명령은 진행 중이며 일시정지 상태가 아닌 테스트 경기에서만 사용할 수 있습니다.";
         }
+        if (action.equals("preview") && args.length == 1 && sender instanceof Player viewer) {
+            UUID thisMatch = session.matchId();
+            java.util.function.BooleanSupplier allowed = () -> viewer.hasPermission("augmentwild.admin")
+                    && viewer.hasPermission("augmentwild.admin.test") && thisMatch.equals(session.matchId())
+                    && labWorld != null && labWorld.equals(viewer.getWorld().getUID()) && labParticipant(viewer)
+                    && augmentActive(viewer) && clock != null && !clock.isPaused();
+            if (!allowed.getAsBoolean()) return "살아 있는 테스트 참가자만 연출을 볼 수 있습니다.";
+            ArtGallery.browse(viewer,art,allowed);
+            return "연출 실험실";
+        }
         int length = switch (action) {
             case "list", "clear", "report", "reset" -> 2;
             case "grant", "remove", "health", "preset" -> 3;
             case "progress" -> 4;
             default -> 0;
         };
-        if (length == 0 || args.length != length) return "사용법: /aw admin test <status|start|solo|grant|remove|list|clear|progress|report|reset|health|presets|preset>";
+        if (length == 0 || args.length != length) return "사용법: /aw admin test <status|start|solo|grant|remove|list|clear|progress|report|reset|health|presets|preset|preview>";
         Player player = plugin.getServer().getPlayerExact(args[1]);
         if (player == null || !labParticipant(player) || !augmentActive(player)
                 || !labWorld.equals(player.getWorld().getUID())) return "살아 있는 테스트 참가자를 지정하세요.";
@@ -548,6 +565,9 @@ public final class PaperMatchService implements Listener {
         boolean played = clock != null;
         if (played) feedback.finishSamples();
         art.clear();
+        for (Player viewer : plugin.getServer().getOnlinePlayers()) {
+            if (viewer.getOpenInventory().getTopInventory().getHolder() instanceof ArtGallery) viewer.closeInventory();
+        }
         displays.clear();
         overhead.clear();
         search.cancel();
@@ -852,7 +872,10 @@ public final class PaperMatchService implements Listener {
     }
 
     public void recoverOnlinePlayers() {
-        for (Player player : plugin.getServer().getOnlinePlayers()) recover(player);
+        for (Player player : plugin.getServer().getOnlinePlayers()) {
+            recover(player);
+            art.offer(player);
+        }
     }
 
     private void recover(Player player) {

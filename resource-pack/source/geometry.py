@@ -100,6 +100,30 @@ def export(kind):
     bpy.ops.object.select_all(action="SELECT")
     bpy.ops.object.delete(use_global=False)
     form(kind)
+    # Silhouette details around the original body, in 0..16 item coordinates.
+    if kind in ("supply", "premium"):
+        for x in (4.4, 11.6):
+            bar(x, 9.15, 11.65, 1.3, .6, .7, "accent")
+        if kind == "premium":
+            for x in (3.9, 12.1):
+                bar(x, 10.9, 8, .45, 1.5, 3.5, "light")
+    elif kind == "time":
+        for x, z in ((8,4.3),(8,11.7),(4.3,8),(11.7,8)):
+            bar(x, 8.4, z, .55, .8, .55, "accent")
+    elif kind == "impact":
+        for i in range(4):
+            bar(5+i*1.8, 7.5, 8+(-1)**i, 1.8, .5, .65, "dark")
+    elif kind == "blade":
+        bar(4.2, 5.1, 9.4, 2.4, .5, 2.2, "metal")
+    elif kind == "frost":
+        for x, z in ((4,10),(8,11),(12,5)):
+            bar(x, 7.3, z, .55, 3.6, .55)
+    elif kind == "growth":
+        for x, z in ((4,6),(9,5),(12,10)):
+            bar(x, 8.1, z, 2.5, .55, 1.3, "metal")
+    elif kind == "fire":
+        for x, z in ((6,9),(9,5),(11,7)):
+            bar(x, 11.5, z, .65, 1.4, .65, "light")
     out = ROOT / "assets/augmentwild/models/fx" / f"{kind}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     parts = []

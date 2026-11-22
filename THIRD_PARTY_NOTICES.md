@@ -15,3 +15,7 @@ under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
 AugmentWild converted the selected samples to mono Vorbis and applied gain and a
 fade-out. The manifest pins each sample's public mirror snapshot.
 See [Kenney's original notice](resource-pack/source/kenney-license.txt).
+
+The 84 combat models reuse the corresponding credited icon on their front seal.
+The five countdown gauges reuse Lorc’s hourglass icon. Interface control sources
+and their individual authors are listed under the gui/ entries in the manifest.

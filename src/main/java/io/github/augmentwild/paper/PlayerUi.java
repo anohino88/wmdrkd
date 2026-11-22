@@ -49,10 +49,12 @@ public final class PlayerUi implements Listener {
         final UUID owner;
         final Inventory inventory;
         final boolean settings;
-        Menu(Player player, boolean settings) {
+        final PaperArt art;
+        Menu(Player player, boolean settings, PaperArt art) {
             owner = player.getUniqueId();
             this.settings = settings;
-            inventory = Bukkit.createInventory(this, settings ? Math.max(27, ((Option.values().length + 8) / 9) * 9) : 27, Component.text(settings ? "화면 설정" : "경기 결과"));
+            this.art = art;
+            inventory = Bukkit.createInventory(this, settings ? Math.max(27, ((Option.values().length + 8) / 9) * 9) : 27, art == null ? Component.text(settings ? "화면 설정" : "경기 결과") : art.title(player,settings ? PaperArt.Screen.SETTINGS : PaperArt.Screen.RESULT,settings ? "화면 설정" : "경기 결과"));
         }
         public Inventory getInventory() { return inventory; }
         public boolean availableWhileRestricted() { return true; }
@@ -60,13 +62,14 @@ public final class PlayerUi implements Listener {
     public static String open(Player p) { return open(p,null); }
 
     static String open(Player p, PaperArt art) {
-        var menu = new Menu(p, true);
+        var menu = new Menu(p, true,art);
         for (var option : Option.values()) paint(p, menu, option);
         menu.inventory.setItem(18, PaperIntel.item(PaperIntel.card(Material.BEACON, "전체 UI 켜기", "모든 HUD와 알림 표시")));
         menu.inventory.setItem(20, PaperIntel.item(PaperIntel.card(Material.IRON_SWORD, "전투 집중", "전투 HUD 중심 · 파티클 및 효과음 최소화")));
         menu.inventory.setItem(22, PaperIntel.item(PaperIntel.card(Material.GLASS_PANE, "최소 표시", "체력·피해·스킬·위험 경고만 표시")));
         if (art != null) menu.inventory.setItem(18,art.icon(p,menu.inventory.getItem(18),"gui/settings"));
         menu.inventory.setItem(26, PaperIntel.item(PaperIntel.card(Material.ARROW, "빠른 메뉴로 돌아가기")));
+        if (art != null) art.button(p,menu.inventory,26,"previous");
         p.openInventory(menu.inventory);
         return "화면 설정";
     }
@@ -97,14 +100,23 @@ public final class PlayerUi implements Listener {
         boolean on = enabled(p, option);
         menu.inventory.setItem(option.ordinal(), PaperIntel.item(PaperIntel.card(on ? Material.LIME_DYE : Material.GRAY_DYE,
                 option.title + (on ? " ON" : " OFF"))));
+        if (menu.art != null) menu.art.button(p,menu.inventory,option.ordinal(),on ? "enabled" : "disabled");
     }
     public static void result(Player player, List<String> lines) { result(player,lines,null); }
 
     static void result(Player player, List<String> lines, PaperArt art) {
-        var menu = new Menu(player, false);
-        for (int i = 0; i < Math.min(lines.size(), menu.inventory.getSize()); i++)
-            menu.inventory.setItem(i, PaperIntel.item(PaperIntel.card(Material.PAPER, lines.get(i))));
-        if (art != null && !lines.isEmpty()) menu.inventory.setItem(0,art.icon(player,menu.inventory.getItem(0),"gui/result"));
+        var menu = new Menu(player, false,art);
+        if (!lines.isEmpty()) {
+            menu.inventory.setItem(4,PaperIntel.item(PaperIntel.card(Material.NETHER_STAR,lines.get(0))));
+            if (art != null) art.button(player,menu.inventory,4,"result");
+        }
+        for (int i = 1; i < Math.min(lines.size(),19); i++) {
+            int slot = 8 + i;
+            String line = lines.get(i);
+            menu.inventory.setItem(slot,PaperIntel.item(PaperIntel.card(Material.PAPER,line)));
+            if (art != null) art.button(player,menu.inventory,slot,line.startsWith("획득") ? "codex"
+                    : line.startsWith("생존") ? "gauge" : line.startsWith("스킬") ? "slots" : "report");
+        }
         player.openInventory(menu.inventory);
     }
     @EventHandler public void click(InventoryClickEvent e) {

@@ -65,7 +65,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Validate and package the Minecraft 26.3 resource pack
-        run: python3 scripts/resource-pack.py
+        run: |
+          python3 scripts/resource-pack.py
+          cmp build/resource-pack/augmentwild-26.3.zip distribution/augmentwild-26.3.zip
+          python3 scripts/audit-art.py
+          /usr/bin/python3 scripts/test-pack-install.py
       - uses: actions/upload-artifact@v4
         with:
           name: augmentwild-resource-pack

@@ -426,7 +426,7 @@ final class PaperIntel implements Listener {
 
     private void open(Player player, Report report) {
         var menu = new Menu(player.getUniqueId(), report);
-        menu.inventory = plugin.getServer().createInventory(menu, 45, Component.text(report.title()));
+        menu.inventory = plugin.getServer().createInventory(menu, 45, art.title(player,report.title().equals("망원경 정찰") ? PaperArt.Screen.SCOUT : PaperArt.Screen.JOURNAL,report.title()));
         render(menu,player);
         player.openInventory(menu.inventory);
         if (deaths.get(menu.owner) == report && player.getOpenInventory().getTopInventory().getHolder() == menu) {
@@ -477,6 +477,8 @@ final class PaperIntel implements Listener {
         }
         if (menu.page > 0) menu.inventory.setItem(36, item(card(Material.ARROW, "이전 페이지")));
         if (offset + PAGE_SIZE < menu.report.cards().size()) menu.inventory.setItem(44, item(card(Material.ARROW, "다음 페이지")));
+        art.button(player,menu.inventory,36,"previous");
+        art.button(player,menu.inventory,44,"next");
     }
 
     static boolean isReadOnly(Inventory inventory) { return inventory.getHolder() instanceof Menu; }

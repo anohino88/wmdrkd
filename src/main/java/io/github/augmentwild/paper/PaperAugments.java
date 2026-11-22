@@ -335,7 +335,7 @@ final class PaperAugments implements Listener {
         official.selected(player, definition.id(), source);
         official.acquired(player, definition.id());
         Player viewer = plugin.getServer().getPlayer(player);
-        if (viewer != null) art.cue(viewer,definition.id());
+        if (viewer != null) art.choice(viewer,definition.id(),definition.rarity().name());
         return true;
     }
 
@@ -474,7 +474,7 @@ final class PaperAugments implements Listener {
 
     private void show(Player player, SelectionRound round, SelectionRound.Choice choice, Profile profile) {
         var menu = new Menu(round.matchId(), player.getUniqueId(), round.round(), choice.offers());
-        menu.inventory = plugin.getServer().createInventory(menu, 27, Component.text("증강 선택 · " + round.round() + "회차"));
+        menu.inventory = plugin.getServer().createInventory(menu, 27, art.title(player,PaperArt.Screen.CHOICE,"증강 선택 · " + round.round() + "회차"));
         for (int i = 0; i < choice.offers().size(); i++) {
             var augment = registry.get(choice.offers().get(i).id());
             menu.inventory.setItem(SLOTS[i], augmentItem(player, profile, augment));
@@ -488,6 +488,7 @@ final class PaperAugments implements Listener {
         menu.inventory.setItem(REROLL, item(rerolled ? Material.BARRIER : Material.PAPER,
                 Component.text(rerolled ? "재추첨 사용 완료" : "재추첨 · 경기당 1회"), List.of()));
         setCountdown(menu, clock.get().selectionRemainingSeconds());
+        art.button(player,menu.inventory,REROLL,rerolled ? "disabled" : "reroll");
         profile.shown = round.round();
         player.openInventory(menu.inventory);
     }
@@ -498,7 +499,7 @@ final class PaperAugments implements Listener {
             return "선택을 먼저 마치세요. /aw augment로 선택을 열 수 있습니다.";
         }
         var menu = new SummaryMenu(player.getUniqueId(), match);
-        menu.inventory = plugin.getServer().createInventory(menu, 54, Component.text("나의 증강 도감"));
+        menu.inventory = plugin.getServer().createInventory(menu, 54, art.title(player,PaperArt.Screen.CODEX,"나의 증강 도감"));
         renderCodex(player, menu);
         player.openInventory(menu.inventory);
         return "증강 도감을 열었습니다.";
@@ -533,6 +534,9 @@ final class PaperAugments implements Listener {
         menu.inventory.setItem(49, item(Material.BOOK, Component.text(menu.page == 0 ? "조합 · 진화 · 공명" : "증강 목록 " + menu.page + "/" + last),
                 List.of(Component.text("보유 " + profile.owned.size() + "/" + definitions.size()))));
         if (menu.page < last) menu.inventory.setItem(53, item(Material.ARROW, Component.text("다음 페이지"), List.of()));
+        art.button(player,menu.inventory,45,"previous");
+        art.button(player,menu.inventory,49,"codex");
+        art.button(player,menu.inventory,53,"next");
     }
 
     private void placeCodexCard(Player player, Profile profile, SummaryMenu menu, int slot,
@@ -541,6 +545,7 @@ final class PaperAugments implements Listener {
         var card = augmentItem(player,profile,definition,true);
         var meta = card.getItemMeta();
         var lore = new ArrayList<>(meta.lore());
+        lore.add(Component.text("우클릭 · 상세 카드"));
         lore.add(Component.text(favorites.contains(definition.id()) ? "★ 즐겨찾기 해제 · 클릭" : "☆ 즐겨찾기 등록 · 클릭"));
         meta.lore(lore);
         card.setItemMeta(meta);
@@ -583,7 +588,7 @@ final class PaperAugments implements Listener {
 
     private void showExchange(Player player, Profile profile) {
         var menu = new ExchangeMenu(match, player.getUniqueId(), profile.exchange);
-        menu.inventory = plugin.getServer().createInventory(menu, 27, Component.text(registry.get(profile.exchangeId).name()));
+        menu.inventory = plugin.getServer().createInventory(menu, 27, art.title(player,PaperArt.Screen.DETAIL,registry.get(profile.exchangeId).name()));
         refreshExchange(menu);
         profile.exchangeShown = true;
         player.openInventory(menu.inventory);
@@ -640,6 +645,12 @@ final class PaperAugments implements Listener {
         if (menu.lastSeconds == seconds) return;
         menu.lastSeconds = seconds;
         menu.inventory.setItem(26, item(Material.CLOCK, Component.text("남은 시간 " + seconds + "초"), List.of()));
+        Player owner = plugin.getServer().getPlayer(menu.owner);
+        if (owner != null) {
+            int duration = Math.max(1,plugin.getConfig().getInt("game.selection-duration-seconds"));
+            int filled = (int)Math.clamp(Math.ceilDiv(seconds * 4,duration),0,4);
+            art.button(owner,menu.inventory,26,"gauge_" + filled);
+        }
     }
 
     private ItemStack item(Material material, Component name, List<Component> lore) {
@@ -655,10 +666,19 @@ final class PaperAugments implements Listener {
     public void click(InventoryClickEvent event) {
         if (event.getView().getTopInventory().getHolder() instanceof SummaryMenu codex) {
             boolean cancelled = event.isCancelled();
-            int slot = PaperMenu.lock(event, false);
+            int slot = PaperMenu.lock(event, true);
             if (cancelled || !(event.getWhoClicked() instanceof Player player) || !codex.owner.equals(player.getUniqueId())
                     || !Objects.equals(codex.match, match)) return;
             if (codex.favoriteButtons.containsKey(slot)) {
+                if (event.isRightClick()) {
+                    var def = registry.get(codex.favoriteButtons.get(slot));
+                    plugin.getServer().getScheduler().runTask(plugin,() -> {
+                        if (!player.isOnline() || player.getOpenInventory().getTopInventory().getHolder() != codex) return;
+                        var profile = profiles.getOrDefault(codex.owner,new Profile());
+                        ArtGallery.detail(player,art,def.name(),augmentItem(player,profile,def,true));
+                    });
+                    return;
+                }
                 if (!PlayerUi.toggleFavorite(player, codex.favoriteButtons.get(slot))) player.sendMessage("즐겨찾기는 최대 8개입니다.");
             } else if (slot == 45 && codex.page > 0) codex.page--;
             else if (slot == 53 && codex.page < (registry.all().size() + CODEX_CARDS - 1) / CODEX_CARDS) codex.page++;
@@ -896,8 +916,10 @@ final class PaperAugments implements Listener {
         var operation = a.effect() == Effect.ARMOR ? AttributeModifier.Operation.ADD_NUMBER
                 : AttributeModifier.Operation.ADD_SCALAR;
         PaperAugmentAttribute.update(instance, key, a.amount(), operation, enabled);
-        if (enabled) profile.modifiers.add(a.id());
-        else profile.modifiers.remove(a.id());
+        if (enabled) {
+            boolean added = profile.modifiers.add(a.id());
+            if (added && a.effect() == Effect.SPEED) art.cue(player,a.id());
+        } else profile.modifiers.remove(a.id());
     }
 
     private void removeModifiers(Player player, Profile profile) {

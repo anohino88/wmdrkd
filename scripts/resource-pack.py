@@ -43,7 +43,7 @@ def inputs():
     assert len(rarities) == 84, "Expected 84 augment IDs"
     motifs = dict((fields[0], fields[2]) for line in (SOURCE / "art.tsv").read_text().splitlines()
                   if line and not line.startswith("#") for fields in [line.split("|")])
-    assert len(rarities) + 7 == len(motifs) and set(rarities) <= motifs.keys(), "Artwork coverage differs from the catalog"
+    assert len(rarities) + 19 == len(motifs) and set(rarities) <= motifs.keys(), "Artwork coverage differs from the catalog"
     sources = json.loads(MANIFEST.read_text())["external_assets"]
     outputs = set()
     assert {a["used_by"] for a in sources} == motifs.keys() | SOUNDS, "Missing source provenance"
@@ -133,6 +133,29 @@ def bake(rarities, motifs, sources):
                     tone = factor * (.87 + .13*(x+y)/14)
                     im.putpixel((x,y),tuple(round(p*tone) for p in rgb))
             im.save(path,optimize=True)
+    from PIL import ImageDraw
+    for filled in range(5):
+        key = f"gui/gauge_{filled}"
+        tile = Image.open(ASSETS / "textures/item/gui/gauge.png").convert("RGBA")
+        draw = ImageDraw.Draw(tile)
+        for segment in range(4):
+            x = 10 + segment * 11
+            draw.rectangle((x,49,x+8,55), fill="#ade8d7" if segment < filled else "#404e60")
+        tile.save(ASSETS / f"textures/item/{key}.png",optimize=True)
+        write_json(ASSETS / f"models/item/{key}.json",
+                   {"parent":"minecraft:item/generated","textures":{"layer0":f"augmentwild:item/{key}"}})
+        item(key,f"item/{key}")
+    for key in rarities:
+        motif = motifs[key]
+        model = json.loads((ASSETS / f"models/fx/{motif}.json").read_text())
+        model["textures"]["sigil"] = f"augmentwild:item/augment/{key}"
+        front = min(part["from"][2] for part in model["elements"]) - .25
+        model["elements"].append({"from":[5,5,front],"to":[11,11,front+.05],
+            "faces":{side:{"texture":"#sigil","uv":[0,0,16,16]} for side in ("north","south")}})
+        write_json(ASSETS / f"models/proc/{key}.json",model)
+        item(f"proc/{key}",f"proc/{key}")
+    import runpy
+    runpy.run_path(str(SOURCE / "panels.py"))["bake"](PACK)
     (PACK / "pack.png").write_bytes((ASSETS / "textures/item/gui/menu.png").read_bytes())
     (ROOT / "src/main/resources/art-motifs.properties").write_text(
         "".join(f"{key}={value}\n" for key,value in sorted(motifs.items()) if key in rarities))
@@ -141,7 +164,8 @@ def bake(rarities, motifs, sources):
 def verify(rarities, motifs, sources):
     assert json.loads((PACK / "pack.mcmeta").read_text()) == PACK_METADATA
     keys = {f"augment/{key}" if key in rarities else key for key in motifs}
-    keys |= {f"fx/{key}" for key in PALETTE}
+    keys |= {f"fx/{key}" for key in PALETTE} | {f"proc/{key}" for key in rarities}
+    keys |= {f"gui/gauge_{filled}" for filled in range(5)}
     models = {p.relative_to(ASSETS / "items").with_suffix("").as_posix() for p in (ASSETS / "items").rglob("*.json")}
     assert models == keys, models ^ keys
     for key in keys:
@@ -150,10 +174,30 @@ def verify(rarities, motifs, sources):
         model = json.loads((ASSETS / "models" / (definition["model"].removeprefix("augmentwild:")+".json")).read_text())
         for texture in model["textures"].values():
             assert (ASSETS / f"textures/{texture.removeprefix('augmentwild:')}.png").read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+        if key.startswith("proc/"):
+            augment = key.split("/")[1]
+            family = json.loads((ASSETS / f"models/fx/{motifs[augment]}.json").read_text())
+            assert model["elements"][:-1] == family["elements"]
+            assert model["textures"]["sigil"] == f"augmentwild:item/augment/{augment}"
+            glyph = model["elements"][-1]
+            assert 0 <= glyph["from"][2] < glyph["to"][2] < min(e["from"][2] for e in family["elements"])
         if key.startswith("fx"):
             assert 1 <= len(model["elements"]) <= 32
             for part in model["elements"]:
                 assert all(0 <= a < b <= 16 for a,b in zip(part["from"],part["to"])), (key,part)
+                assert set(part["faces"]) == {"north","south","east","west","up","down"}
+                assert all(face["texture"][1:] in model["textures"] for face in part["faces"].values())
+            assert len({tuple(part["from"] + part["to"]) for part in model["elements"]}) == len(model["elements"])
+    screens = json.loads((SOURCE / "screens.json").read_text())
+    providers = json.loads((ASSETS / "font/interface.json").read_text())["providers"]
+    assert len(screens) == 12 and len(providers) == 13
+    for index, (screen, (rows, _, slots)) in enumerate(screens.items()):
+        provider = providers[index + 1]
+        assert all(0 <= slot < rows * 9 for slot in slots)
+        assert provider["chars"] == [chr(0xe010 + index)] and provider["height"] == 18 * rows + 18
+        assert provider["file"] == f"augmentwild:gui/panels/{screen}.png"
+        data = (ASSETS / f"textures/gui/panels/{screen}.png").read_bytes()
+        assert (int.from_bytes(data[16:20],"big"), int.from_bytes(data[20:24],"big")) == (176,provider["height"])
     assert len({hashlib.sha256((ASSETS / f"textures/item/augment/{key}.png").read_bytes()).digest()
                 for key in rarities}) == 84, "Icons must be distinct"
     assert json.loads((ASSETS / "sounds.json").read_text()) == {key: {"sounds":[f"augmentwild:{key}"]} for key in SOUNDS}
