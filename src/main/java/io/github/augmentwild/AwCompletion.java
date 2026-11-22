@@ -17,10 +17,10 @@ final class AwCompletion implements TabCompleter {
     private static final List<String> PLAYER = List.of(
             "menu", "join", "leave", "status", "augment", "augments", "ui", "combatlog",
             "supply", "result", "scout", "death", "skill", "cast");
-    private static final List<String> SKILL = List.of("bind", "select", "next", "unbind", "use", "status");
+    private static final List<String> SKILL = List.of("bind", "select", "next", "unbind", "use", "status","menu");
     private static final List<String> LAB = List.of(
             "status", "start", "solo", "presets", "preset", "grant", "remove",
-            "list", "clear", "report", "reset", "progress", "health");
+            "list", "clear", "report", "reset", "progress", "health","preview","advance","dummy","cast","gear","heal","shield","cooldowns");
     private final PaperMatchService matches;
 
     AwCompletion(PaperMatchService matches) { this.matches = matches; }
@@ -66,7 +66,10 @@ final class AwCompletion implements TabCompleter {
                 choices = List.of("preview");
             } else if (args[1].equalsIgnoreCase("test") && lab) {
                 if (args.length == 3) choices = LAB;
-                else if (args.length == 4 && List.of("preset", "grant", "remove", "list",
+                else if (args.length == 4 && args[2].equalsIgnoreCase("dummy"))
+                    choices = List.of("stationary","moving","high","shield","clear","report");
+                else if (args.length == 4 && args[2].equalsIgnoreCase("preview")) choices = matches.registeredAugments();
+                else if (args.length == 4 && List.of("cooldowns","cast","gear","heal","shield","preset", "grant", "remove", "list",
                         "clear", "report", "reset", "progress", "health").contains(args[2].toLowerCase(Locale.ROOT))) {
                     choices = Bukkit.getOnlinePlayers().stream().map(Player::getName).toList();
                 } else if (args.length == 5) {

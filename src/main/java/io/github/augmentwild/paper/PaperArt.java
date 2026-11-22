@@ -1,6 +1,7 @@
 package io.github.augmentwild.paper;
 
 import io.github.augmentwild.augment.AugmentDefinition;
+import io.github.augmentwild.augment.EffectGeometry;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -264,7 +265,10 @@ public final class PaperArt implements Listener {
     }
 
     private void showProc(Player player, String id, String motif, boolean simple) {
-        var at = near(player);
+        showProc(player,id,motif,simple,near(player));
+    }
+
+    private void showProc(Player player,String id,String motif,boolean simple,Location at) {
         if (!noVisual.contains(id) && !simple && PlayerUi.quality(player) != PlayerUi.Quality.LOW && loaded.contains(player.getUniqueId()) && displaysAvailable) {
             render(player,at,"proc/" + id,CASTS.getOrDefault(id,MOTIONS.getOrDefault(motif,PULSE)));
         } else if (!noVisual.contains(id) && PlayerUi.enabled(player,PlayerUi.Option.PARTICLES)) {
@@ -322,7 +326,14 @@ public final class PaperArt implements Listener {
         String motif = motifs.getProperty(id);
         if (motif != null) {
             nextCue.put(player.getUniqueId(),tick + 12);
-            showProc(player,id,motif,false);
+            var at = switch (id) {
+                case "earthquake_mage", "void_lord" -> origin.clone().add(0,.35,0);
+                case "shadow_dash","time_rewind","calamity_giant" -> destination.clone().add(0,.45,0);
+                default -> near(player);
+            };
+            showProc(player,id,motif,false,at);
+            if (!noVisual.contains(id) && PlayerUi.quality(player).ordinal() >= PlayerUi.Quality.HIGH.ordinal())
+                path(player,at,geometry(motif),.85,.65,Particle.ENCHANTED_HIT);
         }
     }
 
@@ -352,7 +363,7 @@ public final class PaperArt implements Listener {
         }
         try {
             var at = source.clone().add(0,moving ? 0 : .5,0);
-            if (previous == null || !previous.model.isValid()) {
+            if (previous == null || !previous.model.isValid() || !previous.source.getWorld().equals(at.getWorld())) {
                 endField(key);
                 if (displayCount() >= MAX_DISPLAYS) return;
                 var model = spawn(at,"proc/" + effect,fieldPose(moving));
@@ -362,9 +373,14 @@ public final class PaperArt implements Listener {
                 return;
             }
             var model = previous.model;
-            if (moving && previous.source.distanceSquared(at) > .01) {
-                model.setTeleportDuration(1);
-                model.teleport(at);
+            Location anchor = previous.source;
+            if (previous.source.distanceSquared(at) > .01) {
+                model.setTeleportDuration(moving ? 1 : 0);
+                if (!model.teleport(at)) {
+                    endField(key);
+                    return;
+                }
+                anchor = at;
             }
             if (tick % 4 == 0) {
                 model.setInterpolationDelay(0);
@@ -372,7 +388,7 @@ public final class PaperArt implements Listener {
                 model.setTransformation(fieldPose(moving));
                 displayUpdates++;
             }
-            fields.put(key,new Field(model,at,tick));
+            fields.put(key,new Field(model,anchor,tick));
         } catch (RuntimeException failure) {
             disableDisplays(failure);
         }
@@ -422,6 +438,30 @@ public final class PaperArt implements Listener {
         if (states.isEmpty()) auras.remove(owner);
     }
 
+    private static EffectGeometry geometry(String motif) {
+        return switch (motif) {
+            case "blade","rush" -> EffectGeometry.CRESCENT;
+            case "bolt","fire" -> EffectGeometry.HELIX;
+            case "ward" -> EffectGeometry.FRACTURE;
+            case "impact" -> EffectGeometry.SHOCKWAVE;
+            case "time" -> EffectGeometry.REWIND;
+            case "void","blood" -> EffectGeometry.CONVERGE;
+            case "frost" -> EffectGeometry.SHARDS;
+            default -> EffectGeometry.ORBIT;
+        };
+    }
+
+    private void path(Player viewer,Location center,EffectGeometry shape,double size,double t,Particle particle) {
+        int count = PlayerUi.quality(viewer).samples;
+        double yaw = Math.toRadians(-viewer.getLocation().getYaw());
+        double sin = Math.sin(yaw), cos = Math.cos(yaw);
+        for (int i = 0; i < count; i++) {
+            var point = shape.sample(i,count,t);
+            spark(viewer,center.clone().add(size*(point.x()*cos + point.z()*sin),size*point.y(),
+                    size*(point.z()*cos - point.x()*sin)),particle);
+        }
+    }
+
     void impact(Player viewer, String id, Location at) {
         String motif = motifs.getProperty(id,id);
         Particle particle = switch (motif) {
@@ -430,7 +470,7 @@ public final class PaperArt implements Listener {
             case "bolt","time" -> Particle.ELECTRIC_SPARK;
             default -> Particle.END_ROD;
         };
-        ring(viewer,at,.68,particle,false);
+        path(viewer,at,geometry(motif),.8,.8,particle);
     }
 
     void link(Player viewer, Location start, Location end, Particle particle) {
@@ -489,6 +529,8 @@ public final class PaperArt implements Listener {
         if (!visible || pack == null || !loaded.contains(player.getUniqueId())) return;
         String motif = SIGNATURES.getOrDefault(id,motifs.getProperty(id,"growth"));
         render(player,near(player),motif,GROWTH.getOrDefault(id,PULSE));
+        if (PlayerUi.quality(player).ordinal() >= PlayerUi.Quality.HIGH.ordinal())
+            path(player,near(player),geometry(motif),.7,.6,Particle.END_ROD);
     }
 
     void supply(Location at, boolean premium) {

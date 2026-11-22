@@ -384,7 +384,7 @@ public final class PaperMatchService implements Listener {
             case "progress" -> 4;
             default -> 0;
         };
-        if (length == 0 || args.length != length) return "사용법: /aw admin test <status|start|solo|grant|remove|list|clear|progress|report|reset|health|presets|preset|preview>";
+        if (length == 0 || args.length != length) return "사용법: /aw admin test <status|start|solo|preview|dummy|advance|grant|remove|cast|progress|preset|cooldowns|gear|heal|health|shield|list|clear|report|reset|presets>";
         Player player = plugin.getServer().getPlayerExact(args[1]);
         if (player == null || !labParticipant(player) || !augmentActive(player)
                 || !labWorld.equals(player.getWorld().getUID())) return "살아 있는 테스트 참가자를 지정하세요.";

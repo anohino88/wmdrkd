@@ -6,6 +6,20 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class CombatConvenienceTest {
+    @Test void decorativePathsRemainBoundedAndHaveDistinctSilhouettes() {
+        var signatures = new java.util.HashSet<java.util.List<EffectGeometry.Point>>();
+        for (var shape : EffectGeometry.values()) {
+            var samples = new java.util.ArrayList<EffectGeometry.Point>();
+            for (int index=0; index<16; index++) {
+                var point = shape.sample(index,16,.65);
+                assertTrue(Math.abs(point.x()) <= 1 && Math.abs(point.y()) <= 1 && Math.abs(point.z()) <= 1);
+                samples.add(point);
+            }
+            assertTrue(signatures.add(samples));
+        }
+        assertThrows(IllegalArgumentException.class,() -> EffectGeometry.HELIX.sample(0,0,.5));
+    }
+
     @Test void acquisitionFillsHolesWithoutChangingSelectionOrReplacingSkills() {
         var slots = new SkillSlots();
         slots.select(3);

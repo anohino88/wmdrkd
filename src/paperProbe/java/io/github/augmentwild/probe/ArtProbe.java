@@ -131,6 +131,35 @@ final class ArtProbe {
             var metrics = PaperArt.class.getDeclaredMethod("metrics");
             metrics.setAccessible(true);
             Bukkit.getLogger().info("AW_ART_SUSTAIN ticks=1200 created=1 remaining=0 " + metrics.invoke(art));
+            for (int count : java.util.List.of(2,4,8,16)) {
+                clear.invoke(art);
+                observed.clear();
+                var viewers = new java.util.ArrayList<Player>();
+                for (int v = 0; v < count; v++) {
+                    UUID uuid = UUID.randomUUID();
+                    var viewer = (Player) Proxy.newProxyInstance(Player.class.getClassLoader(),new Class<?>[]{Player.class},
+                            (obj,method,argv) -> method.getName().equals("getUniqueId") ? uuid
+                                    : Proxy.getInvocationHandler(p).invoke(p,method,argv));
+                    art.status(new PlayerResourcePackStatusEvent(viewer,id,Status.SUCCESSFULLY_LOADED));
+                    viewers.add(viewer);
+                }
+                var measured = new long[100];
+                for (int frame = 0; frame < measured.length; frame++) {
+                    long start = System.nanoTime();
+                    for (var viewer : viewers) cue.invoke(art,viewer,"shadow_dash");
+                    tick.invoke(art);
+                    measured[frame] = System.nanoTime() - start;
+                    require(observed.stream().filter(ItemDisplay::isValid).count() <= 24);
+                }
+                String counters = (String)metrics.invoke(art);
+                clear.invoke(art);
+                require(observed.stream().noneMatch(ItemDisplay::isValid));
+                java.util.Arrays.sort(measured);
+                Bukkit.getLogger().info(String.format(java.util.Locale.ROOT,
+                        "AW_ART_LOAD viewers=%d adapter_frames=%d mean_us=%.2f p95_us=%.2f p99_us=%.2f max_us=%.2f %s after_clear=0",
+                        count,measured.length,java.util.Arrays.stream(measured).average().orElseThrow()/1000,
+                        measured[94]/1000d,measured[98]/1000d,measured[99]/1000d,counters));
+            }
             storage.remove(qualityKey);
             require(cycles == 336);
             Bukkit.getLogger().info("AW_ART_LIFECYCLE_PASS models=84 variable_timing=true remaining=0");
