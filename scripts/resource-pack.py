@@ -35,6 +35,12 @@ def write_json(path, data):
     path.write_text(json.dumps(data, ensure_ascii=False, separators=(",",":")) + "\n", encoding="utf-8")
 
 
+def skill_font():
+    skills = ("bomb_alchemy","calamity_giant","duel_contract","earthquake_mage","shadow_dash","time_rewind","void_lord")
+    return {"providers":[{"type":"bitmap","file":f"augmentwild:item/augment/{skill}.png","height":8,
+                          "ascent":7,"chars":[chr(0xe100 + i)]} for i,skill in enumerate(skills)]}
+
+
 def inputs():
     resources = ROOT / "src/main/resources"
     official = (resources / "official-augments.yml").read_text().split("\nsettings:")[0]
@@ -247,6 +253,10 @@ def main():
     data = inputs()
     if args.bake:
         bake(*data)
+    font = ASSETS / "font/skills.json"
+    if args.bake:
+        write_json(font, skill_font())
+    assert json.loads(font.read_text()) == skill_font()
     verify(*data)
     package(args.output)
 

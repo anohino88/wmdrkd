@@ -8,7 +8,7 @@ public final class SkillSlots {
 
     public int selected() { return selected; }
     public String current() { return at(selected); }
-    public String at(int slot) { return bindings[slot - 1]; }
+    public String at(int slot) { return slot >= 1 && slot <= COUNT ? bindings[slot - 1] : null; }
 
     public boolean select(int slot) {
         if (slot < 1 || slot > COUNT) return false;
@@ -21,6 +21,23 @@ public final class SkillSlots {
         remove(id);
         bindings[slot - 1] = id;
         return true;
+    }
+
+    /** Return the assigned slot, or zero when this acquisition did not change a binding. */
+    public int autoBind(String id) {
+        if (id == null) return 0;
+        int empty = 0;
+        boolean first = true;
+        for (int slot = 1; slot <= COUNT; slot++) {
+            if (id.equals(at(slot))) return 0;
+            if (at(slot) != null) first = false;
+            else if (empty == 0) empty = slot;
+        }
+        if (empty != 0) {
+            bindings[empty - 1] = id;
+            if (first) selected = empty;
+        }
+        return empty;
     }
 
     public void remove(String id) {

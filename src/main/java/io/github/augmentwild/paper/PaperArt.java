@@ -9,6 +9,7 @@ import java.util.function.Predicate;
 import net.kyori.adventure.resource.ResourcePackInfo;
 import net.kyori.adventure.resource.ResourcePackRequest;
 import net.kyori.adventure.text.Component;
+import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
@@ -35,7 +36,7 @@ public final class PaperArt implements Listener {
     private static final float[] GROW = {.3f, 1.45f, .25f};
     private static final float[] SWEEP = {.35f, 1.7f, .5f};
     private static final float[] HOLD = {.45f, 1.2f, .85f};
-    private static final int STEP_TICKS = 6;
+    private final Map<UUID,Integer> particleUnits = new HashMap<>();
     private static final int MAX_DISPLAYS = 24;
     private final JavaPlugin plugin;
     private final Predicate<Player> playable;
@@ -55,7 +56,10 @@ public final class PaperArt implements Listener {
 
     private record Animation(Player viewer, ItemDisplay entity, Location at, long began, Motion motion) {}
     private record Marker(ItemDisplay entity, Set<UUID> viewers) {}
-    private record Motion(float[] scales, float rise, float spin, float travel) {}
+    private record Motion(float[] scales, float rise, float spin, float travel) {
+        int attack() { return scales == SWEEP ? 3 : scales == HOLD ? 5 : 4; }
+        int release() { return scales == SWEEP ? 5 : scales == HOLD ? 10 : 7; }
+    }
     private static final Motion PULSE = new Motion(GROW,.2f,1.4f,0);
     private static final Motion ARRIVE = new Motion(HOLD,-.55f,1.6f,0);
     private static final Map<String, Motion> CASTS = Map.of(
@@ -92,6 +96,15 @@ public final class PaperArt implements Listener {
             Map.entry("rush",new Motion(SWEEP,.15f,.65f,1.1f)), Map.entry("void",new Motion(GROW,-.3f,-2.4f,-.2f)),
             Map.entry("blood",new Motion(HOLD,.4f,.7f,-.3f)), Map.entry("growth",new Motion(GROW,.65f,.4f,0)),
             Map.entry("time",new Motion(HOLD,.28f,-2.5f,-.15f)), Map.entry("rune",PULSE));
+    private static final List<String> GLYPHS = List.of("bomb_alchemy","calamity_giant","duel_contract",
+            "earthquake_mage","shadow_dash","time_rewind","void_lord");
+
+    Component slotIcon(Player player, String id) {
+        int index = GLYPHS.indexOf(id);
+        if (index < 0 || !loaded.contains(player.getUniqueId())) return Component.empty();
+        return Component.text(String.valueOf((char)(0xe100 + index))).font(Key.key("augmentwild:skills"));
+    }
+
     Component title(Player p, Screen screen, String label) {
         if (!loaded.contains(p.getUniqueId())) return Component.text(label);
         String panel = "\ue000" + (char)(0xe010 + screen.ordinal()) + "\ue001";
@@ -244,7 +257,7 @@ public final class PaperArt implements Listener {
 
     private void showProc(Player player, String id, String motif, boolean simple) {
         var at = near(player);
-        if (!noVisual.contains(id) && !simple && loaded.contains(player.getUniqueId()) && displaysAvailable) {
+        if (!noVisual.contains(id) && !simple && PlayerUi.quality(player) != PlayerUi.Quality.LOW && loaded.contains(player.getUniqueId()) && displaysAvailable) {
             render(player,at,"proc/" + id,CASTS.getOrDefault(id,MOTIONS.getOrDefault(motif,PULSE)));
         } else if (!noVisual.contains(id) && PlayerUi.enabled(player,PlayerUi.Option.PARTICLES)) {
             Particle particle = switch (motif) {
@@ -274,12 +287,40 @@ public final class PaperArt implements Listener {
         render(p,near(p),"proc/" + id,motion);
     }
 
-    void cast(Player player, String id) {
+    void cast(Player player, String id, Location origin) {
+        Location destination = player.getLocation();
+        if (id.equals("shadow_dash") && destination.getWorld().equals(origin.getWorld())) {
+            var path = destination.toVector().subtract(origin.toVector());
+            int steps = Math.min(12, (int)Math.ceil(path.length()));
+            for (int i = 0; i < steps; i++)
+                spark(player, origin.clone().add(path.clone().multiply((double)i / steps)).add(0,.75,0), Particle.REVERSE_PORTAL);
+        }
+
         String motif = motifs.getProperty(id);
         if (motif != null) {
             nextCue.put(player.getUniqueId(),tick + 12);
             showProc(player,id,motif,false);
         }
+    }
+
+    // Owner-only decoration. Never used to resolve a hit or select a target.
+    void ring(Player viewer, Location center, double radius, Particle material, boolean closing) {
+        int samples = PlayerUi.quality(viewer).samples;
+        for (int i = 0; i < samples; i++) {
+            double angle = Math.PI * 2 * i / samples + (closing ? -.16 : .16) * tick;
+            spark(viewer, center.clone().add(radius * Math.cos(angle), .18, radius * Math.sin(angle)), material);
+        }
+    }
+
+    private void spark(Player viewer, Location at, Particle particle) {
+        if (!viewer.getWorld().equals(at.getWorld()) || viewer.getLocation().distanceSquared(at) > 32*32
+                || !PlayerUi.enabled(viewer,PlayerUi.Option.PARTICLES)) return;
+        int used = particleUnits.getOrDefault(viewer.getUniqueId(),0);
+        int budget = PlayerUi.quality(viewer).samples * 2;
+        if (Bukkit.getAverageTickTime() > 45) budget = Math.min(budget,4);
+        if (used >= budget) return;
+        particleUnits.put(viewer.getUniqueId(),used + 1);
+        viewer.spawnParticle(particle,at,1,0,0,0,0);
     }
 
     List<String> previewKeys() {
@@ -418,11 +459,12 @@ public final class PaperArt implements Listener {
         return new Transformation(new Vector3f((float)direction.getX()*motion.travel()*t,motion.rise()*t,
                 (float)direction.getZ()*motion.travel()*t),
                 new Quaternionf().rotationY((float)Math.toRadians(-at.getYaw()) + motion.spin()*t),
-                new Vector3f(motion.scales()[frame]), new Quaternionf());
+                new Vector3f(motion.scales()[frame], motion.scales()[frame] * (motion.scales() == SWEEP && frame == 1 ? .55f : 1f), motion.scales()[frame]), new Quaternionf());
     }
 
     void tick() {
         tick++;
+        particleUnits.clear();
         if (cues.isEmpty()) return;
         try {
             cues.entrySet().removeIf(entry -> {
@@ -430,14 +472,14 @@ public final class PaperArt implements Listener {
                 long age = tick - animation.began();
                 var entity = animation.entity();
                 Player player = animation.viewer();
-                if (age >= STEP_TICKS * 2 + 1 || !entity.isValid() || !player.isOnline() || !playable.test(player)
+                if (age >= animation.motion().attack() + animation.motion().release() + 1 || !entity.isValid() || !player.isOnline() || !playable.test(player)
                         || !player.getWorld().equals(animation.at().getWorld())
                         || !PlayerUi.enabled(player,PlayerUi.Option.PARTICLES)) {
                     entity.remove();
                     return true;
                 }
-                if (age == 1 || age == STEP_TICKS + 1) {
-                    entity.setInterpolationDuration(STEP_TICKS);
+                if (age == 1 || age == animation.motion().attack() + 1) {
+                    entity.setInterpolationDuration(age == 1 ? animation.motion().attack() : animation.motion().release());
                     entity.setInterpolationDelay(0);
                     entity.setTransformation(pose(animation.at(),animation.motion(),age == 1 ? 1 : 2));
                 }
@@ -472,6 +514,7 @@ public final class PaperArt implements Listener {
     void clear() {
         cues.values().forEach(animation -> animation.entity().remove());
         cues.clear();
+        particleUnits.clear();
         nextCue.clear();
         supply.values().forEach(marker -> marker.entity().remove());
         supply.clear();

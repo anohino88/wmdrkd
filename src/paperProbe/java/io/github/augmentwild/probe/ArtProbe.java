@@ -77,11 +77,17 @@ final class ArtProbe {
                 require(display.getItemStack().getItemMeta().getItemModel().getKey().equals("proc/" + key));
                 cue.invoke(art,p,key);
                 require(shown[0] == display);
-                for (int i = 0; i < 12; i++) tick.invoke(art);
-                require(display.isValid() && display.getInterpolationDuration() == 6);
+                tick.invoke(art);
+                int attack = display.getInterpolationDuration();
+                require(attack >= 3 && attack <= 5);
+                for (int i = 1; i <= attack; i++) tick.invoke(art);
+                int release = display.getInterpolationDuration();
+                require(release > attack);
+                for (int i = 1; i < release; i++) tick.invoke(art);
+                require(display.isValid());
                 tick.invoke(art);
                 require(!display.isValid());
-                for (int i = 13; i < 20; i++) tick.invoke(art);
+                for (int i = attack + release + 1; i < 20; i++) tick.invoke(art);
             }
             preview.invoke(art,p,"model/premium",false);
             require(shown[0].isValid());
@@ -90,7 +96,7 @@ final class ArtProbe {
             shown[0] = null;
             preview.invoke(art,p,"augment/steel_heart",true);
             require(shown[0] == null && particles[0] == 1);
-            Bukkit.getLogger().info("AW_ART_LIFECYCLE_PASS models=84 ticks=13 remaining=0");
+            Bukkit.getLogger().info("AW_ART_LIFECYCLE_PASS models=84 variable_timing=true remaining=0");
         } catch (ReflectiveOperationException | java.io.IOException failure) {
             throw new AssertionError("Paper cosmetic lifecycle",failure);
         }

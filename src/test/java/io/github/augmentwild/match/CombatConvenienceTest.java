@@ -6,6 +6,23 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class CombatConvenienceTest {
+    @Test void acquisitionFillsHolesWithoutChangingSelectionOrReplacingSkills() {
+        var slots = new SkillSlots();
+        slots.select(3);
+        assertEquals(1, slots.autoBind("dash"));
+        assertEquals(1, slots.selected());
+        assertEquals(2, slots.autoBind("rewind"));
+        slots.select(2);
+        assertEquals(0, slots.autoBind("dash"));
+        assertEquals(3, slots.autoBind("bomb"));
+        assertEquals(0, slots.autoBind("void"));
+        assertEquals("rewind", slots.current());
+        slots.remove("dash");
+        assertEquals(1, slots.autoBind("void"));
+        assertEquals("rewind", slots.current());
+        assertNull(slots.at(9));
+    }
+
     @Test void switchingAndMovingBindingsKeepTheFightersLedger() {
         var slots = new SkillSlots();
         var ledger = new AugmentProgress();

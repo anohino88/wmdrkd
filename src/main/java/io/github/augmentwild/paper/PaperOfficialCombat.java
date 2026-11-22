@@ -275,6 +275,16 @@ final class PaperOfficialCombat implements Listener {
     void acquired(UUID id, String augment) {
         if (!catalog.rules.containsKey(augment) || !rule(augment).definition().implemented()) return;
         var state = fighter(id);
+        if (ACTIVE_SKILLS.contains(augment)) {
+            Player owner = plugin.getServer().getPlayer(id);
+            if (owner != null && PlayerUi.enabled(owner, PlayerUi.Option.AUTO_BIND)) {
+                int slot = state.slots.autoBind(augment);
+                if (slot > 0) owner.sendMessage(rule(augment).definition().name() + " · " + slot + "번 슬롯 등록");
+                else if (state.slots.at(1) != null && state.slots.at(2) != null && state.slots.at(3) != null)
+                    owner.sendMessage("스킬 슬롯이 가득 찼습니다. 빠른 메뉴의 스킬 설정에서 교체하세요.");
+                state.hudSecond = -1;
+            }
+        }
         if (augment.equals("overgrowth")) {
             state.acquiredGrowth = now();
             state.overgrowthAward = now() >= catalog.count("overgrowth-late-second")
@@ -1429,7 +1439,7 @@ final class PaperOfficialCombat implements Listener {
         if (state.hudSecond == now() && state.hudAvailable == available) return;
         state.hudAvailable = available;
         state.hudSecond = now();
-        var lines = slotLines(player,state,false);
+        var lines = slotLines(player,state,true);
         String current = state.slots.current();
         boolean cooling = current != null && !state.progress.ready(current,now());
         if (!cooling && current != null && current.equals(state.coolingSkill))
@@ -1454,8 +1464,17 @@ final class PaperOfficialCombat implements Listener {
             if (!automatic.isEmpty()) hud.set(player.getUniqueId(),Layer.AUTO,net.kyori.adventure.text.Component.text("자동 · " + String.join(" | ",automatic)));
             else hud.remove(player.getUniqueId(),Layer.AUTO);
         }
-        if (lines.isEmpty()) hud.remove(player.getUniqueId(), Layer.SKILL);
-        else hud.set(player.getUniqueId(), Layer.SKILL, net.kyori.adventure.text.Component.text(String.join(" · ", lines)));
+        if (state.slots.at(1) == null && state.slots.at(2) == null && state.slots.at(3) == null) hud.remove(player.getUniqueId(), Layer.SKILL);
+        else {
+            var message = net.kyori.adventure.text.Component.text();
+            for (int slot = 1; slot <= SkillSlots.COUNT; slot++) {
+                if (slot > 1) message.append(net.kyori.adventure.text.Component.text(" · "));
+                String id = state.slots.at(slot);
+                if (id != null) message.append(art.slotIcon(player,id));
+                message.append(net.kyori.adventure.text.Component.text(lines.get(slot - 1)));
+            }
+            hud.set(player.getUniqueId(),Layer.SKILL,message.build());
+        }
     }
 
     private String reactionProgress(UUID owner, String id, CombatReaction state) {
@@ -1480,6 +1499,18 @@ final class PaperOfficialCombat implements Listener {
             if (id.equals("time_rewind") && state.history.stream().noneMatch(h -> h.second() == now()-rule(id).threshold())) status = "기록 대기";
         }
         return rule(id).definition().name() + " · " + status;
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void selectWithHotbar(org.bukkit.event.player.PlayerItemHeldEvent event) {
+        Player player = event.getPlayer();
+        if (!player.isSneaking() || !valid(player) || !PlayerUi.enabled(player, PlayerUi.Option.HOTBAR)) return;
+        Fighter state = fighters.get(player.getUniqueId());
+        int slot = event.getNewSlot() + 1;
+        if (state == null || state.slots.selected() == slot || state.slots.at(slot) == null) return;
+        state.slots.select(slot);
+        state.hudSecond = -1;
+        hud.skillInput(player, slot + " · " + skillStatus(player, state, state.slots.current()));
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -1549,7 +1580,7 @@ final class PaperOfficialCombat implements Listener {
         };
         ready(player, state, id);
         state.hudSecond = -1;
-        art.cast(player,id);
+        art.cast(player,id,before);
         announceProc(player, id);
         state.skillUses++;
         return rule(id).definition().name() + " 발동";
@@ -1600,7 +1631,12 @@ final class PaperOfficialCombat implements Listener {
                         zone.damage(), target -> { }));
                 particle(player, state, Particle.EXPLOSION, zone.start().clone().add(0, 1, 0));
             }
-            if (second >= zone.expiresAt()) iterator.remove();
+            boolean expires = second >= zone.expiresAt();
+            if (zone.augment().equals("void_lord")) {
+                double radius = catalog.setting("void-radius");
+                art.ring(player,zone.start(),expires ? radius * .25 : radius,Particle.REVERSE_PORTAL,expires);
+            }
+            if (expires) iterator.remove();
         }
     }
 
@@ -1664,6 +1700,7 @@ final class PaperOfficialCombat implements Listener {
         event.setCancelled(true);
         removeBomb(state);
         if (!valid(player) || !safe.test(point)) return;
+        art.ring(player,point,catalog.setting("bomb-area-radius"),Particle.FLAME,false);
         state.zones.add(new Zone("bomb_alchemy", point, point, now() + rule("bomb_alchemy").duration(),
                 rule("bomb_alchemy").amount()));
         afterDamage(player, () -> area(player, point, catalog.setting("bomb-area-radius"), "bomb_alchemy",

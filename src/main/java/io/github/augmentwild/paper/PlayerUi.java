@@ -14,7 +14,8 @@ public final class PlayerUi implements Listener {
         HEALTH("상대 체력바"), DAMAGE("피해량 표시"), SIDEBAR("경기 사이드바"), SKILL("스킬 상태"),
         PROC("증강 발동 알림"), PARTICLES("강조 파티클"), SOUND("효과음"), FEED("킬 피드"), SUPPLY("보급 안내"),
         INCOMING("피격 방향"), STATUS("상태 효과"), BORDER("자기장 경고"), CRISIS("생존 위기"),
-        GROWTH("진화와 시너지"), KILL_FX("처치 연출"), AUTO("자동 발동 상태");
+        GROWTH("진화와 시너지"), KILL_FX("처치 연출"), AUTO("자동 발동 상태"),
+        HOTBAR("웅크리기 + 핫바 1~3 스킬 선택"), AUTO_BIND("빈 슬롯에 스킬 자동 등록");
         final String title;
         final NamespacedKey key;
         Option(String title) {
@@ -24,6 +25,21 @@ public final class PlayerUi implements Listener {
     }
     public static boolean enabled(Player player, Option option) {
         return !player.getPersistentDataContainer().has(option.key, PersistentDataType.BYTE);
+    }
+    enum Quality {
+        LOW(4), STANDARD(8), HIGH(12), ULTRA(16);
+        final int samples;
+        Quality(int samples) { this.samples = samples; }
+    }
+    private static final NamespacedKey QUALITY = new NamespacedKey("augmentwild","art_quality");
+    static Quality quality(Player p) {
+        String value = p.getPersistentDataContainer().getOrDefault(QUALITY, PersistentDataType.STRING, "STANDARD");
+        try { return Quality.valueOf(value); }
+        catch (IllegalArgumentException ignored) { return Quality.STANDARD; }
+    }
+    private static void qualityButton(Player p, Menu menu) {
+        menu.inventory.setItem(24,PaperIntel.item(PaperIntel.card(Material.AMETHYST_SHARD,
+                "연출 품질 · " + quality(p), "클릭 · 다음 단계")));
     }
     private static final NamespacedKey FAVORITES = new NamespacedKey("augmentwild", "favorite_augments");
     public static Set<String> favorites(Player player) {
@@ -68,6 +84,7 @@ public final class PlayerUi implements Listener {
         menu.inventory.setItem(20, PaperIntel.item(PaperIntel.card(Material.IRON_SWORD, "전투 집중", "전투 HUD 중심 · 파티클 및 효과음 최소화")));
         menu.inventory.setItem(22, PaperIntel.item(PaperIntel.card(Material.GLASS_PANE, "최소 표시", "체력·피해·스킬·위험 경고만 표시")));
         if (art != null) menu.inventory.setItem(18,art.icon(p,menu.inventory.getItem(18),"gui/settings"));
+        qualityButton(p,menu);
         menu.inventory.setItem(26, PaperIntel.item(PaperIntel.card(Material.ARROW, "빠른 메뉴로 돌아가기")));
         if (art != null) art.button(p,menu.inventory,26,"previous");
         p.openInventory(menu.inventory);
@@ -87,6 +104,7 @@ public final class PlayerUi implements Listener {
                 Option.PROC, Option.INCOMING, Option.STATUS, Option.BORDER, Option.CRISIS,
                 Option.GROWTH, Option.AUTO, Option.FEED);
         for (var option : Option.values()) {
+            if (option == Option.HOTBAR || option == Option.AUTO_BIND) continue;
             boolean show = switch (preset) {
                 case ALL -> true;
                 case COMBAT -> combat.contains(option);
@@ -126,6 +144,13 @@ public final class PlayerUi implements Listener {
         if (cancelled) return;
         if (!menu.settings || slot < 0 || !(e.getWhoClicked() instanceof Player p)
                 || !p.getUniqueId().equals(menu.owner)) return;
+        if (slot == 24) {
+            var levels = Quality.values();
+            var next = levels[(quality(p).ordinal() + 1) % levels.length];
+            p.getPersistentDataContainer().set(QUALITY,PersistentDataType.STRING,next.name());
+            qualityButton(p,menu);
+            return;
+        }
         if (slot == 26) {
             var plugin = Bukkit.getPluginManager().getPlugin("AugmentWild");
             if (plugin != null) Bukkit.getScheduler().runTask(plugin, () -> {
