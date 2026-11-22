@@ -198,6 +198,7 @@ public final class ArenaSearchService implements Listener {
         task = null;
         if (scan != null) {
             scan.report("CANCELLED");
+            scan.releaseTickets();
             scan.pending.values().forEach(this::drain);
         }
         scan = null;
@@ -256,6 +257,7 @@ public final class ArenaSearchService implements Listener {
         private final List<Arena> occupied = new ArrayList<>();
         private final Map<Cell, CompletableFuture<Chunk>> pending = new LinkedHashMap<>();
         private final LinkedHashSet<Cell> retried = new LinkedHashSet<>();
+        private final LinkedHashSet<Cell> tickets = new LinkedHashSet<>();
         private final List<Location> spawns = new ArrayList<>();
         private final Map<String,Integer> rejected = new LinkedHashMap<>();
         private final long started = System.nanoTime();
@@ -358,15 +360,20 @@ public final class ArenaSearchService implements Listener {
                     return false;
                 }
                 if (!world.isChunkLoaded(chunk.getX(),chunk.getZ())) {
+                    release(cell);
                     if (!retried.add(cell)) {
                         reject("검사 전 청크 언로드");
                         return false;
                     }
-                    pending.put(cell,world.getChunkAtAsync(cell.x(),cell.z(),generate));
-                    chunkRequests++;
+                    requestChunk(cell);
                     break;
                 }
-                boolean safe = inspect(chunk);
+                boolean safe;
+                try {
+                    safe = inspect(chunk);
+                } finally {
+                    release(cell);
+                }
                 long burst = System.nanoTime() - inspectionStart;
                 maxInspectionBurst = Math.max(maxInspectionBurst,burst);
                 if (!safe) {
@@ -405,11 +412,30 @@ public final class ArenaSearchService implements Listener {
             }
             for (int issued = 0; issued < pipeline && next < cells.size() && pending.size() < pipeline; issued++) {
                 var cell = cells.get(next++);
-                pending.put(cell, world.getChunkAtAsync(cell.x(),cell.z(),generate));
-                chunkRequests++;
-                peakPending = Math.max(peakPending, pending.size());
+                requestChunk(cell);
             }
             return false;
+        }
+
+        private void requestChunk(Cell cell) {
+            // Paper holds the loaded chunk in this completion callback. Keep it available until
+            // the budgeted inspection tick, which can be too late for Paper's temporary ticket.
+            var request = world.getChunkAtAsync(cell.x(),cell.z(),generate).thenApply(chunk -> {
+                if (chunk != null && scan == this && !cells.isEmpty()
+                        && world.addPluginChunkTicket(cell.x(),cell.z(),plugin)) tickets.add(cell);
+                return chunk;
+            });
+            pending.put(cell,request);
+            chunkRequests++;
+            peakPending = Math.max(peakPending,pending.size());
+        }
+
+        private void release(Cell cell) {
+            if (tickets.remove(cell)) world.removePluginChunkTicket(cell.x(),cell.z(),plugin);
+        }
+
+        private void releaseTickets() {
+            for (Cell cell : List.copyOf(tickets)) release(cell);
         }
 
         boolean prepareCandidate() {
@@ -545,6 +571,7 @@ public final class ArenaSearchService implements Listener {
             rejected.merge(reason, 1, Integer::sum);
             // The outstanding batch remains bounded. Drain it before trying another candidate.
             cells = List.of();
+            releaseTickets();
             retried.clear();
             next = 0;
             samples = 0;

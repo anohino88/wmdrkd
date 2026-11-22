@@ -49,6 +49,7 @@ class Client:
         self.failure = None
         self.phase = "login"
         self.position = (0,0,0,0,0)
+        self.loading = True
         self.send(0, varint(PROTOCOL) + string("localhost") + struct.pack(">H", PORT) + varint(2))
         self.send(0, string(self.name) + uuid.UUID(int=number + 1).bytes)
         self.thread = threading.Thread(target=self.read_packets, daemon=True)
@@ -107,8 +108,13 @@ class Client:
         else:
             if packet_id == 0x20:
                 raise RuntimeError("Disconnected during play")
-            if packet_id == 0x49:
+            if packet_id == 0x54:
+                self.loading = True
+            elif packet_id == 0x49:
                 self.accept_teleport(packet)
+                if self.loading:
+                    self.send(0x2C)  # Initial or cross-dimension world loaded.
+                    self.loading = False
                 self.ready.set()
             elif packet_id == 0x2D:
                 self.send(0x1C,packet.read())
@@ -137,7 +143,7 @@ def exercise(command, log):
                 new = handle.read()
             if marker.encode() in new:
                 return True
-            if alternate and alternate.encode() in new:
+            if alternate and any(message.encode() in new for message in alternate):
                 return False
             time.sleep(.05)
         raise RuntimeError(f"Missing after byte {start}: {marker}")
@@ -152,14 +158,14 @@ def exercise(command, log):
             position = log.stat().st_size
             command("aw admin start")
             if wait(f"참가 대상 {count}/16명 (자동 {automatic}명) · 정원 초과 {overflow}명",position,
-                    alternate="이전 경기장 탐색이 정리될 때까지 기다리세요"):
+                    alternate=("이전 경기장 탐색이 정리될 때까지 기다리세요",)):
                 break
             time.sleep(.25)
         else:
             raise RuntimeError("Chunk requests from the aborted search did not settle")
         if practice:
             wait("1인 연습 · 승패 기록 없음", position)
-        if not wait("경기가 시작됐습니다",position,75,alternate="경기 준비가 중단됐습니다"):
+        if not wait("경기가 시작됐습니다",position,75,alternate=("경기 준비가 중단됐습니다","경기장 탐색 실패")):
             raise RuntimeError(log.read_bytes()[position:].decode(errors="replace"))
         expect("aw status",f"경기 단계 GATHERING | 참가자 {count}명")
 
