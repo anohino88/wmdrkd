@@ -134,7 +134,9 @@ final class CombatFeedback implements Listener {
         if (s.owner == null) return;
         if (health > 0) dealt.merge(s.owner.getUniqueId(),health,Double::sum);
         if (s.victim instanceof Player victim && !augments.trace(s.event).synthetic()) {
-            var form = s.blocked || s.shield > 0 ? CombatCinematics.Form.GUARD : CombatCinematics.Form.HIT;
+            var form = s.blocked || s.shield > 0 ? CombatCinematics.Form.GUARD
+                    : s.critical ? CombatCinematics.Form.CRITICAL
+                    : health + abs >= 6 ? CombatCinematics.Form.HEAVY : CombatCinematics.Form.HIT;
             art.combat(s.owner,victim,s.root,"confirmed",form,s.impact,0);
         }
         var key = new CombatView.OriginTarget(s.owner.getUniqueId(),id,s.root);

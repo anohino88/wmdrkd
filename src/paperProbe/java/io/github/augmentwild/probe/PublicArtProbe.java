@@ -178,7 +178,7 @@ final class PublicArtProbe {
             var host = (JavaPlugin) probe.getServer().getPluginManager().getPlugin("AugmentWild");
             var config = host.getConfig();
             String oldUrl = config.getString("art.url"), oldHash = config.getString("art.sha1");
-            String hash = "0123456789012345678901234567890123456789";
+            String hash = ArtProbe.packHash(host);
             packId = UUID.nameUUIDFromBytes(("augmentwild-art:"+hash).getBytes(java.nio.charset.StandardCharsets.UTF_8));
             try {
                 config.set("art.url","https://example.com/augmentwild.zip");

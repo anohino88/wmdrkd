@@ -61,7 +61,7 @@ final class PackInspection {
         connection.setInstanceFollowRedirects(false);
         connection.setConnectTimeout(5000);
         connection.setReadTimeout(5000);
-        connection.setRequestProperty("User-Agent","AugmentWild/7.4 (resource pack validation)");
+        connection.setRequestProperty("User-Agent","AugmentWild/7.6 (resource pack validation)");
         Path archive = Files.createTempFile("augmentwild-pack-", ".zip");
         try {
             int status = connection.getResponseCode();
@@ -166,7 +166,8 @@ final class PackInspection {
                 throw new IOException("스킬 글리프 크기 또는 텍스처 참조 오류");
         }
         var sounds = JsonParser.parseString(smallText(zip,ASSETS + "sounds.json")).getAsJsonObject();
-        for (String effect : Set.of("cast","evolve","supply")) {
+        if (!sounds.keySet().containsAll(Set.of("cast","evolve","supply"))) throw new IOException("기본 효과음 정의 누락");
+        for (String effect : sounds.keySet()) {
             for (var sound : sounds.getAsJsonObject(effect).getAsJsonArray("sounds")) {
                 if (!names.contains(reference(sound.getAsString(),"sounds/",".ogg"))) throw new IOException("효과음 참조 누락");
             }
@@ -180,8 +181,8 @@ final class PackInspection {
 
     private static String smallText(ZipFile zip,String name) throws IOException {
         try (var input = zip.getInputStream(zip.getEntry(name))) {
-            byte[] bytes = input.readNBytes(8193);
-            if (bytes.length > 8192) throw new IOException("메타데이터 크기 상한 초과");
+            byte[] bytes = input.readNBytes(24577);
+            if (bytes.length > 24576) throw new IOException("메타데이터 크기 상한 초과");
             return new String(bytes,StandardCharsets.UTF_8);
         }
     }

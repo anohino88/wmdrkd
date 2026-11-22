@@ -133,6 +133,7 @@ final class PaperOfficialCombat implements Listener {
         final Set<String> lateChecked = new HashSet<>();
         AugmentResonance.State resonance;
         double shieldShownPoints;
+        long shieldVisualDeadline;
         long shieldShownSeconds;
         double overgrowthAward;
         long visibleGrowthStep = -1;
@@ -710,7 +711,11 @@ final class PaperOfficialCombat implements Listener {
         if (points <= 0) {
             if (state.shieldShownPoints > 0) {
                 hud.proc(player, "생명의 잔향 보호막 종료");
-                if (active.test(player)) art.ring(player,player.getLocation().add(0,.8,0),.85,Particle.END_ROD,true);
+                if (active.test(player)) {
+                    art.ring(player,player.getLocation().add(0,.8,0),.85,Particle.END_ROD,true);
+                    if (state.shieldShownSeconds > 0 && clock.get().elapsedNanos() < state.shieldVisualDeadline)
+                        art.sound(player,"shield_break",Sound.ITEM_SHIELD_BREAK);
+                }
             }
             hud.remove(id, Layer.SHIELD);
             state.shieldShownPoints = 0;
@@ -720,6 +725,7 @@ final class PaperOfficialCombat implements Listener {
             if (state.shieldShownPoints != points)
                 art.ring(player,player.getLocation().add(0,.8,0),.65,Particle.ENCHANTED_HIT,false);
             state.shieldShownSeconds = seconds;
+            state.shieldVisualDeadline = clock.get().elapsedNanos() + state.shield.timeLeft(clock.get().elapsedNanos());
             state.shieldShownPoints = points;
             hud.set(id, Layer.SHIELD, net.kyori.adventure.text.Component.text(resonance.families().revival().name()
                     + " · " + String.format(Locale.ROOT, "%.1f", points / 2) + "하트 · " + seconds + "초"));
@@ -760,7 +766,10 @@ final class PaperOfficialCombat implements Listener {
         player.setHealth(Math.min(maxHealth(player), previous + amount));
         hud.heal(player,previous,player.getHealth());
         audit.add(effect, Metric.HEALED, player.getHealth() - previous);
-        if (player.getHealth() > previous) art.cue(player,effect);
+        if (player.getHealth() > previous) {
+            art.cue(player,effect);
+            art.ring(player,player.getLocation().add(0,.55,0),.44,Particle.HAPPY_VILLAGER,false);
+        }
     }
 
     private void modifier(Player player, Attribute attribute, String key, double amount, Operation operation) {
@@ -1506,7 +1515,6 @@ final class PaperOfficialCombat implements Listener {
         if (state.hudSecond == now() && state.hudAvailable == available) return;
         state.hudAvailable = available;
         state.hudSecond = now();
-        var lines = slotLines(player,state,true);
         var stillBound = new HashSet<String>();
         for (int slot = 1; slot <= SkillSlots.COUNT; slot++) {
             String id = state.slots.at(slot);
@@ -1543,19 +1551,21 @@ final class PaperOfficialCombat implements Listener {
         else {
             var message = net.kyori.adventure.text.Component.text();
             for (int slot = 1; slot <= SkillSlots.COUNT; slot++) {
-                if (slot > 1) message.append(net.kyori.adventure.text.Component.text(" · "));
+                if (slot > 1) message.append(net.kyori.adventure.text.Component.text("  "));
                 String id = state.slots.at(slot);
-                if (id != null) {
-                    long remaining = state.progress.cooldownRemaining(id,now());
-                    var icon = art.slotIcon(player,id);
-                    if (remaining > 0) icon = icon.color(net.kyori.adventure.text.format.NamedTextColor.DARK_GRAY);
-                    if (slot == state.slots.selected())
-                        icon = net.kyori.adventure.text.Component.text("[",net.kyori.adventure.text.format.NamedTextColor.GOLD)
-                                .append(icon).append(net.kyori.adventure.text.Component.text("]",net.kyori.adventure.text.format.NamedTextColor.GOLD));
-                    message.append(icon);
-                }
-                message.append(net.kyori.adventure.text.Component.text(lines.get(slot - 1)));
+                boolean selected = slot == state.slots.selected();
+                long remaining = id == null ? 0 : state.progress.cooldownRemaining(id,now());
+                var color = selected ? net.kyori.adventure.text.format.NamedTextColor.GOLD
+                        : id == null ? net.kyori.adventure.text.format.NamedTextColor.DARK_GRAY
+                        : remaining > 0 ? net.kyori.adventure.text.format.NamedTextColor.GRAY
+                        : net.kyori.adventure.text.format.NamedTextColor.AQUA;
+                String status = id == null ? "–" : remaining > 0 ? remaining + "s" : "✓";
+                message.append(net.kyori.adventure.text.Component.text(selected ? "[" + slot : Integer.toString(slot),color));
+                if (id != null) message.append(art.slotIcon(player,id).color(color));
+                message.append(net.kyori.adventure.text.Component.text(" " + status + (selected ? "]" : ""),color));
             }
+            message.append(net.kyori.adventure.text.Component.text("  ·  " +
+                    (state.slots.current() == null ? "선택 슬롯 비어 있음" : skillStatus(player,state,state.slots.current()))));
             hud.set(player.getUniqueId(),Layer.SKILL,message.build());
         }
     }
@@ -1645,17 +1655,20 @@ final class PaperOfficialCombat implements Listener {
                     double radius = catalog.setting("calamity-slam-radius");
                     area(player,center,radius,id,catalog.setting("calamity-slam-damage"),target -> { });
                     art.combat(player,null,null,id,Form.BLAST,center.clone().add(0,.2,0),radius);
+                    art.signatureAt(player,id,center.clone().add(0,.22,0),true);
                 });
             }
             case "duel_contract" -> {
                 var eye = player.getEyeLocation();
                 var rival = ray(player, eye, eye.getDirection(), catalog.setting("duel-range"));
-                if (!(rival instanceof Player)) yield false;
+                if (!(rival instanceof Player opponent)) yield false;
                 state.duelTarget = rival.getUniqueId();
                 state.duelUntil = now() + rule(id).duration();
                 var glow = new PotionEffect(PotionEffectType.GLOWING, rule(id).duration() * 20, 0);
                 player.addPotionEffect(glow);
                 rival.addPotionEffect(glow);
+                if (opponent.canSee(player) && opponent.hasLineOfSight(player))
+                    art.signatureAt(opponent,id,opponent.getLocation().add(0,.3,0),true);
                 yield true;
             }
             case "bomb_alchemy" -> {
@@ -1738,7 +1751,10 @@ final class PaperOfficialCombat implements Listener {
             boolean expires = second >= zone.expiresAt();
             if (zone.augment().equals("void_lord")) {
                 double radius = catalog.setting("void-radius");
-                if (expires) art.cancelWarning(player.getUniqueId(),zone.augment(),null);
+                if (expires) {
+                    art.cancelWarning(player.getUniqueId(),zone.augment(),null);
+                    art.signatureAt(player,"void_collapse",zone.start().clone().add(0,.32,0),true);
+                }
                 art.combat(player,null,null,zone.augment(),expires ? Form.VOID : Form.DANGER,
                         zone.start().clone().add(0,.2,0),expires ? 0 : radius);
             }
@@ -1768,6 +1784,8 @@ final class PaperOfficialCombat implements Listener {
                 syntheticHit(player, target, zone.augment(), zone.damage());
             }
         }
+        var edge = zone.end().clone().setDirection(delta);
+        art.signatureAt(player,zone.augment(),edge.add(0,.32,0),true);
         art.link(player,zone.start(),zone.end(),Particle.CRIT);
         art.ring(player,zone.end(),1.1,Particle.CRIT,false);
         particle(player, state, Particle.EXPLOSION, zone.end());
@@ -1809,6 +1827,7 @@ final class PaperOfficialCombat implements Listener {
         removeBomb(state);
         if (!valid(player) || !safe.test(point)) return;
         art.combat(player,null,bomb.getUniqueId(),"bomb_alchemy",Form.BLAST,point,catalog.setting("bomb-area-radius"));
+        art.signatureAt(player,"bomb_impact",point,true);
         state.zones.add(new Zone("bomb_alchemy", point, point, now() + rule("bomb_alchemy").duration(),
                 rule("bomb_alchemy").amount()));
         afterDamage(player, () -> area(player, point, catalog.setting("bomb-area-radius"), "bomb_alchemy",
@@ -2354,6 +2373,7 @@ final class PaperOfficialCombat implements Listener {
             var approach = impact.toVector().subtract(source.getLocation().toVector());
             if (!approach.isZero()) impact.setDirection(approach);
             art.combat(source,victim instanceof Player target ? target : null,root == null ? null : root.id(),id,form,impact,0);
+            if (form == Form.ARC) art.confirmedSweep(source,impact,id);
             if (!id.equals("triad_reactor")) triad(source, state, Action.REACTION);
             if (crit) art.cue(source,"jeweled_gauntlet");
             audit.add(id, Metric.PROC, 1);
@@ -2403,8 +2423,8 @@ final class PaperOfficialCombat implements Listener {
                 if (PlayerUi.enabled(player,PlayerUi.Option.PARTICLES)) player.spawnParticle(Particle.DUST,point,1,dust);
             }
         }
-        if (PlayerUi.enabled(player,PlayerUi.Option.SOUND) && catalog.synergies.getBoolean(synergy + ".sound"))
-            player.playSound(center, catalog.synergies.getString(synergy + ".sound-key"), .55f, 1.2f);
+        if (catalog.synergies.getBoolean(synergy + ".sound"))
+            art.locationSound(player,center,"synergy",catalog.synergies.getString(synergy + ".sound-key","minecraft:block.amethyst_block.chime"));
     }
 
     private void announceSynergy(UUID id, String synergy) {
@@ -2440,7 +2460,7 @@ final class PaperOfficialCombat implements Listener {
         telemetry.evolution(player.getUniqueId(), id, clock.get().elapsedSeconds());
         if (!state.growthNotices.add(id) || !PlayerUi.enabled(player,PlayerUi.Option.GROWTH)) return;
         announce(player.getUniqueId(), "증강 진화 · " + rule(id).definition().name(),false);
-        if (catalog.config.getBoolean("settings.evolution-sound")) art.sound(player,"evolve",Sound.ENTITY_PLAYER_LEVELUP);
+        if (catalog.config.getBoolean("settings.evolution-sound")) art.sound(player,"evolution",Sound.ENTITY_PLAYER_LEVELUP);
         if (catalog.config.getBoolean("settings.evolution-particles")) {
             art.growth(player,id,true);
             particle(player, state, Particle.END_ROD, player.getLocation().add(0, 1, 0));
@@ -2860,7 +2880,7 @@ final class PaperOfficialCombat implements Listener {
             hud.record(player,"생명의 잔향 보호막 +" + shield.shieldPoints() + " HP");
             updateShieldDisplay(player, state);
             if (resonance.announce() && PlayerUi.enabled(player,PlayerUi.Option.GROWTH)) art.growth(player,"life_echo",resonance.particles());
-            if (resonance.announce() && resonance.sound() && PlayerUi.enabled(player,PlayerUi.Option.SOUND)) player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, .45f, 1.4f);
+            if (resonance.announce() && resonance.sound()) art.sound(player,"shield_form",Sound.ENTITY_PLAYER_LEVELUP);
             if (resonance.announce() && resonance.particles()) particle(player, state, Particle.END_ROD, player.getLocation().add(0, 1, 0));
         }
         if (applied.equals("immortal_berserker")) {

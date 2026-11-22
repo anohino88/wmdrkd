@@ -17,9 +17,17 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 /** Checks Paper's item component and the connection-specific pack gate. */
 final class ArtProbe {
+    static String packHash(JavaPlugin plugin) {
+        try (var input = plugin.getResource("art-pack.sha1")) {
+            return new String(input.readAllBytes(),StandardCharsets.UTF_8).strip();
+        } catch (java.io.IOException failure) {
+            throw new AssertionError(failure);
+        }
+    }
+
     static void run(Pig pig) {
         var host = (JavaPlugin) Bukkit.getPluginManager().getPlugin("AugmentWild");
-        var hash = "0123456789012345678901234567890123456789";
+        var hash = ArtProbe.packHash(host);
         var id = UUID.nameUUIDFromBytes(("augmentwild-art:"+hash).getBytes(StandardCharsets.UTF_8));
         var config = host.getConfig();
         String previousUrl = config.getString("art.url");
@@ -116,13 +124,35 @@ final class ArtProbe {
                     require(quality.equals("LOW") ? visible == 0 : visible >= 1 && visible <= 3);
                     shownCount += visible;
                     peak = Math.max(peak,visible);
-                    for (int step = 0; step < 20; step++) tick.invoke(art);
+                    for (int step = 0; step < 24; step++) tick.invoke(art);
                     require(observed.stream().noneMatch(ItemDisplay::isValid));
                     cycles++;
                 }
                 Bukkit.getLogger().info("AW_ART_QUALITY quality=" + quality + " displays_created=" + shownCount
-                        + " peak_private_displays=" + peak + " adapter_ticks=1680 remaining=0");
+                        + " peak_private_displays=" + peak + " adapter_ticks=2016 remaining=0");
             }
+            storage.set(qualityKey,org.bukkit.persistence.PersistentDataType.STRING,"STANDARD");
+            var signatures = java.util.List.of("shadow_dash","earthquake_mage","time_rewind","void_lord","bomb_alchemy","duel_contract","calamity_giant");
+            var signatureDurations = new java.util.HashSet<Integer>();
+            for (String key : signatures) {
+                preview.invoke(art,p,"augment/" + key,false);
+                var display = shown[0];
+                require(display.isValid() && display.getItemStack().getItemMeta().getItemModel().getKey().equals("fx/sig_" + key));
+                var start = display.getTransformation().getTranslation();
+                int ticks = 0, transforms = 0;
+                var previous = display.getTransformation().getTranslation();
+                while (display.isValid() && ticks < 25) {
+                    tick.invoke(art);
+                    ticks++;
+                    var next = display.getTransformation().getTranslation();
+                    if (!previous.equals(next)) transforms++;
+                    previous = next;
+                }
+                require(!display.isValid() && !start.equals(previous) && transforms >= 3);
+                signatureDurations.add(ticks);
+            }
+            require(signatureDurations.size() >= 6);
+            Bukkit.getLogger().info("AW_ART_SIGNATURE_PASS active=7 multiple_transforms=true owner_only=true remaining=0");
             var sustain = PaperArt.class.getDeclaredMethod("sustain",Player.class,String.class,org.bukkit.Location.class,boolean.class);
             sustain.setAccessible(true);
             observed.clear();
@@ -151,7 +181,9 @@ final class ArtProbe {
                 var measured = new long[100];
                 for (int frame = 0; frame < measured.length; frame++) {
                     long start = System.nanoTime();
-                    for (var viewer : viewers) cue.invoke(art,viewer,"shadow_dash");
+                    if (frame % 8 == 0)
+                        for (int v = 0; v < viewers.size(); v++)
+                            preview.invoke(art,viewers.get(v),"augment/" + signatures.get(v % signatures.size()),false);
                     tick.invoke(art);
                     measured[frame] = System.nanoTime() - start;
                     require(observed.stream().filter(ItemDisplay::isValid).count() <= 24);
@@ -200,7 +232,7 @@ final class ArtProbe {
             inspect.setAccessible(true);
             var fixture = java.nio.file.Path.of(System.getProperty("augmentwild.pack.fixture"));
             var archive = inspect.invoke(null,fixture);
-            require(archive.toString().startsWith("Archive[release=7.4,"));
+            require(archive.toString().startsWith("Archive[release=7.6,"));
             var invalid = java.nio.file.Files.createTempFile("aw-invalid-pack-", ".zip");
             try {
                 java.nio.file.Files.writeString(invalid,"not a resource pack");

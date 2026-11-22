@@ -99,7 +99,7 @@ public final class PaperQuickMenu implements Listener {
         if (!player.hasPermission("augmentwild.play")) return "플레이어 권한이 없습니다.";
         if (matches.picking(player)) return matches.openAugments(player);
         Menu menu = new Menu(matches.art(),player, matches.menuSession(), false, List.of());
-        item(menu, 4, Material.NETHER_STAR, "AugmentWild · 빠른 메뉴", "명령어 없이 경기를 관리하세요",
+        item(menu, 4, Material.NETHER_STAR, "AugmentWild · 빠른 메뉴", matches.isLobby() ? "경기 대기실" : "경기 진행 중",
                 "다이아 우클릭 = 가까운 적 추적", "나침반 우클릭(공중) = 보급 안내",
                 "스킬 사용 = 웅크리기 + F");
         item(menu, 10, matches.inMatch(player) ? Material.RED_DYE : Material.LIME_DYE,
@@ -121,7 +121,10 @@ public final class PaperQuickMenu implements Listener {
             menu.inventory.setItem(slot,art.icon(player,menu.inventory.getItem(slot),"gui/" + control.getValue()));
         }
         item(menu,19,Material.PAINTING,"리소스팩",art.packStatus(player),"클릭 · 상태, 재요청, 안전 모드");
-        art.button(player,menu.inventory,19,"detail");
+        art.button(player,menu.inventory,10,matches.inMatch(player) ? "leave" : "join");
+        art.button(player,menu.inventory,11,"status");
+        art.button(player,menu.inventory,15,"track");
+        art.button(player,menu.inventory,19,"pack");
         item(menu, 26, Material.ARROW, "메뉴 새로고침");
         art.button(player,menu.inventory,14,"slots");
         art.button(player,menu.inventory,26,"reroll");
@@ -136,6 +139,10 @@ public final class PaperQuickMenu implements Listener {
         }
         if (player.hasPermission("augmentwild.admin") && matches.isLobby())
             item(menu, 25, Material.EMERALD, "일반 경기 시작 · 관리자", "최소 참가자 충족 시 시작", "실수 방지를 위해 확인 화면이 열립니다");
+        art.button(player,menu.inventory,17,"target");
+        art.button(player,menu.inventory,23,"solo");
+        art.button(player,menu.inventory,24,"leave");
+        art.button(player,menu.inventory,25,"start");
         player.openInventory(menu.inventory);
         return "빠른 메뉴 · 웅크리기 + 빈손 우클릭(공중)으로 다시 열 수 있습니다.";
     }

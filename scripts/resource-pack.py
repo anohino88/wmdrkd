@@ -7,6 +7,7 @@ import itertools
 import json
 import os
 import re
+import runpy
 import subprocess
 import tempfile
 import zipfile
@@ -26,8 +27,15 @@ PALETTE = {
     "helix":"#b59eee", "fracture":"#91dbea", "crescent":"#e7b9fc",
     "supply": "#82d7bc", "premium": "#ffe19c",
 }
-SOUNDS = {"cast", "evolve", "supply"}
-RELEASE_METADATA = {"release":"7.4","minecraft":"26.3","inventory_title":"native"}
+SIGNATURES = runpy.run_path(str(SOURCE / "signature-models.py"))
+FORMS = {"sig_" + key: color for key,color in SIGNATURES["PALETTES"].items()}
+PALETTE.update(FORMS)
+MENU_MARKS = runpy.run_path(str(SOURCE / "menu-marks.py"))
+SYNTH = runpy.run_path(str(SOURCE / "sound-design.py"))
+SOURCE_SOUNDS = {"cast", "evolve", "supply"}
+SOUNDS = SOURCE_SOUNDS | SYNTH["CUES"].keys()
+PACK_DIGEST = ROOT / "src/main/resources/art-pack.sha1"
+RELEASE_METADATA = {"release":"7.6","minecraft":"26.3","inventory_title":"native"}
 PACK_METADATA = {"pack": {"description": "AugmentWild • combat art for Java 26.3",
                           "min_format": [97, 1], "max_format": [97, 1]}}
 
@@ -55,7 +63,7 @@ def inputs():
     assert len(rarities) + 19 == len(motifs) and set(rarities) <= motifs.keys(), "Artwork coverage differs from the catalog"
     sources = json.loads(MANIFEST.read_text())["external_assets"]
     outputs = set()
-    assert {a["used_by"] for a in sources} == motifs.keys() | SOUNDS, "Missing source provenance"
+    assert {a["used_by"] for a in sources} == motifs.keys() | SOURCE_SOUNDS, "Missing source provenance"
     for asset in sources:
         path = (ROOT / asset["path"]).resolve()
         assert path.is_relative_to(SOURCE)
@@ -100,7 +108,16 @@ def badge(path, original, rarity, motif, profile):
         "PRISMATIC": [(32,1),(52,10),(62,30),(56,51),(32,63),(8,51),(2,30),(12,10)],
         "GUI": [(14,4),(50,4),(60,14),(60,50),(50,60),(14,60),(4,50),(4,14)],
     }
-    draw.polygon(shapes[rarity],fill="#101523",outline=rim,width=2)
+    dark = {"SILVER":"#101e2b","GOLD":"#201820","PRISMATIC":"#1b152d","GUI":"#101b27"}[rarity]
+    draw.polygon(shapes[rarity],fill=dark,outline=rim,width=2)
+    for i in range(0,len(shapes[rarity]),2):
+        a,b = shapes[rarity][i-1],shapes[rarity][i]
+        draw.line((a,b),fill="#f8edcf" if rarity == "GOLD" else "#d9e7f7",width=1)
+    if rarity == "PRISMATIC":
+        for x,y in ((22,15),(44,20),(16,41),(46,44)):
+            draw.line((x,y,32,32),fill="#614a87",width=1)
+    if rarity == "GOLD":
+        draw.line((15,8,49,8,53,13),fill="#e39853",width=2)
     draw.polygon([(32,8),(48,14),(54,31),(48,49),(32,55),(16,49),(10,31),(16,14)],
                  fill="#1c273a")
     draw.polygon([(13,30),(20,16),(32,10),(31,22),(19,34)],fill="#2b3a50")
@@ -128,7 +145,7 @@ def bake(rarities, motifs, sources):
             output = PACK / asset["output"]
             source = ROOT / asset["path"]
             key = asset["used_by"]
-            if key in SOUNDS:
+            if key in SOURCE_SOUNDS:
                 output.parent.mkdir(parents=True,exist_ok=True)
                 subprocess.run(["ffmpeg","-v","error","-y","-i",str(source),"-map_metadata","-1","-ac","1",
                                 "-af","volume=0.5,afade=t=out:st=0.18:d=0.13","-t","0.32","-c:a","libvorbis",
@@ -139,6 +156,14 @@ def bake(rarities, motifs, sources):
                 write_json(ASSETS / f"models/{model}.json",
                            {"parent":"minecraft:item/generated","textures":{"layer0":f"augmentwild:{model}"}})
                 item(model.removeprefix("item/"),model)
+    with tempfile.TemporaryDirectory() as audio:
+        SYNTH["bake"](ASSETS/"sounds",Path(audio)/"cue.wav")
+    for mark in MENU_MARKS["marks"]():
+        key = f"gui/{mark}"
+        MENU_MARKS["icon"](mark).save(ASSETS/f"textures/item/{key}.png",optimize=True)
+        write_json(ASSETS/f"models/item/{key}.json",
+                   {"parent":"minecraft:item/generated","textures":{"layer0":f"augmentwild:item/{key}"}})
+        item(key,f"item/{key}")
     write_json(ASSETS / "sounds.json", {key: {"sounds":[f"augmentwild:{key}"]} for key in sorted(SOUNDS)})
     subprocess.run(["blender","-b","-t","2","--factory-startup","--python-exit-code","1","--python",
                     str(SOURCE / "geometry.py"),"--",str(PACK)],check=True)
@@ -148,11 +173,14 @@ def bake(rarities, motifs, sources):
         for shade, factor in {"dark":.23,"metal":.59,"light":1,"accent":.82}.items():
             path = ASSETS / f"textures/fx/{motif}/{shade}.png"
             path.parent.mkdir(parents=True,exist_ok=True)
-            im = Image.new("RGB",(8,8))
-            for y in range(8):
-                for x in range(8):
-                    tone = factor * (.87 + .13*(x+y)/14)
-                    im.putpixel((x,y),tuple(round(p*tone) for p in rgb))
+            im = Image.new("RGB",(16,16))
+            for y in range(16):
+                for x in range(16):
+                    edge = min(x,y,15-x,15-y)
+                    bevel = 1 if edge >= 2 else (1.24 if x+y < 15 else .69)
+                    grain = (x*11 + y*7) % 13 / 13
+                    tone = factor * bevel * (.76 + .17*(x+y)/30 + .07*grain)
+                    im.putpixel((x,y),tuple(min(255,round(p*tone)) for p in rgb))
             im.save(path,optimize=True)
     from PIL import ImageDraw
     for filled in range(5):
@@ -168,7 +196,7 @@ def bake(rarities, motifs, sources):
         item(key,f"item/{key}")
     for key in rarities:
         motif = motifs[key]
-        model = json.loads((ASSETS / f"models/fx/{motif}.json").read_text())
+        model = json.loads((ASSETS / f"models/fx/{f'sig_{key}' if key in SIGNATURES['ACTIVE'] else motif}.json").read_text())
         model["textures"]["sigil"] = f"augmentwild:item/augment/{key}"
         front = min(part["from"][2] for part in model["elements"]) - .25
         model["elements"].append({"from":[5,5,front],"to":[11,11,front+.05],
@@ -187,7 +215,7 @@ def verify(rarities, motifs, sources):
     assert json.loads((PACK / "augmentwild-pack.json").read_text()) == RELEASE_METADATA
     keys = {f"augment/{key}" if key in rarities else key for key in motifs}
     keys |= {f"fx/{key}" for key in PALETTE} | {f"proc/{key}" for key in rarities}
-    keys |= {f"gui/gauge_{filled}" for filled in range(5)}
+    keys |= {f"gui/gauge_{filled}" for filled in range(5)} | {f"gui/{key}" for key in MENU_MARKS["marks"]()}
     models = {p.relative_to(ASSETS / "items").with_suffix("").as_posix() for p in (ASSETS / "items").rglob("*.json")}
     assert models == keys, models ^ keys
     for key in keys:
@@ -198,7 +226,8 @@ def verify(rarities, motifs, sources):
             assert (ASSETS / f"textures/{texture.removeprefix('augmentwild:')}.png").read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
         if key.startswith("proc/"):
             augment = key.split("/")[1]
-            family = json.loads((ASSETS / f"models/fx/{motifs[augment]}.json").read_text())
+            shape = f"sig_{augment}" if augment in SIGNATURES["ACTIVE"] else motifs[augment]
+            family = json.loads((ASSETS / f"models/fx/{shape}.json").read_text())
             assert model["elements"][:-1] == family["elements"]
             assert model["textures"]["sigil"] == f"augmentwild:item/augment/{augment}"
             glyph = model["elements"][-1]
@@ -209,14 +238,35 @@ def verify(rarities, motifs, sources):
                 assert all(0 <= a < b <= 16 for a,b in zip(part["from"],part["to"])), (key,part)
                 assert set(part["faces"]) == {"north","south","east","west","up","down"}
                 assert all(face["texture"][1:] in model["textures"] for face in part["faces"].values())
+                if turn := part.get("rotation"):
+                    assert turn["axis"] in ("x","y","z") and turn["angle"] in (-45,-22.5,22.5,45)
+                    assert set(turn) == {"axis","angle","origin"}
+                    assert all(0 < position < 16 for position in turn["origin"])
             # Overlapping outward faces on the same plane flicker under camera rotation.
             for a,b in itertools.combinations(model["elements"],2):
+                if a.get("rotation") or b.get("rotation"):
+                    continue
                 for axis in range(3):
                     overlap = all(min(a["to"][i],b["to"][i]) > max(a["from"][i],b["from"][i])
                                   for i in range(3) if i != axis)
                     if overlap:
                         assert all(a[side][axis] != b[side][axis] for side in ("from","to")), (key,a,b)
             assert len({tuple(part["from"] + part["to"]) for part in model["elements"]}) == len(model["elements"])
+    tracks = {}
+    for row in (ROOT/"src/main/resources/art-signatures.tsv").read_text().splitlines():
+        if not row or row.startswith("#"):
+            continue
+        key,shape,sound,frames = row.split("|")
+        offsets = [tuple(map(float,frame.split(","))) for frame in frames.split(";")]
+        assert key not in tracks and f"fx/sig_{shape}" in keys and sound in SOUNDS
+        assert len(offsets) >= 4 and all(len(frame) == 10 for frame in offsets)
+        assert offsets[0][0] == 0 and offsets[-1][0] <= 30
+        assert all(a[0] < b[0] for a,b in itertools.pairwise(offsets))
+        tracks[key] = offsets
+    active = [tracks[key] for key in SIGNATURES["ACTIVE"]]
+    assert len({tuple(track) for track in active}) == 7
+    assert len({hashlib.sha256((ASSETS/f"models/fx/sig_{key}.json").read_bytes()).hexdigest()
+                for key in SIGNATURES["ACTIVE"]}) == 7
     screens = json.loads((SOURCE / "screens.json").read_text())
     samples = dict(row.split("=",1) for row in (ROOT / "src/main/resources/art-screen-samples.properties").read_text().splitlines())
     assert samples.keys() == screens.keys()
@@ -274,6 +324,10 @@ def main():
     assert json.loads(font.read_text()) == skill_font()
     verify(*data)
     package(args.output)
+    digest = hashlib.sha1(args.output.read_bytes()).hexdigest()
+    if args.bake:
+        PACK_DIGEST.write_text(digest+"\n",encoding="utf-8")
+    assert PACK_DIGEST.read_text().strip() == digest, "JAR expected pack SHA-1 differs from checked pack ZIP"
 
 
 if __name__ == "__main__":

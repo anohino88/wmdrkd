@@ -26,9 +26,11 @@ final class CombatCinematics {
     enum Form {
         DANGER(0,"rune",Particle.FLAME,Sound.ENTITY_TNT_PRIMED,12),
         GUARD(1,"fracture",Particle.CRIT,Sound.ITEM_SHIELD_BLOCK,8),
-        HIT(1,"impact",Particle.DAMAGE_INDICATOR,Sound.ENTITY_PLAYER_ATTACK_STRONG,6),
-        ARC(2,"crescent",Particle.SWEEP_ATTACK,Sound.ENTITY_PLAYER_ATTACK_SWEEP,8),
-        BOLT(2,"bolt",Particle.ELECTRIC_SPARK,Sound.BLOCK_AMETHYST_BLOCK_HIT,5),
+        HIT(1,"impact",Particle.DAMAGE_INDICATOR,Sound.ENTITY_PLAYER_ATTACK_WEAK,6),
+        HEAVY(1,"impact",Particle.CRIT,Sound.ENTITY_PLAYER_ATTACK_STRONG,8),
+        CRITICAL(1,"fracture",Particle.CRIT,Sound.ENTITY_PLAYER_ATTACK_CRIT,9),
+        ARC(1,"crescent",Particle.SWEEP_ATTACK,Sound.ENTITY_PLAYER_ATTACK_SWEEP,8),
+        BOLT(1,"bolt",Particle.ELECTRIC_SPARK,Sound.BLOCK_AMETHYST_BLOCK_HIT,5),
         TRAIL(5,"bolt",Particle.END_ROD,null,4),
         BLAST(1,"impact",Particle.CRIT,Sound.ENTITY_GENERIC_EXPLODE,10),
         RETURN(2,"time",Particle.REVERSE_PORTAL,Sound.ENTITY_ENDERMAN_TELEPORT,9),
@@ -158,7 +160,7 @@ final class CombatCinematics {
                 continue;
             }
             display.viewers.removeIf(viewer -> {
-                if (visible(viewer,cue) && modelFor(viewer)) return false;
+                if (visible(viewer,cue) && modelFor(viewer,cue)) return false;
                 viewer.hideEntity(plugin,display.model);
                 hidden++;
                 return true;
@@ -188,8 +190,8 @@ final class CombatCinematics {
             if (!visible(viewer,cue)) continue;
             if (viewer.getUniqueId().equals(cue.key.target)) targetSaw = true;
             boolean modelShown = false;
-            if (cue.particles && cue.key.form != Form.TRAIL && modelFor(viewer)) {
-                if (needsModel == null) needsModel = room.getAsBoolean();
+            if (cue.particles && cue.key.form != Form.TRAIL && modelFor(viewer,cue)) {
+                if (needsModel == null) needsModel = reserve(cue);
                 if (needsModel) {
                     viewers.add(viewer);
                     modelShown = true;
@@ -219,6 +221,16 @@ final class CombatCinematics {
         for (var viewer : viewers) viewer.showEntity(plugin,model);
     }
 
+    private boolean reserve(Cue cue) {
+        if (room.getAsBoolean()) return true;
+        var lower = active.stream().filter(display -> display.cue.key.form.priority > cue.key.form.priority)
+                .max(Comparator.comparingInt(display -> display.cue.key.form.priority));
+        if (lower.isEmpty()) return false;
+        remove(lower.get());
+        active.remove(lower.get());
+        return true;
+    }
+
     private static Transformation pose(Cue cue,int stage) {
         var form = cue.key.form;
         float yaw = (float)Math.toRadians(-cue.point.getYaw());
@@ -230,9 +242,10 @@ final class CombatCinematics {
         var shape = new Vector3f(scale);
         switch (form) {
             case ARC -> {
-                offset.set(-.36f + t*.72f,.16f*t,0);
+                offset.set(-.38f + t*.76f,.23f*t,.24f*t);
+                offset.rotateY(yaw);
                 rotation.rotateY(-1.1f+2.2f*t).rotateZ(-.42f+.7f*t);
-                shape.mul(1.6f,.55f,1.15f);
+                shape.mul(1.75f,contact ? .66f : .28f,1.32f);
             }
             case GUARD -> {
                 offset.set(0,.25f*t,.1f*t);
@@ -245,7 +258,7 @@ final class CombatCinematics {
                 shape.mul(1.4f,.3f,1.4f);
             }
             case BOLT,TRAIL -> {
-                offset.set(0,-.04f,.45f*t);
+                offset.set(0,-.04f,.45f*t).rotateY(yaw);
                 rotation.rotateZ(1.5f*t);
                 shape.mul(.48f,.48f,1.55f);
             }
@@ -264,18 +277,20 @@ final class CombatCinematics {
                 rotation.rotateX(-.32f*t);
                 shape.mul(1.45f,1.2f,.7f);
             }
-            case HIT -> {
+            case HIT,HEAVY,CRITICAL -> {
                 offset.y = .2f*t;
                 rotation.rotateZ(.35f*t);
-                shape.mul(.8f,1,.8f);
+                shape.mul(form == Form.HEAVY ? 1.24f : .83f,form == Form.CRITICAL ? 1.4f : 1f,.8f);
             }
         }
         return new Transformation(offset,rotation,shape,new Quaternionf());
     }
 
-    private boolean modelFor(Player viewer) {
+    private boolean modelFor(Player viewer,Cue cue) {
+        var quality = PlayerUi.quality(viewer);
+        int range = quality == PlayerUi.Quality.STANDARD ? 17 : RANGE;
         return packed.test(viewer) && !PlayerUi.reducedFlash(viewer) && PlayerUi.enabled(viewer,PlayerUi.Option.PARTICLES)
-                && PlayerUi.quality(viewer) != PlayerUi.Quality.LOW;
+                && quality != PlayerUi.Quality.LOW && viewer.getLocation().distanceSquared(cue.point) <= range * range;
     }
 
     private void ring(Player viewer,Cue cue) {

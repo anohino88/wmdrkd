@@ -7,11 +7,10 @@ out="$root/build/version-comparison"
 mkdir -p "$out"
 trap 'rm -rf "$fixture"' EXIT
 
-for version in 7.1-B 7.2 7.3; do
+for version in 7.5 7.6; do
     case "$version" in
-        7.1-B) commit=43a1d3eab303cb2255f7893da2d933c54de20ba2 ;;
-        7.2) commit=053669e273a3ae9759fe7e6cb03aefeee4acb72c ;;
-        7.3) commit=$(git -C "$root" rev-parse HEAD) ;;
+        7.5) commit=b091ae6f21337e5b5011ca0626b73279b37e748d ;;
+        7.6) commit=$(git -C "$root" rev-parse HEAD) ;;
     esac
     if ! git -C "$root" cat-file -e "$commit^{commit}"; then
         git -C "$root" fetch --no-tags --depth=1 origin "$commit"
@@ -45,8 +44,8 @@ PY
     (
         cd "$checkout"
         ./gradlew --no-daemon assemble paperProbeJar
-        AW_BORDER_PROBE=1 AW_EXTENDED_LOAD=0 RUNNER_TEMP="$checkout" bash scripts/test-paper-smoke.sh
+        AW_BORDER_PROBE=1 AW_EXTENDED_LOAD=1 RUNNER_TEMP="$checkout" bash scripts/test-paper-smoke.sh
     )
     cp "$checkout/augmentwild-paper-smoke/server.log" "$out/$version.log"
-    grep -F 'SYNTHETIC_LOAD_TEST' "$out/$version.log"
+    grep -E 'SYNTHETIC_LOAD_TEST|AW_VFX_LOAD mode=.*viewers=16' "$out/$version.log"
 done

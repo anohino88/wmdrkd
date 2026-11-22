@@ -1,22 +1,27 @@
 """Create Blender meshes and export axis-aligned Minecraft item-model cuboids."""
 import json
 import math
+import runpy
 import sys
 from pathlib import Path
 
 import bpy
+
+SIGNATURES = runpy.run_path(str(Path(__file__).with_name("signature-models.py")))
 
 ROOT = Path(sys.argv[sys.argv.index("--") + 1])
 COLORS = ("dark", "metal", "light", "accent")
 FACES = ("north", "south", "east", "west", "up", "down")
 
 
-def bar(x, y, z, sx, sy, sz, color="light"):
+def bar(x, y, z, sx, sy, sz, color="light", axis="z", angle=0):
     bpy.ops.mesh.primitive_cube_add(size=1, location=(x - 8, 8 - z, y - 8))
     mesh = bpy.context.object
     mesh.dimensions = (sx, sz, sy)
     bpy.context.view_layer.update()
     mesh["aw_texture"] = color
+    mesh["aw_axis"] = axis
+    mesh["aw_angle"] = angle
     return mesh
 
 
@@ -128,7 +133,10 @@ def form(kind):
 def export(kind):
     bpy.ops.object.select_all(action="SELECT")
     bpy.ops.object.delete(use_global=False)
-    form(kind)
+    if kind.startswith("sig_") or kind == "crescent":
+        SIGNATURES["build"](kind.removeprefix("sig_"),bar)
+    else:
+        form(kind)
     # Silhouette details around the original body, in 0..16 item coordinates.
     if kind in ("supply", "premium"):
         for x in (4.4, 11.6):
@@ -163,7 +171,11 @@ def export(kind):
         low = [round(c-d/2, 3) for c,d in zip(center,(sx,sy,sz))]
         high = [round(c+d/2, 3) for c,d in zip(center,(sx,sy,sz))]
         shade = mesh["aw_texture"]
-        parts.append({"from": low, "to": high, "faces": {face: {"texture": "#"+shade} for face in FACES}})
+        part = {"from": low, "to": high, "faces": {face: {"texture": "#"+shade} for face in FACES}}
+        if mesh["aw_angle"]:
+            part["rotation"] = {"origin": [round(c,3) for c in center],
+                                "axis": mesh["aw_axis"], "angle": mesh["aw_angle"]}
+        parts.append(part)
     textures = {color: f"augmentwild:fx/{kind}/{color}" for color in COLORS}
     out.write_text(json.dumps({"textures": textures, "elements": parts}, separators=(",",":"))+"\n")
 
@@ -171,3 +183,6 @@ def export(kind):
 for name in ("rune", "blade", "ward", "growth", "bolt", "impact", "fire", "frost",
              "void", "blood", "time", "rush", "supply", "premium", "helix","fracture","crescent"):
     export(name)
+
+for name in SIGNATURES["PALETTES"]:
+    export("sig_" + name)

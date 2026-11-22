@@ -57,6 +57,8 @@ public final class PaperArt implements Listener {
     private final Map<String,String> labels = new HashMap<>();
     private final Properties screens = new Properties();
     private final Properties motifs = new Properties();
+    private final Map<String,ArtSignature> signatures;
+    private final boolean matchingPack;
     private final ResourcePackInfo pack;
     private final String settingsIssue;
     private String validation = "서버 다운로드 검증 전";
@@ -67,7 +69,7 @@ public final class PaperArt implements Listener {
     private boolean displaysAvailable = true;
 
     private record Animation(Player viewer, ItemDisplay entity, Location at, long began, Motion motion,
-                             List<ItemDisplay> ornaments) {
+                             List<ItemDisplay> ornaments, ArtSignature signature) {
         void remove() {
             entity.remove();
             ornaments.forEach(ItemDisplay::remove);
@@ -129,7 +131,7 @@ public final class PaperArt implements Listener {
     }
 
     private boolean custom(Player player) {
-        return loaded.contains(player.getUniqueId()) && !safe(player);
+        return matchingPack && loaded.contains(player.getUniqueId()) && !safe(player);
     }
 
     static boolean safe(Player player) {
@@ -169,6 +171,7 @@ public final class PaperArt implements Listener {
 
     String packStatus(Player p) {
         if (pack == null) return settingsIssue + " · 기본 표시";
+        if (!matchingPack) return "팩 SHA-1이 7.6 배포본과 다릅니다 · 기본 표시";
         String mode = safe(p) ? " · 안전 모드" : "";
         if (loaded.contains(p.getUniqueId())) return "클라이언트 로드 응답 · " + pack.hash().substring(0,8) + mode;
         var status = reports.get(p.getUniqueId());
@@ -187,12 +190,19 @@ public final class PaperArt implements Listener {
     PaperArt(JavaPlugin plugin, Predicate<Player> playable, java.util.function.BooleanSupplier running,
              CombatCinematics.Audience audience) {
         this.plugin = plugin;
-        this.playable = playable;
-        combat = new CombatCinematics(plugin,playable,this::custom,running,
-                this::roomForCombat,this::spawn,audience);
         var configured = settings(plugin);
         pack = configured.pack();
         settingsIssue = configured.issue();
+        try (var digest = plugin.getResource("art-pack.sha1")) {
+            String shipped = digest == null ? "" : new String(digest.readAllBytes(),StandardCharsets.UTF_8).strip();
+            matchingPack = pack != null && pack.hash().equals(shipped);
+            signatures = ArtSignature.load(plugin.getResource("art-signatures.tsv"));
+        } catch (IOException failure) {
+            throw new IllegalStateException("Could not read AugmentWild artwork settings",failure);
+        }
+        this.playable = playable;
+        combat = new CombatCinematics(plugin,playable,this::custom,running,
+                this::roomForCombat,this::spawn,audience);
         try (var input = plugin.getResource("art-motifs.properties")) {
             if (input != null) motifs.load(input);
             try (var layouts = plugin.getResource("art-screen-samples.properties")) {
@@ -279,6 +289,7 @@ public final class PaperArt implements Listener {
         var counts = new EnumMap<PlayerResourcePackStatusEvent.Status,Integer>(PlayerResourcePackStatusEvent.Status.class);
         reports.values().forEach(status -> counts.merge(status,1,Integer::sum));
         String report = "HTTPS 팩 · SHA-1 " + pack.hash() + " · UUID " + pack.id()
+                + (matchingPack ? " · 배포본 일치" : " · 배포본 불일치 · 기본 표시")
                 + "\n서버 다운로드 · " + validation + "\n접속 세션 응답 · " + counts;
         if (!detail) return report;
         var uri = pack.uri();
@@ -316,7 +327,7 @@ public final class PaperArt implements Listener {
     @EventHandler public void join(PlayerJoinEvent event) { offer(event.getPlayer()); }
 
     String retry(Player player) {
-        if (pack == null) return packStatus(player);
+        if (!matchingPack) return packStatus(player);
         Long last = lastOffer.get(player.getUniqueId());
         if (last != null && System.nanoTime() - last < 10_000_000_000L) return "최근 요청을 보냈습니다. 잠시 후 다시 시도하세요.";
         offer(player);
@@ -330,7 +341,7 @@ public final class PaperArt implements Listener {
             try { player.removeResourcePacks(UUID.fromString(previous)); }
             catch (IllegalArgumentException invalid) { storage.remove(LAST_PACK); }
         }
-        if (pack == null) {
+        if (!matchingPack) {
             storage.remove(LAST_PACK);
             return;
         }
@@ -464,40 +475,86 @@ public final class PaperArt implements Listener {
     }
 
     void choice(Player p, String id, String rarity) {
-        if (!playable.test(p) || !custom(p)) return;
+        if (!playable.test(p)) return;
+        if (rarity.equals("PRISMATIC")) {
+            locationSound(p,near(p),"prism",cueFallback("prism"));
+            if (!custom(p)) spark(p,near(p),Particle.END_ROD);
+        }
+        if (!custom(p)) return;
         var motion = switch (rarity) { case "PRISMATIC" -> GROWTH.get("magic_missile"); case "GOLD" -> MOTIONS.get("ward"); default -> PULSE; };
         render(p,near(p),"proc/" + id,motion);
     }
 
     void cast(Player player, String id, Location origin) {
         Location destination = player.getLocation();
+        var delta = destination.toVector().subtract(origin.toVector());
         if (id.equals("shadow_dash") && destination.getWorld().equals(origin.getWorld())) {
-            var path = destination.toVector().subtract(origin.toVector());
-            int steps = Math.min(12, (int)Math.ceil(path.length()));
+            int steps = Math.min(12,(int)Math.ceil(delta.length()));
             for (int i = 0; i < steps; i++)
-                spark(player, origin.clone().add(path.clone().multiply((double)i / steps)).add(0,.75,0), Particle.REVERSE_PORTAL);
+                spark(player,origin.clone().add(delta.clone().multiply((double)i / steps)).add(0,.75,0),Particle.REVERSE_PORTAL);
+            ring(player,origin.clone().add(0,.4,0),.47,Particle.REVERSE_PORTAL,true);
         }
+        nextCue.put(new PrivateCue(player.getUniqueId(),"proc/" + id),tick + 20);
+        var at = switch (id) {
+            case "earthquake_mage", "void_lord" -> origin.clone().add(0,.32,0);
+            case "shadow_dash","time_rewind" -> destination.clone().add(0,.5,0);
+            case "duel_contract" -> destination.clone().add(0,.34,0);
+            default -> near(player);
+        };
+        if ((id.equals("shadow_dash") || id.equals("earthquake_mage")) && delta.lengthSquared() > .01)
+            at.setDirection(delta);
+        if (!id.equals("calamity_giant")) signatureAt(player,id,at,true);
+        var form = switch (id) {
+            case "shadow_dash" -> CombatCinematics.Form.ARC;
+            case "time_rewind" -> CombatCinematics.Form.RETURN;
+            case "void_lord" -> CombatCinematics.Form.VOID;
+            default -> null;
+        };
+        if (form != null) combat(player,null,null,id,form,at,0);
+    }
 
-        String motif = motifs.getProperty(id);
-        if (motif != null) {
-            nextCue.put(new PrivateCue(player.getUniqueId(),"proc/" + id),tick + 12);
-            var at = switch (id) {
-                case "earthquake_mage", "void_lord" -> origin.clone().add(0,.35,0);
-                case "shadow_dash","time_rewind","calamity_giant" -> destination.clone().add(0,.45,0);
-                default -> near(player);
-            };
-            showProc(player,id,motif,false,at);
-            var form = switch (id) {
-                case "shadow_dash" -> CombatCinematics.Form.ARC;
-                case "time_rewind" -> CombatCinematics.Form.RETURN;
-                case "earthquake_mage" -> CombatCinematics.Form.BLAST;
-                case "void_lord" -> CombatCinematics.Form.VOID;
-                default -> null;
-            };
-            if (form != null) combat(player,null,null,id,form,at,0);
-            if (!noVisual.contains(id) && PlayerUi.quality(player).ordinal() >= PlayerUi.Quality.HIGH.ordinal())
-                path(player,at,geometry(motif),.85,.65,Particle.ENCHANTED_HIT);
+    void signatureAt(Player player,String id,Location at,boolean sound) {
+        var signature = signatures.get(id);
+        String effect = switch (id) {
+            case "bomb_impact" -> "bomb_alchemy";
+            case "void_collapse" -> "void_lord";
+            default -> id;
+        };
+        if (signature == null || !playable.test(player) || !player.getWorld().equals(at.getWorld()) || !at.isChunkLoaded()
+                || noVisual.contains(effect) && (!sound || quiet.contains(effect))) return;
+        if (!noVisual.contains(effect) && PlayerUi.enabled(player,PlayerUi.Option.PARTICLES)) {
+            if (PlayerUi.quality(player) != PlayerUi.Quality.LOW && custom(player) && !PlayerUi.reducedFlash(player)
+                    && displaysAvailable && displayCount() < MAX_DISPLAYS) {
+                render(player,at,"sig_" + signature.shape(),MOTIONS.getOrDefault(motifs.getProperty(effect,"rune"),PULSE),signature);
+            } else spark(player,at,signatureParticle(effect));
         }
+        if (sound && !quiet.contains(effect)) locationSound(player,at,signature.sound(),cueFallback(signature.sound()));
+    }
+
+    private static Particle signatureParticle(String effect) {
+        return switch (effect) {
+            case "shadow_dash","void_lord" -> Particle.REVERSE_PORTAL;
+            case "earthquake_mage","calamity_giant" -> Particle.CLOUD;
+            case "time_rewind" -> Particle.END_ROD;
+            case "duel_contract" -> Particle.ENCHANTED_HIT;
+            case "bomb_alchemy" -> Particle.FLAME;
+            default -> Particle.ELECTRIC_SPARK;
+        };
+    }
+
+    private static Sound cueFallback(String key) {
+        return switch (key) {
+            case "rift","focus" -> Sound.BLOCK_RESPAWN_ANCHOR_DEPLETE;
+            case "stone_break" -> Sound.BLOCK_BASALT_BREAK;
+            case "ignite" -> Sound.ITEM_FIRECHARGE_USE;
+            case "detonate" -> Sound.ENTITY_GENERIC_EXPLODE;
+            case "rewind" -> Sound.ENTITY_ENDERMAN_TELEPORT;
+            case "seal","prism" -> Sound.BLOCK_AMETHYST_BLOCK_CHIME;
+            case "shield_form" -> Sound.ITEM_SHIELD_BLOCK;
+            case "shield_break" -> Sound.ITEM_SHIELD_BREAK;
+            case "sweep" -> Sound.ENTITY_PLAYER_ATTACK_SWEEP;
+            default -> Sound.ENTITY_PLAYER_LEVELUP;
+        };
     }
 
     // Owner-only decoration. Never used to resolve a hit or select a target.
@@ -665,17 +722,25 @@ public final class PaperArt implements Listener {
         motifs.stringPropertyNames().stream().sorted().map(id -> "augment/" + id).forEach(entries::add);
         new TreeSet<>(MOTIONS.keySet()).forEach(id -> entries.add("model/" + id));
         entries.addAll(List.of("model/supply","model/premium","model/helix","model/fracture","model/crescent"));
+        new TreeSet<>(signatures.values().stream().map(s -> "sig_" + s.shape()).toList()).forEach(id -> entries.add("model/" + id));
         new TreeSet<>(GROWTH.keySet()).forEach(id -> entries.add("growth/" + id));
-        entries.addAll(List.of("rarity/silver","rarity/gold","rarity/prismatic","sound/cast","sound/evolve","sound/supply"));
+        entries.addAll(List.of("rarity/silver","rarity/gold","rarity/prismatic","sound/cast","sound/evolve","sound/supply","sound/focus","sound/stone_break","sound/rewind",
+                "sound/ignite","sound/detonate","sound/rift","sound/seal","sound/sweep","sound/shield_form",
+                "sound/shield_break","sound/evolution","sound/synergy","sound/prism"));
         for (Screen screen : Screen.values()) entries.add("screen/" + screen.name().toLowerCase(Locale.ROOT));
         return List.copyOf(entries);
     }
+
+    boolean canPreview(Player player) { return playable.test(player); }
 
     void preview(Player p, String key, boolean simple) {
         String[] parts = key.split("/",2);
         String id = parts[1];
         switch (parts[0]) {
-            case "augment" -> showProc(p,id,motifs.getProperty(id),simple);
+            case "augment" -> {
+                if (!simple && signatures.containsKey(id)) signatureAt(p,id,near(p),true);
+                else showProc(p,id,motifs.getProperty(id),simple);
+            }
             case "growth" -> {
                 var motif = SIGNATURES.getOrDefault(id,motifs.getProperty(id,"growth"));
                 if (simple || !custom(p)) showProc(p,id,motif,true);
@@ -685,12 +750,17 @@ public final class PaperArt implements Listener {
                 if (simple || !custom(p)) showProc(p,id,id,true);
                 else render(p,near(p),id,MOTIONS.getOrDefault(id,ARRIVE));
             }
-            case "sound" -> sound(p,id,Sound.BLOCK_NOTE_BLOCK_CHIME);
+            case "sound" -> sound(p,id,cueFallback(id));
         }
     }
 
     void growth(Player player, String id, boolean visible) {
-        if (!visible || pack == null || !custom(player)) return;
+        if (!visible) return;
+        if (signatures.containsKey(id)) {
+            signatureAt(player,id,near(player),false);
+            return;
+        }
+        if (!custom(player)) return;
         String motif = SIGNATURES.getOrDefault(id,motifs.getProperty(id,"growth"));
         render(player,near(player),motif,GROWTH.getOrDefault(id,PULSE));
         if (PlayerUi.quality(player).ordinal() >= PlayerUi.Quality.HIGH.ordinal())
@@ -752,11 +822,27 @@ public final class PaperArt implements Listener {
         if (marker != null) marker.entity().remove();
     }
 
+    void confirmedSweep(Player player,Location impact,String augment) {
+        if (!quiet.contains(augment) && PlayerUi.quality(player).ordinal() >= PlayerUi.Quality.HIGH.ordinal())
+            locationSound(player,impact,"sweep",Sound.ENTITY_PLAYER_ATTACK_SWEEP);
+    }
+
     void sound(Player player, String key, Sound fallback) {
-        if (!PlayerUi.enabled(player,PlayerUi.Option.SOUND)) return;
-        var at = player.getLocation();
-        if (custom(player)) player.playSound(at,"augmentwild:" + key,.48f,1f);
-        else player.playSound(at,fallback,.48f,1f);
+        locationSound(player,player.getLocation(),key,fallback);
+    }
+
+    void locationSound(Player player,Location at,String key,Sound fallback) {
+        locationSound(player,at,key,org.bukkit.Registry.SOUNDS.getKeyOrThrow(fallback).asString());
+    }
+
+    void locationSound(Player player,Location at,String key,String fallback) {
+        UUID owner = player.getUniqueId();
+        int used = cueSounds.getOrDefault(owner,0);
+        if (used >= 2 || !PlayerUi.enabled(player,PlayerUi.Option.SOUND)) return;
+        cueSounds.put(owner,used + 1);
+        boolean detailed = custom(player) && PlayerUi.quality(player) != PlayerUi.Quality.LOW;
+        if (detailed) player.playSound(at,"augmentwild:" + key,.48f,1f);
+        else player.playSound(at,fallback,.38f,1f);
     }
 
     private static Location near(Player player) {
@@ -786,6 +872,10 @@ public final class PaperArt implements Listener {
     }
 
     private void render(Player viewer, Location at, String motif, Motion motion) {
+        render(viewer,at,motif,motion,null);
+    }
+
+    private void render(Player viewer, Location at, String motif, Motion motion, ArtSignature signature) {
         UUID id = viewer.getUniqueId();
         if (pack == null || !custom(viewer) || !displaysAvailable || !playable.test(viewer)
                 || !PlayerUi.enabled(viewer,PlayerUi.Option.PARTICLES)
@@ -797,11 +887,11 @@ public final class PaperArt implements Listener {
         ItemDisplay display = null;
         List<ItemDisplay> ornaments = new ArrayList<>();
         try {
-            display = spawn(at,motif,pose(at,motion,0));
+            display = spawn(at,motif,signature == null ? pose(at,motion,0) : signature.frames().getFirst().pose(at));
             var quality = PlayerUi.quality(viewer);
             int layers = quality == PlayerUi.Quality.ULTRA ? 2 : quality == PlayerUi.Quality.HIGH ? 1 : 0;
-            if (layers > 0 && !PlayerUi.reducedFlash(viewer) && Bukkit.getAverageTickTime() < 45 && motif.startsWith("proc/")) {
-                String augment = motif.substring(5);
+            if (layers > 0 && !PlayerUi.reducedFlash(viewer) && Bukkit.getAverageTickTime() < 45 && (motif.startsWith("proc/") || signature != null)) {
+                String augment = signature == null ? motif.substring(5) : signature.shape();
                 int occupied = 1 + displayCount();
                 if (occupied + layers <= MAX_DISPLAYS) {
                     String family = motifs.getProperty(augment,"rune");
@@ -817,7 +907,7 @@ public final class PaperArt implements Listener {
                     }
                 }
             }
-            cues.put(key,new Animation(viewer,display,at,tick,motion,ornaments));
+            cues.put(key,new Animation(viewer,display,at,tick,motion,ornaments,signature));
             if (motif.startsWith("proc/")) nextCue.put(key,tick + 20);
             viewer.showEntity(plugin,display);
             peakDisplays = Math.max(peakDisplays,displayCount());
@@ -893,14 +983,15 @@ public final class PaperArt implements Listener {
                 long age = tick - animation.began();
                 var entity = animation.entity();
                 Player player = animation.viewer();
-                if (age >= animation.motion().attack() + animation.motion().release() + 1 || !entity.isValid() || !player.isOnline() || !playable.test(player)
+                var signature = animation.signature();
+                int duration = signature == null ? animation.motion().attack() + animation.motion().release() : signature.duration();
+                if (age >= duration + 1 || !entity.isValid() || !player.isOnline() || !playable.test(player) || !custom(player)
                         || !player.getWorld().equals(animation.at().getWorld())
                         || !PlayerUi.enabled(player,PlayerUi.Option.PARTICLES)) {
                     animation.remove();
                     return true;
                 }
                 if (!animation.ornaments().isEmpty() && (age & 1) == 1) {
-                    int duration = animation.motion().attack() + animation.motion().release();
                     float t = Math.min(1f,(age + 1f) / duration);
                     for (int i = 0; i < animation.ornaments().size(); i++) {
                         var layer = animation.ornaments().get(i);
@@ -910,7 +1001,24 @@ public final class PaperArt implements Listener {
                         layer.setTransformation(orbitPose(animation.motion(),t,i));
                     }
                 }
-                if (age == 1 || age == animation.motion().attack() + 1) {
+                if (signature != null) {
+                    var frames = signature.frames();
+                    for (int i = 0; i < frames.size() - 1; i++) {
+                        var start = frames.get(i);
+                        if (age != start.tick() + 1) continue;
+                        var end = frames.get(i + 1);
+                        entity.setInterpolationDuration(end.tick() - start.tick());
+                        entity.setInterpolationDelay(0);
+                        var pose = end.pose(animation.at());
+                        entity.setTransformation(pose);
+                        displayUpdates++;
+                        if (i == 1 || i == frames.size() - 2) {
+                            var shift = start.pose(animation.at()).getTranslation();
+                            spark(player,animation.at().clone().add(shift.x,shift.y,shift.z),signatureParticle(signature.shape()));
+                        }
+                        break;
+                    }
+                } else if (age == 1 || age == animation.motion().attack() + 1) {
                     entity.setInterpolationDuration(age == 1 ? animation.motion().attack() : animation.motion().release());
                     entity.setInterpolationDelay(0);
                     displayUpdates++;

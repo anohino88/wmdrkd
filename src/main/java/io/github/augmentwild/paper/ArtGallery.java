@@ -88,6 +88,8 @@ final class ArtGallery implements PaperMenu {
         var view = new ArtGallery(p,art,PaperArt.Screen.DETAIL,title,3,List.of(),() -> false);
         view.inventory.setItem(4,card);
         view.put(p,6,Material.AMETHYST_SHARD,"proc/" + id,"외형 미리보기",art.packStatus(p));
+        view.put(p,7,Material.BLAZE_POWDER,"gui/showcase","발동 연출 미리보기","경기 참가 중 사용 가능 · 본인에게만 표시");
+        view.detailPreview = id;
         var lore = card.getItemMeta().lore();
         if (lore != null) for (int i = 0; i < Math.min(lore.size(),16); i++) {
             var note = new ItemStack(Material.PAPER);
@@ -132,8 +134,18 @@ final class ArtGallery implements PaperMenu {
         if ((page + 1) * PAGE_SIZE < entries.size()) put(p,53,Material.ARROW,"gui/next","다음 페이지");
     }
 
+    private String detailPreview;
+
     private void activate(Player p, int slot) {
         if (entries.isEmpty()) {
+            if (slot == 7 && detailPreview != null) {
+                if (!art.canPreview(p)) p.sendMessage("활성 경기에서 발동 연출을 미리 볼 수 있습니다.");
+                else {
+                    p.closeInventory();
+                    art.preview(p,"augment/" + detailPreview,false);
+                }
+                return;
+            }
             if (back != null && slot == inventory.getSize()-1) back.run();
             return;
         }
