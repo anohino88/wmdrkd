@@ -41,7 +41,7 @@ public final class ArenaSearchService implements Listener {
     }
 
     public record ArenaContext(UUID matchId, UUID worldId, Arena area, String policy,
-                               int surfaceStep, double worldBorderMargin, Instant verifiedAt, List<Location> spawns) {
+                               int surfaceStep, double worldBorderMargin, boolean generate, Instant verifiedAt, List<Location> spawns) {
         public ArenaContext {
             spawns = spawns.stream().map(Location::clone).toList();
         }
@@ -400,7 +400,7 @@ public final class ArenaSearchService implements Listener {
                         + " | 표면 표본 " + samples + "개, 간격 " + stride + " | " + estimateMessage
                         + " | 안전 스폰 " + spaced.size() + "/" + players);
                 result = new ArenaContext(matchId, world.getUID(), area, plan.zero ? "ZERO" : "MAX_RATIO",
-                        stride, plan.clearance, Instant.now(), spaced);
+                        stride, plan.clearance, generate, Instant.now(), spaced);
                 return true;
             }
             for (int issued = 0; issued < pipeline && next < cells.size() && pending.size() < pipeline; issued++) {

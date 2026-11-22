@@ -571,20 +571,32 @@ public final class PaperMatchService implements Listener {
                             throw new IllegalStateException("Nonparticipant entered the combat lab");
                         if (labWorld != null && !remoteSolo && !world.equals(player.getWorld()))
                             throw new IllegalStateException("Participant left the combat lab world");
+                        if (preparationChunk != null) return;
                         Location target = targets.get(next);
-                        if (preparationChunk == null) {
-                            preparationChunk = world.getChunkAtAsync(target.getBlockX() >> 4, target.getBlockZ() >> 4, false);
-                            return;
-                        }
-                        if (!preparationChunk.isDone()) return;
-                        if (preparationChunk.join() == null || !SafeArenaSurface.validSpawn(target) || !move(player, target)) {
-                            throw new IllegalStateException("Arena spawn unavailable or teleport rejected");
-                        }
-                        snapshots.enterMatch(player);
-                        preparationChunk = null;
-                        if (++next == players.size()) activate(sender, players, context);
+                        var request = world.getChunkAtAsyncUrgently(target,context.generate());
+                        preparationChunk = request;
+                        request.whenComplete((chunk,failure) -> place(request,player,target,chunk,failure));
                     } catch (Exception failure) {
                         failPreparation(sender, failure);
+                    }
+                }
+
+                // Paper completes the chunk future on the server thread. Validate and move while its load ticket is live.
+                private void place(CompletableFuture<Chunk> request, Player player, Location target, Chunk chunk, Throwable failure) {
+                    if (preparationChunk != request || !context.matchId().equals(session.matchId())) return;
+                    preparationChunk = null;
+                    try {
+                        if (failure != null) throw new IllegalStateException("Arena spawn chunk request failed",failure);
+                        if (chunk == null) throw new IllegalStateException("Arena spawn chunk unavailable: " + target);
+                        if (!world.isChunkLoaded(chunk.getX(),chunk.getZ())) return; // Bounded by the placement deadline.
+                        if (!canPlay(player)) throw new IllegalStateException("Participant unavailable during placement");
+                        if (!SafeArenaSurface.validSpawn(target)) throw new IllegalStateException("Arena spawn became unsafe: " + target);
+                        if (!move(player,target)) throw new IllegalStateException("Arena teleport rejected: " + target
+                                + " · actual " + player.getLocation());
+                        snapshots.enterMatch(player);
+                        if (++next == players.size()) activate(sender,players,context);
+                    } catch (Exception aborted) {
+                        failPreparation(sender,aborted);
                     }
                 }
             }

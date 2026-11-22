@@ -159,7 +159,8 @@ def exercise(command, log):
             raise RuntimeError("Chunk requests from the aborted search did not settle")
         if practice:
             wait("1인 연습 · 승패 기록 없음", position)
-        wait("경기가 시작됐습니다",position,75)
+        if not wait("경기가 시작됐습니다",position,75,alternate="경기 준비가 중단됐습니다"):
+            raise RuntimeError(log.read_bytes()[position:].decode(errors="replace"))
         expect("aw status",f"경기 단계 GATHERING | 참가자 {count}명")
 
     def stop_match():

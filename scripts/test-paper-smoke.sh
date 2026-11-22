@@ -49,7 +49,7 @@ dev:
 YAML
 fi
 if [[ "${AW_START_CLIENTS:-0}" == 1 ]]; then
-    printf 'level-type=minecraft:flat\nlevel-seed=67026\nonline-mode=false\nwhite-list=false\nenforce-whitelist=false\nenforce-secure-profile=false\nnetwork-compression-threshold=-1\n' >> server.properties
+    printf 'level-type=minecraft:flat\nlevel-seed=67026\ndifficulty=peaceful\nonline-mode=false\nwhite-list=false\nenforce-whitelist=false\nenforce-secure-profile=false\nnetwork-compression-threshold=-1\n' >> server.properties
     printf 'settings:\n  connection-throttle: -1\n' > bukkit.yml
     mkdir -p plugins/AugmentWild
     cat > plugins/AugmentWild/config.yml <<'YAML'
