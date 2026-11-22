@@ -1258,7 +1258,8 @@ final class PaperOfficialCombat implements Listener {
     private static final Set<String> ACTIVE_SKILLS = Set.of("shadow_dash", "earthquake_mage", "time_rewind",
             "void_lord", "bomb_alchemy", "duel_contract", "calamity_giant");
 
-    private record Pending(String id, long due, DamageChain.Root origin, Runnable action) {}
+    private record Warning(Location center, double radius, Player target) {}
+    private record Pending(String id, long due, DamageChain.Root origin, Runnable action, Warning warning) {}
     private long millis() { return clock.get().elapsedNanos() / 1_000_000L; }
     private double option(String id, String key) {
         return catalog.config.getDouble(path(id) + key);
@@ -1286,14 +1287,30 @@ final class PaperOfficialCombat implements Listener {
         visual(player, state, id, player.getLocation().add(0, 1, 0), Particle.CRIT, Sound.BLOCK_AMETHYST_BLOCK_CHIME);
     }
     private void later(Fighter state, String id, long delay, Runnable action) {
-        if (state.pending.size() >= catalog.count("max-deferred-effects")) return;
+        later(state,id,delay,action,null);
+    }
+
+    private Pending later(Fighter state, String id, long delay, Runnable action, Warning warning) {
+        if (state.pending.size() >= catalog.count("max-deferred-effects")) return null;
         DamageChain.Root root = chain.currentRoot() != null ? chain.currentRoot() : originalHit;
-        state.pending.add(new Pending(id, millis() + delay, root == null ? new DamageChain.Root() : root, action));
+        var pending = new Pending(id,millis()+delay,root == null ? new DamageChain.Root() : root,action,warning);
+        state.pending.add(pending);
+        return pending;
+    }
+
+    private void warn(Player player,Pending pending) {
+        var warning = pending.warning();
+        if (warning == null) return;
+        art.combat(player,warning.target(),pending.origin().id(),pending.id(),Form.DANGER,warning.center(),warning.radius());
     }
     private void tickReactions(Player player, Fighter state) {
         for (var task : List.copyOf(state.pending)) {
-            if (millis() < task.due()) continue;
+            if (millis() < task.due()) {
+                if (Bukkit.getCurrentTick() % 8 == 0 && owns(player,task.id())) warn(player,task);
+                continue;
+            }
             if (!state.pending.remove(task)) continue;
+            if (task.warning() != null) art.cancelWarning(player.getUniqueId(),task.id(),task.origin().id());
             if (valid(player) && owns(player, task.id())) chain.root(task.origin(), task.action());
         }
         var bastion = state.reactions.get("last_bastion");
@@ -1375,17 +1392,14 @@ final class PaperOfficialCombat implements Listener {
                 }));
             } else {
                 visual(player, state, id, center, Particle.FLAME, Sound.ENTITY_TNT_PRIMED);
-                var origin = originalHit == null ? null : originalHit.id();
                 double radius = option(id,"radius");
-                int pending = state.pending.size();
-                later(state, id, interval(id, "duration"), () -> {
-                    art.combat(player,null,origin,id,Form.BLAST,center.clone().add(0,.2,0),radius);
+                var signal = center.clone().add(0,.2,0);
+                var pending = later(state,id,interval(id,"duration"),() -> {
+                    art.combat(player,null,chain.currentRoot().id(),id,Form.BLAST,signal,radius);
                     visual(player, state, id, center, Particle.EXPLOSION, Sound.ENTITY_GENERIC_EXPLODE);
-                    area(player, center, option(id, "radius"), id, rule(id).amount(), other -> {});
-                });
-                if (state.pending.size() > pending)
-                    art.combat(player,victim instanceof Player targetPlayer ? targetPlayer : null,origin,id,
-                            Form.DANGER,center.clone().add(0,.2,0),radius);
+                    area(player,center,radius,id,rule(id).amount(),other -> {});
+                },new Warning(signal,radius,victim instanceof Player targetPlayer ? targetPlayer : null));
+                if (pending != null) warn(player,pending);
             }
         }
     }
@@ -1694,6 +1708,7 @@ final class PaperOfficialCombat implements Listener {
         while (iterator.hasNext()) {
             Zone zone = iterator.next();
             if (!safe.test(zone.start())) {
+                if (zone.augment().equals("void_lord")) art.cancelWarning(player.getUniqueId(),zone.augment(),null);
                 iterator.remove();
                 continue;
             }
@@ -1717,6 +1732,7 @@ final class PaperOfficialCombat implements Listener {
             boolean expires = second >= zone.expiresAt();
             if (zone.augment().equals("void_lord")) {
                 double radius = catalog.setting("void-radius");
+                if (expires) art.cancelWarning(player.getUniqueId(),zone.augment(),null);
                 art.combat(player,null,null,zone.augment(),expires ? Form.VOID : Form.DANGER,
                         zone.start().clone().add(0,.2,0),expires ? 0 : radius);
             }
@@ -2722,6 +2738,7 @@ final class PaperOfficialCombat implements Listener {
                     charge(player, state, fort);
                     later(state, fort, interval(fort, "duration"), () -> {
                         visual(player, state, fort, player.getLocation(), Particle.EXPLOSION, Sound.ENTITY_GENERIC_EXPLODE);
+                        art.combat(player,null,chain.currentRoot().id(),fort,Form.BLAST,player.getLocation().add(0,.2,0),option(fort,"radius"));
                         area(player, player.getLocation(), option(fort, "radius"), fort, option(fort, "pulse"),
                                 other -> push(player, other, option(fort, "push")));
                     });

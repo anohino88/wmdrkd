@@ -114,7 +114,7 @@ jobs:
           if test -f "$log"; then
             while IFS= read -r line; do
               printf '::notice title=Synthetic combat measurement::%s\n' "$line"
-            done < <(grep -F 'SYNTHETIC_LOAD_TEST' "$log")
+            done < <(grep -E 'SYNTHETIC_LOAD_TEST|AW_VFX_LOAD ' "$log")
             if ! grep -Fq 'AW_COMBAT_LOAD_PASS' "$log"; then
               diagnostic=$(grep -E 'ERROR|Exception|AssertionError|Caused by' -A 4 "$log" | tail -20)
               diagnostic=${diagnostic//%/%25}
@@ -183,7 +183,7 @@ jobs:
         run: |
           log="$RUNNER_TEMP/augmentwild-paper-smoke/server.log"
           if test -f "$log"; then
-            while IFS= read -r line; do printf '::notice title=Synthetic combat measurement::%s\n' "$line"; done < <(grep -F 'SYNTHETIC_LOAD_TEST' "$log")
+            while IFS= read -r line; do printf '::notice title=Synthetic combat measurement::%s\n' "$line"; done < <(grep -E 'SYNTHETIC_LOAD_TEST|AW_VFX_LOAD ' "$log")
           fi
       - uses: actions/upload-artifact@v4
         if: always()
@@ -191,3 +191,20 @@ jobs:
           name: paper-combat-load-log
           path: ${{ runner.temp }}/augmentwild-paper-smoke/server.log
           if-no-files-found: ignore
+  paper-version-compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Compare three versions on pinned Paper, one host and seed
+        run: bash scripts/compare-paper-versions.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: paper-version-comparison
+          path: build/version-comparison/*.log

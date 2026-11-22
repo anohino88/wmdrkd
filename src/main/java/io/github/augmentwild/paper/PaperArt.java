@@ -448,6 +448,7 @@ public final class PaperArt implements Listener {
     }
 
     void cancelAura(UUID owner,String id) {
+        cancelWarning(owner,id,null);
         endField(new FieldKey(owner,id));
         var states = auras.get(owner);
         if (states == null) return;
@@ -621,6 +622,8 @@ public final class PaperArt implements Listener {
         combat.offer(source,target,origin,id,form,point,radius,!noVisual.contains(id),!quiet.contains(id));
     }
 
+    void cancelWarning(UUID owner,String id,UUID origin) { combat.cancelWarning(owner,id,origin); }
+
     private boolean roomForCombat() {
         if (!displaysAvailable) return false;
         if (displayCount() < MAX_DISPLAYS) return true;
@@ -736,6 +739,7 @@ public final class PaperArt implements Listener {
         cueSounds.clear();
         nextCue.values().removeIf(expiry -> expiry <= tick);
         try {
+            previews.values().removeIf(preview -> !advancePreview(preview));
             combat.tick();
             peakDisplays = Math.max(peakDisplays,displayCount());
             cues.entrySet().removeIf(entry -> {
@@ -779,7 +783,51 @@ public final class PaperArt implements Listener {
         plugin.getLogger().log(java.util.logging.Level.WARNING,"AugmentWild artwork displays disabled",failure);
     }
 
-    void stopPreview(Player player) { removeCue(player.getUniqueId()); }
+    private record Preview(Player player, String demo, java.util.function.BooleanSupplier allowed, Location at, long began) {}
+    private final Map<UUID,Preview> previews = new HashMap<>();
+
+    void demo(Player player,String demo,java.util.function.BooleanSupplier allowed) {
+        var location = near(player);
+        previews.put(player.getUniqueId(),new Preview(player,demo,allowed,location,tick));
+    }
+
+    private boolean advancePreview(Preview preview) {
+        Player p = preview.player;
+        if (!preview.allowed.getAsBoolean() || !p.isOnline() || !p.getWorld().equals(preview.at.getWorld())) return false;
+        long age = tick - preview.began;
+        switch (preview.demo) {
+            case "compare" -> {
+                if (age == 1) render(p,preview.at,"proc/sword_wind",MOTIONS.get("blade"));
+                if (age == 21) combat(p,null,null,"lab",CombatCinematics.Form.ARC,preview.at,0);
+            }
+            case "simultaneous" -> {
+                if (age == 1) {
+                    render(p,preview.at,"proc/steel_heart",MOTIONS.get("ward"));
+                    render(p,preview.at,"proc/sword_wind",MOTIONS.get("blade"));
+                    combat(p,null,null,"lab",CombatCinematics.Form.GUARD,preview.at,0);
+                    combat(p,null,null,"lab",CombatCinematics.Form.BLAST,preview.at,2);
+                }
+            }
+            case "lifetime" -> {
+                if (age % 8 == 1 && age < 33) combat(p,null,null,"lab",CombatCinematics.Form.DANGER,preview.at,2);
+                if (age == 33) {
+                    cancelWarning(p.getUniqueId(),"lab",null);
+                    combat(p,null,null,"lab",CombatCinematics.Form.VOID,preview.at,0);
+                }
+            }
+            case "repeat" -> {
+                if (age == 1 || age == 13 || age == 25) combat(p,null,null,"lab",CombatCinematics.Form.ARC,preview.at,0);
+            }
+            default -> { return false; }
+        }
+        return age < 36;
+    }
+
+    void stopPreview(Player player) {
+        previews.remove(player.getUniqueId());
+        cancelWarning(player.getUniqueId(),"lab",null);
+        removeCue(player.getUniqueId());
+    }
 
     private void removeCue(UUID id) {
         cues.entrySet().removeIf(entry -> {
@@ -791,6 +839,7 @@ public final class PaperArt implements Listener {
 
     void forget(UUID id) {
         combat.forget(id);
+        previews.remove(id);
         auras.remove(id);
         for (var key : Set.copyOf(fields.keySet())) if (key.owner.equals(id)) endField(key);
         removeCue(id);
@@ -805,6 +854,7 @@ public final class PaperArt implements Listener {
     void clear() {
         combat.clear();
         combat.resetMetrics();
+        previews.clear();
         cues.values().forEach(Animation::remove);
         for (var field : fields.values()) field.model.remove();
         fields.clear();

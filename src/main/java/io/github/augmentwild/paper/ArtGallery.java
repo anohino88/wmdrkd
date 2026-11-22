@@ -52,6 +52,7 @@ final class ArtGallery implements PaperMenu {
         for (String control : List.of("gear","heal","shield","advance","cooldowns")) keys.add("control/" + control);
         for (var evolution : io.github.augmentwild.augment.AugmentEvolution.values()) keys.add("evolve/" + evolution.augment);
         keys.add("control/stopfx");
+        for (String demo : List.of("compare","simultaneous","lifetime","repeat","metrics")) keys.add("demo/" + demo);
         if (!filter.isBlank()) keys.removeIf(key -> !key.contains(filter) && !art.label(key).contains(filter));
         if (keys.isEmpty()) { p.sendMessage("일치하는 실험 항목이 없습니다."); return; }
         var view = new ArtGallery(p,art,PaperArt.Screen.LAB,"전투 실험실",6,keys,allowed);
@@ -149,6 +150,15 @@ final class ArtGallery implements PaperMenu {
         else if (slot < PAGE_SIZE && page * PAGE_SIZE + slot < entries.size()) {
             String key = entries.get(page * PAGE_SIZE + slot);
             var parts = key.split("/",2);
+            if (parts[0].equals("demo")) {
+                if (parts[1].equals("metrics")) p.sendMessage(art.metrics());
+                else {
+                    p.closeInventory();
+                    p.sendMessage("전투 피해가 없는 연출 미리보기 · " + parts[1]);
+                    art.demo(p,parts[1],allowed);
+                }
+                return;
+            }
             if (parts[0].equals("evolve") || parts[0].equals("dummy") || parts[0].equals("preset") || parts[0].equals("control")
                     || parts[0].equals("augment") && mode != Mode.PREVIEW) {
                 if (key.equals("control/stopfx")) art.stopPreview(p);

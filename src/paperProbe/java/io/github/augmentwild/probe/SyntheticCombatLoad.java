@@ -167,6 +167,8 @@ final class SyntheticCombatLoad implements Listener {
             if (repetition == repetitions) {
                 close();
                 plugin.getLogger().info("AW_COMBAT_LOAD_PASS");
+                if ("1".equals(System.getenv("AW_EXTENDED_LOAD")))
+                    plugin.getServer().getScheduler().runTask(plugin,() -> PublicArtProbe.startLoad(plugin,site));
                 return;
             }
             repetition++;

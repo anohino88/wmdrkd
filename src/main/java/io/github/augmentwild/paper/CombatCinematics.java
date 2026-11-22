@@ -65,6 +65,8 @@ final class CombatCinematics {
     private final Audience audience;
     private final Map<Key,Cue> pending = new LinkedHashMap<>();
     private final List<Display> active = new ArrayList<>();
+    private record Audible(UUID listener, UUID source, Form form) {}
+    private final Map<Audible,Long> recentSounds = new HashMap<>();
     private final Map<Pair,Boolean> sourceSight = new HashMap<>();
     private final Map<UUID,Integer> particleBudget = new HashMap<>();
     private final Map<UUID,Integer> ringBudget = new HashMap<>();
@@ -117,7 +119,8 @@ final class CombatCinematics {
         if (viewer.getUniqueId().equals(cue.key.source)) return sees(viewer.getEyeLocation(),cue.point);
         if (!viewer.canSee(cue.source) || cue.source.isInvisible()
                 || cue.target != null && !viewer.getUniqueId().equals(cue.key.target)
-                   && (!viewer.canSee(cue.target) || cue.target.isInvisible())) return false;
+                   && (!viewer.canSee(cue.target) || cue.target.isInvisible()
+                       || !cue.target.getWorld().equals(cue.point.getWorld()))) return false;
         var eye = viewer.getEyeLocation();
         Location source = cue.source.getEyeLocation();
         var pair = new Pair(viewer.getUniqueId(),cue.key.source);
@@ -129,6 +132,7 @@ final class CombatCinematics {
 
     void tick() {
         tick++;
+        recentSounds.values().removeIf(until -> until <= tick);
         if (!running.getAsBoolean()) { clear(); return; }
         soundBudget.clear();
         ringBudget.clear();
@@ -187,7 +191,7 @@ final class CombatCinematics {
                 fallback++;
             }
             if (cue.radius > 0 && cue.particles) ring(viewer,cue);
-            if (cue.sound) sound(viewer,cue.key.form,cue.point);
+            if (cue.sound) sound(viewer,cue.key.source,cue.key.form,cue.point);
         }
         // A concealed source may give the victim generic feedback solely at their current position.
         if (!targetSaw && cue.target != null && eligible(cue.target)
@@ -198,7 +202,7 @@ final class CombatCinematics {
             Form feedback = cue.key.form == Form.GUARD ? Form.GUARD : Form.HIT;
             if (cue.particles && PlayerUi.enabled(cue.target,PlayerUi.Option.PARTICLES))
                 particle(cue.target,feedback.particle,own,2);
-            if (cue.sound) sound(cue.target,feedback,own);
+            if (cue.sound) sound(cue.target,cue.key.source,feedback,own);
         }
         if (viewers.isEmpty()) return;
         ItemDisplay model = spawn.model(cue.point,cue.key.form.model,pose(cue,0));
@@ -209,14 +213,55 @@ final class CombatCinematics {
     private static Transformation pose(Cue cue,int stage) {
         var form = cue.key.form;
         float yaw = (float)Math.toRadians(-cue.point.getYaw());
-        float scale = stage == 0 ? .18f : stage == 1 ? 1f : .07f;
-        float rise = stage == 2 ? .28f : 0;
-        float stretch = form == Form.ARC || form == Form.GUARD ? 1.45f : 1;
-        float flatten = form == Form.BLAST || form == Form.DANGER ? .30f : .80f;
-        return new Transformation(new Vector3f(0,rise,0),
-                new Quaternionf().rotateY(yaw + (form == Form.RETURN ? -.9f : .5f)*stage)
-                        .rotateZ(form == Form.GUARD ? -.32f*stage : 0),
-                new Vector3f(scale*stretch,scale*flatten,scale),new Quaternionf());
+        float t = stage / 2f;
+        boolean contact = stage == 1;
+        float scale = stage == 0 ? .18f : contact ? 1f : .07f;
+        var offset = new Vector3f();
+        var rotation = new Quaternionf().rotateY(yaw);
+        var shape = new Vector3f(scale);
+        switch (form) {
+            case ARC -> {
+                offset.set(-.36f + t*.72f,.16f*t,0);
+                rotation.rotateY(-1.1f+2.2f*t).rotateZ(-.42f+.7f*t);
+                shape.mul(1.6f,.55f,1.15f);
+            }
+            case GUARD -> {
+                offset.set(0,.25f*t,.1f*t);
+                rotation.rotateZ(-.52f*t).rotateX(.28f*t);
+                shape.mul(1.4f,1.1f,.75f);
+            }
+            case BLAST,DANGER -> {
+                offset.y = .06f;
+                rotation.rotateY(.8f*t);
+                shape.mul(1.4f,.3f,1.4f);
+            }
+            case BOLT,TRAIL -> {
+                offset.set(0,-.04f,.45f*t);
+                rotation.rotateZ(1.5f*t);
+                shape.mul(.48f,.48f,1.55f);
+            }
+            case RETURN -> {
+                offset.set(0,.35f*(1-t),-.25f*t);
+                rotation.rotateY(-2.4f*t);
+                shape.mul(.95f,.74f,.95f);
+            }
+            case VOID -> {
+                offset.y = .33f*(1-t);
+                rotation.rotateX(.5f+t).rotateY(2.7f*t);
+                shape.mul(1.2f,.86f,1.2f);
+            }
+            case RESCUE -> {
+                offset.y = .6f*t;
+                rotation.rotateX(-.32f*t);
+                shape.mul(1.45f,1.2f,.7f);
+            }
+            case HIT -> {
+                offset.y = .2f*t;
+                rotation.rotateZ(.35f*t);
+                shape.mul(.8f,1,.8f);
+            }
+        }
+        return new Transformation(offset,rotation,shape,new Quaternionf());
     }
 
     private boolean modelFor(Player viewer) {
@@ -249,8 +294,11 @@ final class CombatCinematics {
         samples += count;
     }
 
-    private void sound(Player viewer,Form form,Location at) {
+    private void sound(Player viewer,UUID source,Form form,Location at) {
         if (form.sound == null || !PlayerUi.enabled(viewer,PlayerUi.Option.SOUND) || soundBudget.getOrDefault(viewer.getUniqueId(),0) >= MAX_SOUNDS) return;
+        var key = new Audible(viewer.getUniqueId(),source,form);
+        if (recentSounds.containsKey(key)) return;
+        recentSounds.put(key,tick+(form == Form.DANGER ? 30 : 4));
         soundBudget.merge(viewer.getUniqueId(),1,Integer::sum);
         viewer.playSound(at,form.sound,.36f,1f);
         sounds++;
@@ -261,7 +309,19 @@ final class CombatCinematics {
         removed++;
     }
 
+    void cancelWarning(UUID source,String effect,UUID origin) {
+        Predicate<Key> matches = key -> key.form == Form.DANGER && key.source.equals(source)
+                && key.effect.equals(effect) && (origin == null || origin.equals(key.origin));
+        pending.keySet().removeIf(matches);
+        active.removeIf(display -> {
+            if (!matches.test(display.cue.key)) return false;
+            remove(display);
+            return true;
+        });
+    }
+
     void forget(UUID player) {
+        recentSounds.keySet().removeIf(key -> key.listener.equals(player) || key.source.equals(player));
         pending.keySet().removeIf(key -> key.source.equals(player) || player.equals(key.target));
         active.removeIf(display -> {
             if (display.cue.key.source.equals(player) || player.equals(display.cue.key.target)) {
@@ -280,6 +340,7 @@ final class CombatCinematics {
     }
 
     void clear() {
+        recentSounds.clear();
         pending.clear();
         active.forEach(this::remove);
         active.clear();
