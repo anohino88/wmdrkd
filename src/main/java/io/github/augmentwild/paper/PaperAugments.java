@@ -111,15 +111,17 @@ final class PaperAugments implements Listener {
     private final PaperOfficialCombat official;
     private final MatchTelemetry telemetry;
     private final PaperHud hud;
+    private final PaperArt art;
     private final Map<EntityDamageByEntityEvent, Map<Player, String>> observedProcs = new WeakHashMap<>();
 
     PaperAugments(JavaPlugin plugin, Supplier<MatchSimulationClock> clock, Predicate<UUID> member,
                   Predicate<Player> active, Predicate<Player> protectedPlayer, Supplier<MatchState> phase,
                   Predicate<Location> arena, Predicate<Location> safe, BiPredicate<Player, Location> teleport,
-                  BiConsumer<UUID, Integer> protection, int maxDepth, MatchTelemetry telemetry, PaperHud hud) {
+                  BiConsumer<UUID, Integer> protection, int maxDepth, MatchTelemetry telemetry, PaperHud hud, PaperArt art) {
         this.plugin = plugin;
         this.telemetry = telemetry;
         this.hud = hud;
+        this.art = art;
         this.clock = clock;
         this.member = member;
         this.active = active;
@@ -135,7 +137,7 @@ final class PaperAugments implements Listener {
                 protection, player -> {
                     var profile = profiles.get(player);
                     return profile == null ? Set.of() : profile.owned;
-                }, maxDepth, telemetry, hud);
+                }, maxDepth, telemetry, hud, art);
         registry.all().stream().filter(a -> AugmentRole.of(a.id()) == AugmentRole.UNKNOWN).forEach(a ->
                 plugin.getLogger().warning("Unclassified augment draft role: " + a.id()));
         roller = new AugmentRoller(registry, random, official.draftWeights(), new AugmentRoller.Quality(
@@ -332,6 +334,8 @@ final class PaperAugments implements Listener {
         profile.acquired.add(definition.id());
         official.selected(player, definition.id(), source);
         official.acquired(player, definition.id());
+        Player viewer = plugin.getServer().getPlayer(player);
+        if (viewer != null) art.cue(viewer,definition.id());
         return true;
     }
 
@@ -574,7 +578,7 @@ final class PaperAugments implements Listener {
             official.resonanceDetails(player.getUniqueId(), augment.id()).forEach(line -> lore.add(Component.text(line)));
             official.details(player.getUniqueId(), augment.id()).forEach(line -> lore.add(Component.text(line)));
         }
-        return item(icon, Component.text(augment.name(), color), lore);
+        return art.icon(player,item(icon, Component.text(augment.name(), color), lore),"augment/" + augment.id());
     }
 
     private void showExchange(Player player, Profile profile) {
@@ -739,7 +743,11 @@ final class PaperAugments implements Listener {
         var profile = activeProfile(player);
         if (profile == null || event.getAmount() <= 0) return;
         strongest(profile, Effect.XP).ifPresent(a -> guard.run(event, new ProcKey(player.getUniqueId(), "xp"),
-                () -> event.setAmount(AugmentMath.experience(event.getAmount(), a.amount()))));
+                () -> {
+                    int previous = event.getAmount();
+                    event.setAmount(AugmentMath.experience(previous, a.amount()));
+                    if (event.getAmount() > previous) art.cue(player,a.id());
+                }));
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -788,7 +796,10 @@ final class PaperAugments implements Listener {
                 || event.getFinalDamage() <= 0 || !active.test(attacker) || !active.test(target)
                 || protectedPlayer.test(attacker) || protectedPlayer.test(target)) return;
         var confirmed = observedProcs.remove(event);
-        if (confirmed != null) confirmed.forEach(hud::activated);
+        if (confirmed != null) confirmed.forEach((player, id) -> {
+            hud.activated(player,registry.get(id).name());
+            art.cue(player,id);
+        });
         var attacking = profiles.get(attacker.getUniqueId());
         var defending = profiles.get(target.getUniqueId());
         if (attacking != null) {
@@ -824,9 +835,12 @@ final class PaperAugments implements Listener {
                 action.accept(player, a);
                 if (event instanceof EntityDamageByEntityEvent hit) {
                     if (effect == Effect.REAR || effect == Effect.FALL || effect == Effect.DEFENSE) {
-                        observedProcs.computeIfAbsent(hit, ignored -> new LinkedHashMap<>()).putIfAbsent(player, a.name());
-                    } else hud.activated(player, a.name());
-                }
+                        observedProcs.computeIfAbsent(hit, ignored -> new LinkedHashMap<>()).putIfAbsent(player, a.id());
+                    } else {
+                        hud.activated(player, a.name());
+                        art.cue(player,a.id());
+                    }
+                } else art.cue(player,a.id());
                 plugin.getLogger().fine("Augment proc match=" + match + " player=" + player.getUniqueId() + " id=" + a.id());
             });
         });

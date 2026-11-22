@@ -58,6 +58,7 @@ final class PaperSupply implements Listener {
     private final Consumer<String> notice;
     private final SupplyRecovery recovery;
     private final MatchTelemetry stats;
+    private final PaperArt art;
     private final Map<Site, Delivery> spawned = new HashMap<>();
     private final Map<ChunkSite, Integer> tickets = new HashMap<>();
     private final Map<UUID, Opening> opening = new HashMap<>();
@@ -71,13 +72,14 @@ final class PaperSupply implements Listener {
     private long lastMarkerCheck = -1;
 
     PaperSupply(JavaPlugin plugin, SupplySettings settings, Predicate<Player> active, Predicate<Location> safe,
-                Consumer<String> notice, MatchTelemetry stats) {
+                Consumer<String> notice, MatchTelemetry stats, PaperArt art) {
         this.plugin = plugin;
         this.settings = settings;
         this.active = active;
         this.safe = safe;
         this.notice = notice;
         this.stats = stats;
+        this.art = art;
         recovery = new SupplyRecovery(plugin);
     }
 
@@ -128,7 +130,10 @@ final class PaperSupply implements Listener {
         if (second != lastMarkerCheck) {
             lastMarkerCheck = second;
             for (var delivery : List.copyOf(spawned.values())) {
-                if (claimable(delivery)) continue;
+                if (claimable(delivery)) {
+                    art.supplyMarker(delivery.position,delivery.plan.premium());
+                    continue;
+                }
                 stats.count(Counter.CANCELLED_AFTER_PUBLICATION);
                 remove(delivery);
                 notice.accept(label(delivery) + " · 상자 소유권 또는 내용물이 달라 보급을 중단했습니다.");
@@ -219,7 +224,7 @@ final class PaperSupply implements Listener {
         delivery.arrived = elapsed;
         stats.count(Counter.CREATED);
         notice.accept(label(delivery) + "이 도착했습니다.");
-        PlayerUi.audience(location,PlayerUi.Option.SOUND,p -> p.playSound(location, Sound.BLOCK_CHEST_OPEN,1,.8f));
+        art.supply(location,delivery.plan.premium());
         PlayerUi.audience(location,PlayerUi.Option.PARTICLES,p -> p.spawnParticle(Particle.END_ROD, location.clone().add(0,1,0),15,.4,.3,.4,.02));
     }
 
@@ -285,6 +290,7 @@ final class PaperSupply implements Listener {
     private void remove(Delivery delivery) {
         var location = delivery.position;
         spawned.remove(Site.at(location));
+        art.removeSupply(location);
         if (plugin.getServer().getWorld(location.getWorld().getUID()) == location.getWorld()) delivery.block.remove();
         release(location);
         opening.values().removeIf(value -> value.delivery() == delivery);

@@ -72,6 +72,7 @@ public final class PaperMatchService implements Listener {
     private final MatchDisplays displays = new MatchDisplays(this::augmentActive);
     private final PaperOverheadHealth overhead;
     private final CombatFeedback feedback;
+    private final PaperArt art;
     private final Map<UUID,List<String>> results = new LinkedHashMap<>();
     private final Map<UUID,Long> outAt = new LinkedHashMap<>();
     private final Map<UUID,String> causes = new LinkedHashMap<>();
@@ -110,14 +111,15 @@ public final class PaperMatchService implements Listener {
                 this::consumePermit, player -> placement.protectedFromDamage(player.getUniqueId(), System.nanoTime()),
                 player -> session.state() == MatchState.AUGMENT_SELECTION && augmentMember(player.getUniqueId()),
                 this::labParticipant);
+        art = new PaperArt(plugin,this::augmentActive);
         augments = new PaperAugments(plugin, () -> clock, this::augmentMember, this::augmentActive,
                 player -> placement.protectedFromDamage(player.getUniqueId(), System.nanoTime()),
-                () -> session.state(), this::insideAugmentArena, this::insideAugmentBorder, this::move, placement::protect, settings.rules().procDepth(), telemetry, hud);
+                () -> session.state(), this::insideAugmentArena, this::insideAugmentBorder, this::move, placement::protect, settings.rules().procDepth(), telemetry, hud, art);
         feedback = new CombatFeedback(plugin,this::augmentActive,this::insideAugmentArena,augments,hud);
         supply = new PaperSupply(plugin, SupplySettings.load(config, settings.rules().gatheringSeconds()),
-                this::augmentActive, this::insideAugmentBorder, this::notice, telemetry);
+                this::augmentActive, this::insideAugmentBorder, this::notice, telemetry, art);
         intel = new PaperIntel(plugin, () -> clock, () -> session.participantIds(), this::augmentActive,
-                this::insideAugmentBorder, augments, telemetry, hud, supply::nearbyPvp);
+                this::insideAugmentBorder, augments, telemetry, hud, supply::nearbyPvp, art);
     }
 
     private void notice(String message) {
@@ -127,15 +129,17 @@ public final class PaperMatchService implements Listener {
         }
     }
 
+    public Listener artListener() { return art; }
+    PaperArt art() { return art; }
     public Listener feedbackListener() { return feedback; }
     public Listener uiListener() { return new PlayerUi(); }
-    public String ui(Player p) { return PlayerUi.open(p); }
+    public String ui(Player p) { return PlayerUi.open(p,art); }
     public String guide(Player p) { return augmentActive(p) && PlayerUi.enabled(p,PlayerUi.Option.SUPPLY)
             ? supply.guide(p,true) : "보급 안내를 사용할 수 없습니다."; }
     public String result(Player p) {
         var lines = results.get(p.getUniqueId());
         if (lines == null || task != null || snapshots.pending(p.getUniqueId())) return "현재 확인할 경기 결과가 없습니다.";
-        PlayerUi.result(p,lines);
+        PlayerUi.result(p,lines,art);
         return "경기 결과";
     }
 
@@ -543,6 +547,7 @@ public final class PaperMatchService implements Listener {
     private void clearMatch() {
         boolean played = clock != null;
         if (played) feedback.finishSamples();
+        art.clear();
         displays.clear();
         overhead.clear();
         search.cancel();
@@ -612,7 +617,7 @@ public final class PaperMatchService implements Listener {
         for (UUID id : captured) {
             Player player = available(id);
             if (player != null && snapshots.restore(player, this::move) && played && plugin.isEnabled() && results.containsKey(id))
-                updateDisplay(player,() -> PlayerUi.result(player,results.get(id)));
+                updateDisplay(player,() -> PlayerUi.result(player,results.get(id),art));
         }
         captured.clear();
         permits.clear();
@@ -638,6 +643,7 @@ public final class PaperMatchService implements Listener {
                 feedback.finishSamples();
                 outAt.putIfAbsent(id,clock.elapsedNanos());
                 departureStats.put(id,resultLines(id));
+                art.forget(id);
                 displays.detach(id);
                 overhead.detach(id);
                 supply.disconnect(id);
@@ -741,6 +747,7 @@ public final class PaperMatchService implements Listener {
             intel.tick();
             long realTime = System.nanoTime();
             feedback.tick(realTime);
+            art.tick();
             var round = clock.selection().orElse(null);
             for (UUID id : activeSession.participantIds()) {
                 Player player = plugin.getServer().getPlayer(id);
@@ -884,6 +891,7 @@ public final class PaperMatchService implements Listener {
     }
 
     @EventHandler public void worldChange(org.bukkit.event.player.PlayerChangedWorldEvent e) {
+        art.forget(e.getPlayer().getUniqueId());
         displays.detach(e.getPlayer().getUniqueId());
         overhead.detach(e.getPlayer().getUniqueId());
     }
@@ -934,6 +942,7 @@ public final class PaperMatchService implements Listener {
             Player killer = event.getEntity().getKiller();
             creditedKillers.put(id, killer != null && contains(killer.getUniqueId()) && !departures.contains(killer.getUniqueId())
                     ? killer.getUniqueId() : null);
+            art.forget(id);
             displays.detach(id);
             overhead.detach(id);
             var source = event.getDamageSource().getCausingEntity();

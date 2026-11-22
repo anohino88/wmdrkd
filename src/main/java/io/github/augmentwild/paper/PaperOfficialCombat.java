@@ -165,15 +165,17 @@ final class PaperOfficialCombat implements Listener {
 
     private final MatchTelemetry telemetry;
     private final PaperHud hud;
+    private final PaperArt art;
 
     PaperOfficialCombat(JavaPlugin plugin, AugmentRegistry registry, Supplier<MatchSimulationClock> clock,
                         Supplier<MatchState> phase, Predicate<UUID> member, Predicate<Player> active, Predicate<Player> protectedPlayer,
                         Predicate<Location> arena, Predicate<Location> safe, BiPredicate<Player, Location> teleport,
                         BiConsumer<UUID, Integer> protection,
-                        Function<UUID, Set<String>> owned, int depth, MatchTelemetry telemetry, PaperHud hud) {
+                        Function<UUID, Set<String>> owned, int depth, MatchTelemetry telemetry, PaperHud hud, PaperArt art) {
         this.plugin = plugin;
         this.telemetry = telemetry;
         this.hud = hud;
+        this.art = art;
         this.clock = clock;
         this.phase = phase;
         this.member = member;
@@ -416,6 +418,8 @@ final class PaperOfficialCombat implements Listener {
         if (resonance.announce() && state.resonance.familyMultiplier() > previousGrowth) {
             announce(id, resonance.families().stacking().name() + " · 영구 중첩 획득량 +"
                     + percent(state.resonance.familyMultiplier() - AugmentResonance.BASE), resonance.sound());
+            Player player = plugin.getServer().getPlayer(id);
+            if (player != null && PlayerUi.enabled(player,PlayerUi.Option.GROWTH)) art.growth(player,"stacking",resonance.particles());
         }
         double previousShield = previous == null ? 0 : previous.shieldPoints();
         if (resonance.announce() && state.resonance.shieldPoints() > previousShield) {
@@ -1188,7 +1192,10 @@ final class PaperOfficialCombat implements Listener {
         return state.reactions.computeIfAbsent(id, ignored -> new CombatReaction());
     }
     private void visual(Player player, Fighter state, String id, Location at, Particle kind, Sound sound) {
-        if (catalog.config.getBoolean(path(id) + "particles")) particle(player, state, kind, at);
+        if (catalog.config.getBoolean(path(id) + "particles")) {
+            particle(player, state, kind, at);
+            art.cue(player,id);
+        }
         if (catalog.config.getBoolean(path(id) + "sound")) PlayerUi.audience(at, PlayerUi.Option.SOUND, p -> p.playSound(at,sound,.45f,1.2f));
     }
     private void charge(Player player, Fighter state, String id) {
@@ -1502,6 +1509,7 @@ final class PaperOfficialCombat implements Listener {
         };
         ready(player, state, id);
         state.hudSecond = -1;
+        art.cast(player,id);
         announceProc(player, id);
         state.skillUses++;
         return rule(id).definition().name() + " 발동";
@@ -2146,6 +2154,7 @@ final class PaperOfficialCombat implements Listener {
         var definition = catalog.rules.get(id);
         String name = definition != null ? definition.definition().name() : catalog.synergies.getString(id + ".name");
         if (name != null) hud.activated(player,name);
+        art.cue(player,id);
         var state = fighters.get(player.getUniqueId());
         if (state == null) return;
         String synergy = switch (id) {
@@ -2163,6 +2172,7 @@ final class PaperOfficialCombat implements Listener {
         int color = catalog.synergies.getInt(synergy + ".color");
         Location center = player.getLocation().add(0, 1, 0);
         if (catalog.synergies.getBoolean(synergy + ".particles")) {
+            art.growth(player,synergy,true);
             var dust = new Particle.DustOptions(org.bukkit.Color.fromRGB(color), 1);
             for (int i = 0; i < 8 && particleAvailable(state); i++) {
                 double angle = i * Math.PI / 4;
@@ -2206,9 +2216,10 @@ final class PaperOfficialCombat implements Listener {
     private void evolution(Player player, Fighter state, String id) {
         telemetry.evolution(player.getUniqueId(), id, clock.get().elapsedSeconds());
         if (!state.growthNotices.add(id) || !PlayerUi.enabled(player,PlayerUi.Option.GROWTH)) return;
-        announce(player.getUniqueId(), "증강 진화 · " + rule(id).definition().name(),
-                catalog.config.getBoolean("settings.evolution-sound"));
+        announce(player.getUniqueId(), "증강 진화 · " + rule(id).definition().name(),false);
+        if (catalog.config.getBoolean("settings.evolution-sound")) art.sound(player,"evolve",Sound.ENTITY_PLAYER_LEVELUP);
         if (catalog.config.getBoolean("settings.evolution-particles")) {
+            art.growth(player,id,true);
             particle(player, state, Particle.END_ROD, player.getLocation().add(0, 1, 0));
         }
     }
@@ -2609,6 +2620,7 @@ final class PaperOfficialCombat implements Listener {
             state.shield.grant(clock.get().elapsedNanos(), shield.shieldPoints(), shield.shieldNanos());
             hud.record(player,"생명의 잔향 보호막 +" + shield.shieldPoints() + " HP");
             updateShieldDisplay(player, state);
+            if (resonance.announce() && PlayerUi.enabled(player,PlayerUi.Option.GROWTH)) art.growth(player,"life_echo",resonance.particles());
             if (resonance.announce() && resonance.sound() && PlayerUi.enabled(player,PlayerUi.Option.SOUND)) player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, .45f, 1.4f);
             if (resonance.announce() && resonance.particles()) particle(player, state, Particle.END_ROD, player.getLocation().add(0, 1, 0));
         }

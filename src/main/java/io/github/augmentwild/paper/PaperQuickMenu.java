@@ -110,6 +110,11 @@ public final class PaperQuickMenu implements Listener {
         item(menu, 16, Material.COMPASS, "보급 길잡이", "나침반을 들고 공중 우클릭으로도 확인 가능");
         item(menu, 21, Material.WRITABLE_BOOK, "전투 기록");
         item(menu, 22, Material.PAPER, "최근 경기 결과");
+        PaperArt art = matches.art();
+        for (var control : java.util.Map.of(4,"menu",12,"choice",13,"settings",16,"supply",21,"report",22,"result").entrySet()) {
+            int slot = control.getKey();
+            menu.inventory.setItem(slot,art.icon(player,menu.inventory.getItem(slot),"gui/" + control.getValue()));
+        }
         item(menu, 26, Material.ARROW, "메뉴 새로고침");
         if (player.hasPermission("augmentwild.admin") && player.hasPermission("augmentwild.admin.test")) {
             if (matches.soloInProgress(player)) item(menu, 24, Material.BARRIER, "1인 전투 실험 종료");

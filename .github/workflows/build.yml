@@ -60,6 +60,17 @@ jobs:
           name: paper-probe-jar
           path: build/paper-probe/*.jar
           if-no-files-found: error
+  resource-pack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate and package the Minecraft 26.3 resource pack
+        run: python3 scripts/resource-pack.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: augmentwild-resource-pack
+          path: build/resource-pack/augmentwild-26.3.zip
+          if-no-files-found: error
   paper-smoke:
     needs: build
     runs-on: ubuntu-latest

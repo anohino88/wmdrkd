@@ -83,9 +83,11 @@ final class PaperIntel implements Listener {
         @Override public Inventory getInventory() { return inventory; }
     }
 
+    private final PaperArt art;
+
     PaperIntel(JavaPlugin plugin, Supplier<MatchSimulationClock> clock, Supplier<Set<UUID>> participants,
                Predicate<Player> active, Predicate<Location> safe, PaperAugments augments, MatchTelemetry stats,
-               PaperHud hud, Consumer<Location> nearbyPvp) {
+               PaperHud hud, Consumer<Location> nearbyPvp, PaperArt art) {
         this.plugin = plugin;
         this.clock = clock;
         this.participants = participants;
@@ -94,6 +96,7 @@ final class PaperIntel implements Listener {
         this.augments = augments;
         this.stats = stats;
         this.hud = hud;
+        this.art = art;
         this.nearbyPvp = nearbyPvp;
         settings = IntelSettings.load(plugin.getConfig());
     }
@@ -424,7 +427,7 @@ final class PaperIntel implements Listener {
     private void open(Player player, Report report) {
         var menu = new Menu(player.getUniqueId(), report);
         menu.inventory = plugin.getServer().createInventory(menu, 45, Component.text(report.title()));
-        render(menu);
+        render(menu,player);
         player.openInventory(menu.inventory);
         if (deaths.get(menu.owner) == report && player.getOpenInventory().getTopInventory().getHolder() == menu) {
             if (report.matchId().equals(match)) stats.count(Counter.DEATH_VIEWS);
@@ -462,11 +465,15 @@ final class PaperIntel implements Listener {
         if (count != null) plugin.getLogger().info("Match feature late totals match=" + matchId + " DEATH_VIEWS=" + count);
     }
 
-    private static void render(Menu menu) {
+    private void render(Menu menu, Player player) {
         menu.inventory.clear();
         int offset = menu.page * PAGE_SIZE;
         for (int i = 0; i < PAGE_SIZE && offset + i < menu.report.cards().size(); i++) {
             menu.inventory.setItem(i, item(menu.report.cards().get(offset + i)));
+        }
+        if (menu.page == 0 && menu.inventory.getItem(0) != null) {
+            String key = menu.report.title().equals("망원경 정찰") ? "gui/scout" : "gui/report";
+            menu.inventory.setItem(0,art.icon(player,menu.inventory.getItem(0),key));
         }
         if (menu.page > 0) menu.inventory.setItem(36, item(card(Material.ARROW, "이전 페이지")));
         if (offset + PAGE_SIZE < menu.report.cards().size()) menu.inventory.setItem(44, item(card(Material.ARROW, "다음 페이지")));
@@ -482,7 +489,7 @@ final class PaperIntel implements Listener {
         if (slot == 36 && menu.page > 0) menu.page--;
         else if (slot == 44 && (menu.page + 1) * PAGE_SIZE < menu.report.cards().size()) menu.page++;
         else return;
-        render(menu);
+        if (event.getWhoClicked() instanceof Player player) render(menu,player);
     }
 
     static Card card(Material icon, String name, String... lore) {

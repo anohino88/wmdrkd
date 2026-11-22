@@ -129,3 +129,8 @@ dev:
 hud:
   floating-damage: false
   max-floating-numbers: 16
+
+# Optional visual pack. Serve the raw ZIP over HTTPS and copy its SHA-1 from scripts/resource-pack.py.
+art:
+  url: ""
+  sha1: ""

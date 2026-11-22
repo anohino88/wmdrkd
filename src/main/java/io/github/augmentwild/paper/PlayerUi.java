@@ -57,12 +57,15 @@ public final class PlayerUi implements Listener {
         public Inventory getInventory() { return inventory; }
         public boolean availableWhileRestricted() { return true; }
     }
-    public static String open(Player p) {
+    public static String open(Player p) { return open(p,null); }
+
+    static String open(Player p, PaperArt art) {
         var menu = new Menu(p, true);
         for (var option : Option.values()) paint(p, menu, option);
         menu.inventory.setItem(18, PaperIntel.item(PaperIntel.card(Material.BEACON, "전체 UI 켜기", "모든 HUD와 알림 표시")));
         menu.inventory.setItem(20, PaperIntel.item(PaperIntel.card(Material.IRON_SWORD, "전투 집중", "전투 HUD 중심 · 파티클 및 효과음 최소화")));
         menu.inventory.setItem(22, PaperIntel.item(PaperIntel.card(Material.GLASS_PANE, "최소 표시", "체력·피해·스킬·위험 경고만 표시")));
+        if (art != null) menu.inventory.setItem(18,art.icon(p,menu.inventory.getItem(18),"gui/settings"));
         menu.inventory.setItem(26, PaperIntel.item(PaperIntel.card(Material.ARROW, "빠른 메뉴로 돌아가기")));
         p.openInventory(menu.inventory);
         return "화면 설정";
@@ -95,10 +98,13 @@ public final class PlayerUi implements Listener {
         menu.inventory.setItem(option.ordinal(), PaperIntel.item(PaperIntel.card(on ? Material.LIME_DYE : Material.GRAY_DYE,
                 option.title + (on ? " ON" : " OFF"))));
     }
-    public static void result(Player player, List<String> lines) {
+    public static void result(Player player, List<String> lines) { result(player,lines,null); }
+
+    static void result(Player player, List<String> lines, PaperArt art) {
         var menu = new Menu(player, false);
         for (int i = 0; i < Math.min(lines.size(), menu.inventory.getSize()); i++)
             menu.inventory.setItem(i, PaperIntel.item(PaperIntel.card(Material.PAPER, lines.get(i))));
+        if (art != null && !lines.isEmpty()) menu.inventory.setItem(0,art.icon(player,menu.inventory.getItem(0),"gui/result"));
         player.openInventory(menu.inventory);
     }
     @EventHandler public void click(InventoryClickEvent e) {

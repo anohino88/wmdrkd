@@ -122,6 +122,7 @@ public final class BorderProbe extends JavaPlugin implements Listener {
             PaperAugmentAttribute.update(speed, key, .16, AttributeModifier.Operation.ADD_SCALAR, false);
             require(speed.getModifier(key) == null && speed.getValue() == initialSpeed, "modifier restore");
             HudProbe.run(testPig);
+            ArtProbe.run(testPig);
             verifyAugmentCatalog();
             verifySyntheticDamage(testPig);
             verifyRicochet(spawn, testPig);

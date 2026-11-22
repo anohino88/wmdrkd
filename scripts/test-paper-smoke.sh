@@ -88,6 +88,7 @@ with log.open("wb") as output:
             if os.environ.get("AW_BORDER_PROBE") == "1":
                 wait_for("관리자 권한이 없습니다", 15)
                 wait_for("AW_PHASE68_MENU_PASS", 15)
+                wait_for("AW_ART_PROBE_PASS", 15)
                 for size in (2, 4, 8, 16):
                     wait_for(f"AW_HUD_LOAD_PASS synthetic={size} ticks=40 scans={8*size}", 15)
                 wait_for("AW_BORDER_PROBE_PASS", 15)

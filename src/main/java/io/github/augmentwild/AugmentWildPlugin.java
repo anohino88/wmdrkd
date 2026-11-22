@@ -36,6 +36,7 @@ public final class AugmentWildPlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(matches.feedbackListener(), this);
         getServer().getPluginManager().registerEvents(matches.uiListener(), this);
         getServer().getPluginManager().registerEvents(quickMenu, this);
+        getServer().getPluginManager().registerEvents(matches.artListener(), this);
         matches.recoverSupply();
         matches.recoverOnlinePlayers();
     }
@@ -50,6 +51,7 @@ public final class AugmentWildPlugin extends JavaPlugin {
         HandlerList.unregisterAll(matches.supplyListener());
         HandlerList.unregisterAll(arenaSearch);
         HandlerList.unregisterAll(quickMenu);
+        HandlerList.unregisterAll(matches.artListener());
         arenaSearch.cancel();
         matches.shutdown();
         matches = null;
