@@ -39,6 +39,7 @@ def benchmark_arena(command, log, wait_for):
         command("worldborder set 1000")
         command("aw admin arena check")
         wait_for("배치 가능 중심 X 0.0 ~ 0.0", 10)
+    command("worldborder set 5000")
     for trial in range(2):
         start = log.stat().st_size
         command("aw admin arena preview")

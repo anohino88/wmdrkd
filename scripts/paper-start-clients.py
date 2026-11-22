@@ -86,6 +86,8 @@ class Client:
 
     def handle(self, packet_id, packet):
         if self.phase == "login":
+            if packet_id == 0:
+                raise RuntimeError(f"Login refused: {packet.read().decode(errors='replace')}")
             if packet_id != 2:
                 raise RuntimeError(f"Unexpected login packet {packet_id}")
             self.send(3)  # Login acknowledged.
@@ -119,13 +121,16 @@ class Client:
 
 
 def exercise(command, log):
-    def wait(marker, start=0, timeout=20):
+    def wait(marker, start=0, timeout=20, alternate=None):
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             with log.open("rb") as handle:
                 handle.seek(start)
-                if marker.encode() in handle.read():
-                    return
+                new = handle.read()
+            if marker.encode() in new:
+                return True
+            if alternate and alternate.encode() in new:
+                return False
             time.sleep(.05)
         raise RuntimeError(f"Missing after byte {start}: {marker}")
 
@@ -135,9 +140,15 @@ def exercise(command, log):
         wait(marker,position,timeout)
 
     def start_match(count, automatic, overflow=0, practice=False):
-        position = log.stat().st_size
-        command("aw admin start")
-        wait(f"참가 대상 {count}/16명 (자동 {automatic}명) · 정원 초과 {overflow}명",position)
+        for _ in range(20):
+            position = log.stat().st_size
+            command("aw admin start")
+            if wait(f"참가 대상 {count}/16명 (자동 {automatic}명) · 정원 초과 {overflow}명",position,
+                    alternate="이전 경기장 탐색이 정리될 때까지 기다리세요"):
+                break
+            time.sleep(.25)
+        else:
+            raise RuntimeError("Chunk requests from the aborted search did not settle")
         if practice:
             wait("1인 연습 · 승패 기록 없음", position)
         wait("경기가 시작됐습니다",position,75)
