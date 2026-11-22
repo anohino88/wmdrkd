@@ -48,6 +48,7 @@ class Client:
         self.ready = threading.Event()
         self.failure = None
         self.phase = "login"
+        self.position = (0,0,0,0,0)
         self.send(0, varint(PROTOCOL) + string("localhost") + struct.pack(">H", PORT) + varint(2))
         self.send(0, string(self.name) + uuid.UUID(int=number + 1).bytes)
         self.thread = threading.Thread(target=self.read_packets, daemon=True)
@@ -79,7 +80,7 @@ class Client:
                     packet = BytesIO(stream.read(length))
                     packet_id = read_varint(packet)
                     self.handle(packet_id,packet)
-        except (OSError, EOFError, ValueError, RuntimeError) as failure:
+        except (OSError, EOFError, ValueError, RuntimeError, struct.error) as failure:
             if not self.closed.is_set():
                 self.failure = repr(failure)
                 self.ready.set()
@@ -107,7 +108,7 @@ class Client:
             if packet_id == 0x20:
                 raise RuntimeError("Disconnected during play")
             if packet_id == 0x49:
-                self.send(0,varint(read_varint(packet)))  # Accept teleport.
+                self.accept_teleport(packet)
                 self.ready.set()
             elif packet_id == 0x2D:
                 self.send(0x1C,packet.read())
@@ -115,6 +116,13 @@ class Client:
                 self.send(0x2D,packet.read())
             elif packet_id == 0x0B:
                 self.send(0x0B,struct.pack(">f",8.0))
+
+    def accept_teleport(self, packet):
+        teleport = read_varint(packet)
+        x, y, z, _, _, _, yaw, pitch, relative = struct.unpack(">6d2fI",packet.read(60))
+        self.position = tuple(value + self.position[i] if relative & (1 << i) else value
+                              for i, value in enumerate((x,y,z,yaw,pitch)))
+        self.send(0,varint(teleport) + struct.pack(">3d2f",*self.position))
 
     def command(self, line):
         self.send(0x07,string(line))
@@ -174,7 +182,7 @@ def exercise(command, log):
     wait("AW_START_FIXTURE_READY")
     try:
         command("setworldspawn 0 -60 0")
-        first = connect(0)
+        connect(0)
         expect("tp AW00 0.5 -60 0.5","Teleported AW00")
         expect("item replace entity AW00 hotbar.0 with minecraft:diamond","AW00")
         start_match(1,1,practice=True)
@@ -201,7 +209,7 @@ def exercise(command, log):
         wait("경기장 탐색을 시작했습니다",position)
         second.close()
         wait("참가자가 경기 준비 중 접속을 종료했습니다",position)
-        second = connect(1)
+        connect(1)
         expect("aw admin arena check","참가 대상 2/16명 (자동 2명)")
         start_match(2,2)
         connect(2)
@@ -211,9 +219,13 @@ def exercise(command, log):
         ledger = log.parent / "plugins/AugmentWild/used-regions.yml"
         ledger.unlink()
 
-        more = [connect(n,wait_ready=False) for n in range(3,17)]
+        more = [connect(n,wait_ready=False) for n in range(3,16)]
         for client in more:
             ready(client)
+        start_match(16,16)
+        stop_match()
+        ledger.unlink()
+        connect(16)
         start_match(16,16,overflow=1)
         stop_match()
         if any(client.failure and not client.closed.is_set() for client in clients):
