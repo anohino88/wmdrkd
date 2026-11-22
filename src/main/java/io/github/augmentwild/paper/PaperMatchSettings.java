@@ -4,7 +4,7 @@ import io.github.augmentwild.domain.MatchRules;
 import org.bukkit.configuration.file.FileConfiguration;
 
 public record PaperMatchSettings(MatchRules rules, int minimumPlayers, int maximumPlayers,
-                                 int selectionSeconds, long placementTimeoutNanos, int borderDamageInterval, double borderDamagePoints) {
+                                 boolean autoJoin, boolean soloPractice, int selectionSeconds, long placementTimeoutNanos, int borderDamageInterval, double borderDamagePoints) {
     public static PaperMatchSettings load(FileConfiguration config) {
         if (!config.getBoolean("gathering.pvp-enabled")) {
             throw new IllegalArgumentException("gathering.pvp-enabled must be true");
@@ -15,7 +15,7 @@ public record PaperMatchSettings(MatchRules rules, int minimumPlayers, int maxim
         int interval = config.getInt("game.selection-interval-seconds");
         int selection = config.getInt("game.selection-duration-seconds");
         int grace = config.getInt("game.pvp-grace-seconds");
-        if (minimum < 2 || maximum < minimum || gathering <= 0 || interval <= 0 || gathering % interval != 0
+        if (minimum < 2 || maximum < minimum || maximum > 16 || gathering <= 0 || interval <= 0 || gathering % interval != 0
                 || selection < 0 || grace < 0
                 || !config.getBoolean("game.pause-match-clock-during-selection")) {
             throw new IllegalArgumentException("Invalid game or player limits in config.yml");
@@ -40,7 +40,9 @@ public record PaperMatchSettings(MatchRules rules, int minimumPlayers, int maxim
                 config.getInt("augments.proc.max-depth"));
         int placementSeconds = config.getInt("arena.spawn.placement-timeout-seconds");
         if (placementSeconds < 1) throw new IllegalArgumentException("placement timeout must be positive");
-        return new PaperMatchSettings(rules, minimum, maximum, selection,
+        return new PaperMatchSettings(rules, minimum, maximum,
+                config.getBoolean("game.auto-join-online-players",true),
+                config.getBoolean("game.allow-solo-practice",true), selection,
                 java.util.concurrent.TimeUnit.SECONDS.toNanos(placementSeconds), damageInterval, damagePoints);
     }
 }

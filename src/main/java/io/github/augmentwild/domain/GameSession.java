@@ -9,6 +9,7 @@ public final class GameSession {
     public record Participant(UUID id, LifeState life, boolean connected) { }
     private final MatchStateMachine machine = new MatchStateMachine();
     private final MatchRules rules;
+    private boolean practice;
     private final Map<UUID, Participant> players = new LinkedHashMap<>();
     public record RespawnReservation(UUID matchId, UUID playerId, long deathSequence, UUID reservationId,
                                      long scheduledAt, long deadline) { }
@@ -18,6 +19,10 @@ public final class GameSession {
     public UUID matchId() { return matchId; }
     public Optional<RespawnReservation> reservation(UUID id) { return Optional.ofNullable(deadlines.get(id)); }
     public GameSession(MatchRules rules) { this.rules=Objects.requireNonNull(rules); }
+    public void enablePractice() {
+        if (state() != MatchState.WAITING || players.size() != 1) throw new IllegalStateException();
+        practice = true;
+    }
     public MatchState state() { return machine.state(); }
     public void transition(MatchState next) {
         machine.transitionTo(next);
@@ -140,6 +145,7 @@ public final class GameSession {
         Math.addExact(now, Math.multiplyExact(rules.respawnSeconds(), 1_000_000_000L));
         for (UUID id : unique) death(id, now);
         var remaining = players.values().stream().filter(p -> p.life().status()!=LifeState.Status.ELIMINATED).map(Participant::id).toList();
+        if (practice) return remaining.isEmpty() ? cancel() : result;
         if (remaining.size() <= 1) {
             result = remaining.isEmpty() ? new Result(Outcome.DRAW, null) : new Result(Outcome.WINNER, remaining.getFirst());
             transition(MatchState.ENDING);
@@ -156,6 +162,7 @@ public final class GameSession {
         return result;
     }
     public Optional<UUID> winner() {
+        if (practice) return Optional.empty();
         var eligible=players.values().stream().filter(p -> p.life().status()!=LifeState.Status.ELIMINATED).map(Participant::id).toList();
         return eligible.size()==1 ? Optional.of(eligible.getFirst()) : Optional.empty();
     }

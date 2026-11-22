@@ -2,6 +2,9 @@ schema-version: 1
 game:
   min-players: 2
   max-players: 16
+  auto-join-online-players: true
+  # Requires an enabled, isolated combat-lab world.
+  allow-solo-practice: true
   gathering-seconds: 1800
   selection-interval-seconds: 300
   selection-duration-seconds: 15
@@ -16,13 +19,19 @@ arena:
   height: 1000
   maximum-size: 5000
   spawn:
-    min-player-distance: 80
-    border-margin: 50
+    min-player-distance: 40
+    border-margin: 24
     placement-timeout-seconds: 30
   biome:
-    ocean-policy: ZERO
+    ocean-policy: MAX_RATIO
+    maximum-ocean-ratio: 0.05
+    ratio-sample-step: 32
+    ratio-refine-step: 8
+    ratio-refine-band: 0.02
   search:
     radius: 8192
+    expand-within-world-border: true
+    world-border-margin: 0
     surface-sample-step: 4
     commit-surface-step: 1
     generate-missing-chunks: false
@@ -32,7 +41,7 @@ arena:
     chunks-per-tick: 8
     inspection-budget-micros: 1500
     used-region-buffer-blocks: 100
-    max-candidate-attempts: 80
+    max-candidate-attempts: 120
     max-search-seconds: 120
 respawn:
   delay-seconds: 20
@@ -127,6 +136,9 @@ dev:
     arena-size: 128
     search-radius: 128
     spawn-margin: 8
+    min-player-distance: 40
+    expand-within-world-border: false
+    max-candidate-attempts: 120
     generate-missing-chunks: false
   combat-audit:
     enabled: false

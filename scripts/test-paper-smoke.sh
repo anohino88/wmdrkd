@@ -7,13 +7,17 @@ test "${#jars[@]}" -eq 1
 target="${RUNNER_TEMP:-/tmp}/augmentwild-paper-smoke"
 mkdir -p "$target/plugins"
 cd "$target"
-cp "${jars[0]}" plugins/
+cp "${AW_ARENA_PLUGIN_JAR:-${jars[0]}}" plugins/AugmentWild-0.1.0-SNAPSHOT.jar
 if [[ "${AW_BORDER_PROBE:-0}" == 1 ]]; then
     cp "$root/build/paper-probe/augmentwild-paper-probe.jar" plugins/
 fi
 agent='AugmentWild-CI/1.0 (https://github.com/anohino88/wmdrkd)'
 curl --fail --silent --show-error --max-time 30 --user-agent "$agent" \
     https://fill.papermc.io/v3/projects/paper/versions/26.3/builds -o builds.json
+if [[ "${AW_ARENA_BENCHMARK:-0}" == 1 ]]; then
+    jq -e '[.[] | select(.id == 257)]' builds.json > pinned-builds.json
+    mv pinned-builds.json builds.json
+fi
 url=$(jq -er 'first(.[] | select(.channel == "STABLE") | .downloads["server:default"].url)' builds.json)
 sha=$(jq -er 'first(.[] | select(.channel == "STABLE") | .downloads["server:default"].checksums.sha256)' builds.json)
 [[ "$url" == https://fill-data.papermc.io/* && "$sha" =~ ^[0-9a-f]{64}$ ]]
@@ -23,12 +27,18 @@ printf '%s  paper.jar\n' "$sha" | sha256sum -c -
 printf 'eula=true\n' > eula.txt
 printf 'server-ip=127.0.0.1\nserver-port=25565\nview-distance=3\nsimulation-distance=3\npause-when-empty-seconds=-1\n' > server.properties
 if [[ "${AW_ARENA_BENCHMARK:-0}" == 1 ]]; then
-    printf 'level-type=minecraft:flat\n' >> server.properties
+    printf 'level-type=minecraft:flat\nlevel-seed=67026\n' >> server.properties
     mkdir -p plugins/AugmentWild
-    cat > plugins/AugmentWild/config.yml <<'YAML'
+    cat > plugins/AugmentWild/config.yml <<YAML
 arena:
   world: world
+  spawn:
+    min-player-distance: 40
+    border-margin: 24
+  biome:
+    ocean-policy: ${AW_ARENA_POLICY:-MAX_RATIO}
   search:
+    expand-within-world-border: false
     radius: 1
     max-candidate-attempts: 1
     surface-sample-step: 1
@@ -101,6 +111,8 @@ with log.open("wb") as output:
                 for size in (2, 4, 8, 16):
                     wait_for(f"AW_HUD_LOAD_PASS synthetic={size} ticks=40 scans={8*size}", 15)
                 wait_for("AW_BORDER_PROBE_PASS", 15)
+                if os.environ.get("AW_ARENA_START_PROBE") == "1":
+                    wait_for("AW_ARENA_START_PASS", 15)
                 wait_for("AW_AUGMENT_PROBE_PASS", 15)
                 wait_for("AW_RESONANCE_PROBE_PASS", 15)
                 wait_for("AW_COMBAT_LOAD_PASS", 270 if os.environ.get("AW_EXTENDED_LOAD") == "1" else 30)

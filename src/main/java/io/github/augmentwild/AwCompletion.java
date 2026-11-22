@@ -68,7 +68,7 @@ final class AwCompletion implements TabCompleter {
             } else if (args[1].equalsIgnoreCase("art") && args.length == 3) {
                 choices = List.of("status","report","validate","menu");
             } else if (args[1].equalsIgnoreCase("arena") && args.length == 3) {
-                choices = List.of("preview");
+                choices = List.of("check","preview");
             } else if (args[1].equalsIgnoreCase("test") && lab) {
                 if (args.length == 3) choices = LAB;
                 else if (args.length == 4 && args[2].equalsIgnoreCase("dummy"))

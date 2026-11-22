@@ -3,6 +3,7 @@
 import os
 import re
 import time
+import statistics
 
 
 def benchmark_arena(command, log, wait_for):
@@ -24,25 +25,51 @@ def benchmark_arena(command, log, wait_for):
     else:
         raise RuntimeError("Flat benchmark fixture did not finish loading")
 
-    # Keep the known flat fixture loaded for this baseline. Disk-load and world generation
-    # timings are outside the scan result.
+    # Same flat seed, geometry (the legacy origin is within one block), loaded fixture, Paper and host.
     time.sleep(3)
-    command("aw admin arena preview")
-    wait_for("Arena search ", 135)
-    output = log.read_text(encoding="utf-8", errors="replace")
-    match = re.search(
-        r"Arena search FOUND: size=1000x1000 step=1 .*finalSamples=1000000"
-        r" .*chunkRequests=(\d+) peakPending=(\d+) elapsedMs=(\d+).*",
-        output,
-    )
-    if not match:
-        raise RuntimeError("Full 1,000,000-column arena scan did not finish successfully")
-    requests, peak, elapsed = map(int, match.groups())
-    if requests < 3900 or not 1 <= peak <= 8 or elapsed >= 120_000:
-        raise RuntimeError(f"Arena scan exceeded configured limits: {match[0]}")
+    policy = os.environ.get("AW_ARENA_POLICY", "MAX_RATIO")
+    matches = []
+    requested_step, expected_samples = (1,1_000_000) if policy == "ZERO" else (32,1_024)
+    if policy != "ZERO":
+        command("worldborder set 500")
+        command("aw admin arena preview")
+        wait_for("경기장 배치 불가능", 10)
+        if "후보 검사 한도" in log.read_text(encoding="utf-8", errors="replace"):
+            raise RuntimeError("undersized world border should fail before candidates")
+        command("worldborder set 1000")
+        command("aw admin arena check")
+        wait_for("배치 가능 중심 X 0.0 ~ 0.0", 10)
+    for trial in range(2):
+        start = log.stat().st_size
+        command("aw admin arena preview")
+        pattern = (r"Arena search FOUND: size=1000x1000 step=" + str(requested_step) + r" .*finalSamples="
+                   + str(expected_samples) + r" .*chunkRequests=(\d+) peakPending=(\d+) elapsedMs=(\d+) maxTickMs=([0-9.]+).*")
+        deadline = time.monotonic() + 135
+        while time.monotonic() < deadline:
+            with log.open("rb") as server_log:
+                server_log.seek(start)
+                new = server_log.read().decode("utf-8", errors="replace")
+            match = re.search(pattern,new)
+            if match:
+                break
+            if "Arena search FAILED" in new:
+                raise RuntimeError(new)
+            time.sleep(1)
+        else:
+            raise RuntimeError(f"{policy} arena scan did not produce {expected_samples} samples: {new}")
+        requests, peak, elapsed = map(int, match.groups()[:3])
+        if not (3900 <= requests <= 4100 if policy == "ZERO" else 900 <= requests <= 1100):
+            raise RuntimeError(f"Unexpected number of chunk requests: {match[0]}")
+        if not 1 <= peak <= 8 or elapsed >= 120_000:
+            raise RuntimeError(f"Arena scan exceeded configured limits: {match[0]}")
+        matches.append((requests,elapsed,float(match[4])))
+        print(f"AW_ARENA_TRIAL {policy} {trial + 1} {match[0]}", flush=True)
     command("forceload remove all")
-    print(match[0], flush=True)
-    print(f"::notice::{match[0]}", flush=True)
-    if summary := os.environ.get("GITHUB_STEP_SUMMARY"):
-        with open(summary, "a", encoding="utf-8") as report:
-            report.write("\n```text\n" + match[0] + "\n```\n")
+    summary = (f"AW_ARENA_COMPARE policy={policy} successes={len(matches)}/2 "
+               f"mean_ms={statistics.mean(row[1] for row in matches):.0f} "
+               f"max_ms={max(row[1] for row in matches)} requests={statistics.mean(row[0] for row in matches):.0f} "
+               f"max_tick_ms={max(row[2] for row in matches):.2f}")
+    print(f"::notice::{summary}", flush=True)
+    if report_path := os.environ.get("GITHUB_STEP_SUMMARY"):
+        with open(report_path, "a", encoding="utf-8") as report:
+            report.write("\n```text\n" + summary + "\n```\n")

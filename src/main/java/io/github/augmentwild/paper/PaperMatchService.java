@@ -9,6 +9,7 @@ import net.kyori.adventure.text.Component;
 import io.github.augmentwild.domain.MatchSimulationClock;
 import io.github.augmentwild.domain.MatchBorder;
 import io.github.augmentwild.domain.MatchTelemetry;
+import io.github.augmentwild.domain.StartRoster;
 import io.github.augmentwild.match.LifeState;
 import io.github.augmentwild.match.MatchState;
 import java.util.List;
@@ -20,6 +21,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.logging.Level;
 import org.bukkit.Chunk;
+import org.bukkit.GameMode;
 import org.bukkit.World;
 import org.bukkit.Location;
 import org.bukkit.command.CommandSender;
@@ -46,6 +48,10 @@ public final class PaperMatchService implements Listener {
     private long labAdvanceNanos;
     private BukkitTask task;
     private BukkitTask preparation;
+    private CompletableFuture<Chunk> preparationChunk;
+    private CommandSender preparingSender;
+    private final Set<UUID> optedOut = new LinkedHashSet<>();
+    private final Set<UUID> waitingSignups = new LinkedHashSet<>();
     private final ArenaSearchService search;
     private final PlayerSnapshots snapshots;
     private final UsedRegions usedRegions;
@@ -239,8 +245,32 @@ public final class PaperMatchService implements Listener {
                 && !outsideArena(player, player.getLocation());
     }
 
+    private boolean canPlay(Player player) {
+        return player != null && player.isOnline() && !player.isDead()
+                && player.getGameMode() != GameMode.SPECTATOR && player.hasPermission("augmentwild.play");
+    }
+
+    private StartRoster roster(boolean automatic) {
+        var eligible = plugin.getServer().getOnlinePlayers().stream().filter(this::canPlay)
+                .map(Player::getUniqueId).filter(id -> !optedOut.contains(id) && !snapshots.pending(id)).sorted().toList();
+        return StartRoster.select(waitingSignups, eligible, automatic, settings.maximumPlayers());
+    }
+
     public int previewPlayerCount() {
-        return Math.max(settings.minimumPlayers(), session.participantIds().size() - departures.size());
+        return Math.max(settings.minimumPlayers(),roster(settings.autoJoin()).players().size());
+    }
+
+    public String arenaCheck() {
+        var eligible = roster(settings.autoJoin());
+        return rosterSummary(eligible) + "\n" + search.check(previewPlayerCount(),
+                plugin.getConfig().getString("arena.world",""),false);
+    }
+
+    private String rosterSummary(StartRoster roster) {
+        int online = plugin.getServer().getOnlinePlayers().size();
+        return "온라인 " + online + "명 · 참가 대상 " + roster.players().size() + "/" + settings.maximumPlayers()
+                + "명 (자동 " + roster.automatic() + "명) · 정원 초과 " + roster.capacityExcluded()
+                + "명 · 그 외 제외 " + Math.max(0,online - roster.players().size() - roster.capacityExcluded()) + "명";
     }
 
     public String status(CommandSender sender) {
@@ -272,51 +302,61 @@ public final class PaperMatchService implements Listener {
     public String join(Player player) {
         UUID id = player.getUniqueId();
         if (session.state() != MatchState.WAITING) return "경기가 이미 진행 중입니다.";
+        if (!canPlay(player)) return "참가 권한이 있고 살아 있는 비관전자만 참가할 수 있습니다.";
         if (contains(id)) return "이미 참가했습니다.";
         if (!snapshots.restore(player, this::move)) return "이전 경기 상태를 복구하지 못했습니다.";
-        if (session.participantIds().size() >= settings.maximumPlayers()) return "참가 정원이 찼습니다.";
+        if (waitingSignups.size() >= settings.maximumPlayers()) return "참가 정원이 찼습니다.";
+        optedOut.remove(id);
+        waitingSignups.add(id);
         session.join(id);
         return "대기 중인 경기에 참가했습니다.";
     }
 
     public String leave(Player player) {
         UUID id = player.getUniqueId();
+        if (session.state() == MatchState.WAITING) {
+            optedOut.add(id);
+            waitingSignups.remove(id);
+            if (contains(id)) session.leave(id);
+            return "다음 경기 자동 참가를 거부했습니다. /aw join으로 다시 참가할 수 있습니다.";
+        }
         if (!contains(id) || departures.contains(id)) return "참가 중인 경기가 없습니다.";
-        if (session.state() == MatchState.PREPARING) clearMatch();
-        else if (task == null) session.leave(id);
-        else departures.add(id);
+        if (session.state() == MatchState.PREPARING) {
+            optedOut.add(id);
+            waitingSignups.remove(id);
+            interruptPreparation("참가자가 경기 준비 중 탈퇴했습니다.");
+        } else if (task != null) departures.add(id);
         return "경기에서 나갔습니다.";
     }
 
     public void recoverSupply() { supply.recover(); }
 
-    public String start(CommandSender sender) { return start(sender, false); }
+    public String start(CommandSender sender) {
+        if (!sender.hasPermission("augmentwild.admin")) return "관리자 권한이 없습니다.";
+        String blocked = startBlocked();
+        if (blocked != null) return blocked;
+        var roster = roster(settings.autoJoin());
+        boolean solo = roster.players().size() == 1 && settings.soloPractice();
+        if (solo && !labSoloAllowed())
+            return rosterSummary(roster) + "\n1인 연습을 시작하려면 운영 월드와 분리된 전투 실험실을 활성화하세요. /aw admin test check";
+        return rosterSummary(roster) + "\n" + start(sender, roster.players(), solo, solo);
+    }
 
-    /** One-player practice is deliberately confined to the explicitly enabled combat lab. */
+    private boolean labSoloAllowed() {
+        return lab.ready() && plugin.getConfig().getBoolean("dev.combat-lab.allow-solo", true);
+    }
+
+    /** This explicit lab command always selects just the administering player. */
     public String soloStart(Player player) {
         if (!player.hasPermission("augmentwild.admin") || !player.hasPermission("augmentwild.admin.test"))
             return "관리자 실험 권한이 없습니다.";
-        if (!lab.ready() || !plugin.getConfig().getBoolean("dev.combat-lab.allow-solo", true))
-            return "1인 테스트는 활성화된 전용 전투 실험실에서만 가능합니다.";
-        if (session.state() != MatchState.WAITING || task != null || search.busy())
-            return "진행 중인 경기 또는 경기장 정리 작업이 있습니다.";
-        World world = plugin.getServer().getWorld(lab.world());
-        if (world == null || world.getEnvironment() != World.Environment.NORMAL
-                || !world.getPVP() || world.equals(plugin.getServer().getWorld(plugin.getConfig().getString("arena.world", ""))))
-            return "운영 월드와 다른 기존 PvP 테스트 오버월드를 서버에 로드하세요.";
-        if (world.getPlayers().stream().anyMatch(other -> !other.equals(player)))
-            return "테스트 월드에 다른 플레이어가 있어 시작할 수 없습니다.";
-        if (session.participantIds().stream().anyMatch(id -> !id.equals(player.getUniqueId())))
+        if (!labSoloAllowed()) return "1인 테스트는 활성화된 전용 전투 실험실에서만 가능합니다.";
+        String blocked = startBlocked();
+        if (blocked != null) return blocked;
+        if (!canPlay(player) || snapshots.pending(player.getUniqueId())) return "이전 상태 복구 및 참가 자격을 확인하세요.";
+        if (waitingSignups.stream().anyMatch(id -> !id.equals(player.getUniqueId())))
             return "대기 중인 다른 참가자가 있어 혼자 테스트를 시작할 수 없습니다.";
-        boolean added = !contains(player.getUniqueId());
-        if (added) {
-            String response = join(player);
-            if (!contains(player.getUniqueId())) return response;
-        }
-        var response = start(player,true,true);
-        if (added && session.state() == MatchState.WAITING && contains(player.getUniqueId()))
-            session.leave(player.getUniqueId());
-        return response;
+        return start(player,List.of(player.getUniqueId()),true,true);
     }
 
     private boolean labParticipant(Player player) {
@@ -343,17 +383,15 @@ public final class PaperMatchService implements Listener {
             if (!lab.ready()) return "dev.combat-lab.enabled와 운영 월드와 다른 dev.combat-lab.world를 확인하세요.";
             var world = plugin.getServer().getWorld(lab.world());
             if (world == null) return "테스트 월드 '" + lab.world() + "'를 기존 월드 관리 도구에서 로드하세요.";
-            if (world.getEnvironment() != World.Environment.NORMAL || !world.getPVP())
-                return "테스트 월드는 PvP가 켜진 오버월드여야 합니다.";
-            var spawn = world.getSpawnLocation();
-            boolean generated = world.isChunkGenerated(spawn.getBlockX() >> 4,spawn.getBlockZ() >> 4);
-            boolean generate = plugin.getConfig().getBoolean("dev.combat-lab.generate-missing-chunks",false);
-            return "전투 실험실 " + world.getName() + " · 접속자 " + world.getPlayers().size()
-                    + "명 · 중심 청크 " + (generated ? "생성됨" : "미생성")
-                    + " · 탐색 중 생성 " + (generate ? "허용" : "금지");
+            return "실험 월드 접속자 " + world.getPlayers().size() + "명\n"
+                    + search.check(Math.max(labSoloAllowed() ? 1 : settings.minimumPlayers(),roster(false).players().size()),
+                            lab.world(),true);
         }
         if (!lab.ready()) return "전투 실험실을 활성화하고 운영 월드와 다른 기존 테스트 월드를 지정하세요.";
-        if (action.equals("start") && args.length == 1) return start(sender, true);
+        if (action.equals("start") && args.length == 1) {
+            String blocked = startBlocked();
+            return blocked == null ? start(sender,roster(false).players(),true,false) : blocked;
+        }
         if (action.equals("solo") && args.length == 1)
             return sender instanceof Player player ? soloStart(player) : "1인 테스트는 플레이어만 시작할 수 있습니다.";
         if (action.equals("presets") && args.length == 1) {
@@ -447,51 +485,53 @@ public final class PaperMatchService implements Listener {
         };
     }
 
-    private String start(CommandSender sender, boolean experiment) {
-        return start(sender,experiment,false);
-    }
-
-    private String start(CommandSender sender,boolean experiment,boolean remoteSolo) {
+    private String startBlocked() {
         if (session.state() != MatchState.WAITING) return "경기가 이미 준비 중이거나 진행 중입니다.";
         if (search.busy()) return "이전 경기장 탐색이 정리될 때까지 기다리세요.";
         if (!supply.recover()) return "미처리 보급 복구 기록이 있습니다. 서버 로그를 확인하세요.";
-        var players = session.participantIds().stream().sorted().toList();
-        boolean singlePractice = experiment && players.size() == 1 && lab.ready()
-                && plugin.getConfig().getBoolean("dev.combat-lab.allow-solo", true);
-        if (players.size() < settings.minimumPlayers() && !singlePractice) {
+        return null;
+    }
+
+    private String start(CommandSender sender,List<UUID> players,boolean experiment,boolean remoteSolo) {
+        boolean singlePractice = experiment && players.size() == 1 && labSoloAllowed();
+        if (players.size() < settings.minimumPlayers() && !singlePractice)
             return "참가자가 최소 " + settings.minimumPlayers() + "명 필요합니다.";
-        }
-        if (players.stream().anyMatch(id -> available(id) == null
-                || snapshots.pending(id) && !(singlePractice && captured.contains(id)))) {
+        if (players.stream().anyMatch(id -> !canPlay(available(id)) || snapshots.pending(id)))
             return "모든 참가자가 접속하고 살아 있어야 하며 이전 복구 작업이 없어야 합니다.";
-        }
+
         String worldName = plugin.getConfig().getString("arena.world", "");
+        World practiceWorld = null;
         if (experiment) {
-            World world = plugin.getServer().getWorld(lab.world());
-            if (world == null || world.getEnvironment() != World.Environment.NORMAL
-                    || world.equals(plugin.getServer().getWorld(worldName))) {
-                return "운영 경기와 분리된 기존 테스트 오버월드를 로드하세요.";
+            practiceWorld = plugin.getServer().getWorld(lab.world());
+            if (practiceWorld == null || practiceWorld.getEnvironment() != World.Environment.NORMAL || !practiceWorld.getPVP()
+                    || practiceWorld.equals(plugin.getServer().getWorld(worldName))) {
+                return "운영 경기와 분리된 기존 PvP 테스트 오버월드를 로드하세요.";
             }
-            if ((!remoteSolo || !singlePractice) && players.stream().anyMatch(id -> !world.equals(available(id).getWorld()))
-                    || world.getPlayers().stream().anyMatch(player -> !players.contains(player.getUniqueId()))) {
+            UUID worldId = practiceWorld.getUID();
+            if (!remoteSolo && players.stream().anyMatch(id -> !worldId.equals(available(id).getWorld().getUID()))
+                    || practiceWorld.getPlayers().stream().anyMatch(player -> !players.contains(player.getUniqueId()))) {
                 return "모든 테스트 참가자가 테스트 월드에 있어야 하며 비참가자가 없어야 합니다.";
             }
             worldName = lab.world();
-            labWorld = world.getUID();
         }
-        soloLab = singlePractice;
+
         UUID matchId = session.matchId();
-        session.transition(MatchState.PREPARING);
         String message = search.search(sender,players.size(),matchId,worldName,experiment,context -> {
             if (!matchId.equals(session.matchId()) || session.state() != MatchState.PREPARING) return;
-            if (context == null) {
-                clearMatch();
-                return;
-            }
-            preparePlacement(sender,players,context,remoteSolo);
+            if (context == null) clearMatch();
+            else preparePlacement(sender,players,context,remoteSolo);
         });
-        if (!search.running()) clearMatch();
-        return message;
+        if (!search.running()) return message;
+
+        // The search schedules its first step for the next tick. Lock this exact roster first.
+        for (UUID id : session.participantIds()) if (!players.contains(id)) session.leave(id);
+        for (UUID id : players) if (!contains(id)) session.join(id);
+        labWorld = practiceWorld == null ? null : practiceWorld.getUID();
+        soloLab = singlePractice;
+        if (singlePractice) session.enablePractice();
+        preparingSender = sender;
+        session.transition(MatchState.PREPARING);
+        return (singlePractice ? "1인 연습 · 승패 기록 없음\n" : "") + message;
     }
 
     private Player available(UUID id) {
@@ -502,11 +542,12 @@ public final class PaperMatchService implements Listener {
     private void preparePlacement(CommandSender sender,List<UUID> players,ArenaSearchService.ArenaContext context,boolean remoteSolo) {
         try {
             var world = plugin.getServer().getWorld(context.worldId());
-            if (world == null || !world.getPVP()) throw new IllegalStateException("Arena world or PvP unavailable");
+            if (world == null || !world.getPVP() || !ArenaSearchService.validPlacement(world,context.area(),context.worldBorderMargin()))
+                throw new IllegalStateException("Arena world, PvP or world border changed");
             // Capture every player before moving anyone.
             for (UUID id : players) {
                 Player player = available(id);
-                if (player == null || labWorld != null && !remoteSolo && !labWorld.equals(player.getWorld().getUID())) {
+                if (!canPlay(player) || labWorld != null && !remoteSolo && !labWorld.equals(player.getWorld().getUID())) {
                     throw new IllegalStateException("Participant unavailable at arena preparation: " + id);
                 }
                 if (!captured.contains(id)) {
@@ -517,7 +558,6 @@ public final class PaperMatchService implements Listener {
             var targets = context.spawns();
             final class Placing implements Runnable {
                 private int next;
-                private CompletableFuture<Chunk> pending;
                 private final long started = System.nanoTime();
                 @Override public void run() {
                     try {
@@ -526,22 +566,22 @@ public final class PaperMatchService implements Listener {
                             throw new IllegalStateException("Arena placement timed out");
                         }
                         Player player = available(players.get(next));
-                        if (player == null) throw new IllegalStateException("Participant left during placement");
+                        if (!canPlay(player)) throw new IllegalStateException("Participant unavailable during placement");
                         if (labWorld != null && world.getPlayers().stream().anyMatch(p -> !players.contains(p.getUniqueId())))
                             throw new IllegalStateException("Nonparticipant entered the combat lab");
                         if (labWorld != null && !remoteSolo && !world.equals(player.getWorld()))
                             throw new IllegalStateException("Participant left the combat lab world");
                         Location target = targets.get(next);
-                        if (pending == null) {
-                            pending = world.getChunkAtAsync(target.getBlockX() >> 4, target.getBlockZ() >> 4, false);
+                        if (preparationChunk == null) {
+                            preparationChunk = world.getChunkAtAsync(target.getBlockX() >> 4, target.getBlockZ() >> 4, false);
                             return;
                         }
-                        if (!pending.isDone()) return;
-                        if (pending.join() == null || !SafeArenaSurface.valid(target) || !move(player, target)) {
+                        if (!preparationChunk.isDone()) return;
+                        if (preparationChunk.join() == null || !SafeArenaSurface.validSpawn(target) || !move(player, target)) {
                             throw new IllegalStateException("Arena spawn unavailable or teleport rejected");
                         }
                         snapshots.enterMatch(player);
-                        pending = null;
+                        preparationChunk = null;
                         if (++next == players.size()) activate(sender, players, context);
                     } catch (Exception failure) {
                         failPreparation(sender, failure);
@@ -557,7 +597,8 @@ public final class PaperMatchService implements Listener {
     private void activate(CommandSender sender, List<UUID> players, ArenaSearchService.ArenaContext context)
             throws java.io.IOException, org.bukkit.configuration.InvalidConfigurationException {
         var world = plugin.getServer().getWorld(context.worldId());
-        if (world == null || !world.getPVP() || players.stream().anyMatch(id -> !inside(context, available(id)))
+        if (world == null || !world.getPVP() || !ArenaSearchService.validPlacement(world,context.area(),context.worldBorderMargin())
+                || players.stream().anyMatch(id -> !canPlay(available(id)) || !inside(context, available(id)))
                 || labWorld != null && world.getPlayers().stream().anyMatch(player -> !players.contains(player.getUniqueId()))) {
             throw new IllegalStateException("Participant moved or arena settings changed before start");
         }
@@ -571,6 +612,8 @@ public final class PaperMatchService implements Listener {
         arena = context;
         preparation.cancel();
         preparation = null;
+        preparingSender = null;
+        waitingSignups.clear();
         session.transition(MatchState.GATHERING);
         // Start timing only after the placement and history write have succeeded.
         long started = System.nanoTime();
@@ -613,6 +656,12 @@ public final class PaperMatchService implements Listener {
         sender.sendMessage("경기 준비가 중단됐습니다. 자세한 이유는 서버 로그를 확인하세요.");
     }
 
+    private void interruptPreparation(String reason) {
+        var sender = preparingSender;
+        clearMatch();
+        if (sender != null) sender.sendMessage(reason + " 경기 준비를 중단했습니다.");
+    }
+
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void targetDeath(org.bukkit.event.entity.EntityDeathEvent event) {
         if (!target.owns(event.getEntity())) return;
@@ -646,6 +695,9 @@ public final class PaperMatchService implements Listener {
         displays.clear();
         overhead.clear();
         search.cancel();
+        search.drain(preparationChunk);
+        preparationChunk = null;
+        preparingSender = null;
         if (preparation != null) {
             preparation.cancel();
             preparation = null;
@@ -662,7 +714,7 @@ public final class PaperMatchService implements Listener {
                 if (victor != null) killEffect(victor,"최종 우승",org.bukkit.Sound.UI_TOAST_CHALLENGE_COMPLETE,org.bukkit.Particle.END_ROD);
                 for (UUID id : entrants) {
                     var lines = new java.util.ArrayList<String>();
-                    lines.add(result.winner() == null ? (result.outcome() == GameSession.Outcome.DRAW ? "무승부" : "경기 중단")
+                    lines.add(soloLab ? "1인 연습 종료 · 승패 기록 없음" : result.winner() == null ? (result.outcome() == GameSession.Outcome.DRAW ? "무승부" : "경기 중단")
                             : "우승 · " + plugin.getServer().getOfflinePlayer(result.winner()).getName());
                     if (result.outcome() != GameSession.Outcome.CANCELLED) {
                         long rank = outAt.containsKey(id) ? 1 + entrants.stream()
@@ -687,7 +739,7 @@ public final class PaperMatchService implements Listener {
         borderDisplay = null;
         border = null;
         supply.clear();
-        String mode = labWorld == null ? "normal" : "lab";
+        String mode = soloLab ? "practice" : labWorld == null ? "normal" : "lab";
         if (clock != null) plugin.getLogger().info("Match tempo match=" + session.matchId() + " mode=" + mode + " "
                 + telemetry.tempo(clock.elapsedSeconds(), (System.nanoTime() - matchStarted) / 1_000_000_000L));
         var stats = telemetry.finish();
@@ -723,6 +775,9 @@ public final class PaperMatchService implements Listener {
         deaths.clear();
         awaitingNativeRespawn.clear();
         session = new GameSession(settings.rules());
+        if (played) optedOut.clear();
+        waitingSignups.removeIf(id -> !canPlay(available(id)) || snapshots.pending(id));
+        for (UUID id : waitingSignups) session.join(id);
     }
 
     private void tick() {
@@ -805,7 +860,7 @@ public final class PaperMatchService implements Listener {
                     telemetry.survivors(elapsed, alive);
                 }
             }
-            if ((session.state() == MatchState.PVP || session.state() == MatchState.SUDDEN_DEATH) && !soloLab) {
+            if (session.state() == MatchState.PVP || session.state() == MatchState.SUDDEN_DEATH) {
                 session.resolveTick(Set.of(), now);
             } else if (session.participantIds().isEmpty()) {
                 session.cancel();
@@ -979,7 +1034,8 @@ public final class PaperMatchService implements Listener {
             recover(event.getPlayer());
             if (labWorld != null && labWorld.equals(event.getPlayer().getWorld().getUID())) {
                 plugin.getLogger().warning("Closing combat lab after a nonparticipant joined its world");
-                clearMatch();
+                if (session.state() == MatchState.PREPARING) interruptPreparation("비참가자가 실험 월드에 접속했습니다.");
+                else clearMatch();
             }
         }
         if (contains(id) && !departures.contains(id)) {
@@ -1010,8 +1066,12 @@ public final class PaperMatchService implements Listener {
         hud.clear(id, event.getPlayer());
         if (borderDisplay != null) borderDisplay.detach(event.getPlayer());
         if (session.state() == MatchState.PREPARING) {
-            clearMatch();
-        } else if (task == null) session.leave(id);
+            waitingSignups.remove(id);
+            interruptPreparation("참가자가 경기 준비 중 접속을 종료했습니다.");
+        } else if (task == null) {
+            waitingSignups.remove(id);
+            session.leave(id);
+        }
         else {
             session.connected(id, false);
             placement.forgetAttempt(id);

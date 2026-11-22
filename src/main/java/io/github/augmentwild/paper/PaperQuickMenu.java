@@ -77,7 +77,7 @@ public final class PaperQuickMenu implements Listener {
             inventory = Bukkit.createInventory(this, 9, art.title(player,PaperArt.Screen.WARNING,
                     kind == ConfirmKind.LEAVE ? "경기 탈퇴 확인" : "관리자 경기 시작 확인"));
             inventory.setItem(3, PaperIntel.item(PaperIntel.card(Material.RED_WOOL,
-                    kind == ConfirmKind.LEAVE ? "확인 · 경기 나가기" : "확인 · 일반 경기 시작")));
+                    kind == ConfirmKind.LEAVE ? "확인 · 경기 나가기" : "확인 · 접속자 대상으로 시작")));
             inventory.setItem(5, PaperIntel.item(PaperIntel.card(Material.LIME_WOOL, "취소 · 메뉴로 돌아가기")));
             art.button(player,inventory,3,"warning");
             art.button(player,inventory,5,"previous");
@@ -104,7 +104,7 @@ public final class PaperQuickMenu implements Listener {
                 "스킬 사용 = 웅크리기 + F");
         item(menu, 10, matches.inMatch(player) ? Material.RED_DYE : Material.LIME_DYE,
                 matches.inMatch(player) ? "경기 나가기 · 확인 필요" : "경기 참가",
-                matches.inMatch(player) ? "실수 방지를 위해 종료 여부를 다시 확인합니다" : "대기 중인 일반 경기에 참가합니다");
+                matches.inMatch(player) ? "실수 방지를 위해 종료 여부를 다시 확인합니다" : "자동 참가보다 우선 배정됩니다");
         item(menu, 11, Material.CLOCK, "경기 현황", matches.status(player).split(" [|] "));
         item(menu,12,Material.ENCHANTED_BOOK,"증강 선택",
                 matches.inMatch(player) ? "현재 선택 또는 교환 주문 확인" : "경기에 참가하면 회차별 선택 가능");

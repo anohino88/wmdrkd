@@ -6,7 +6,7 @@ import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
 
-final class SafeArenaSurface {
+public final class SafeArenaSurface {
     private static final Set<String> OCEANS = Set.of("ocean", "deep_ocean", "warm_ocean", "lukewarm_ocean",
             "deep_lukewarm_ocean", "cold_ocean", "deep_cold_ocean", "frozen_ocean", "deep_frozen_ocean");
 
@@ -18,13 +18,25 @@ final class SafeArenaSurface {
     }
 
     static Location at(World world, int x, int z) {
+        return at(world, x, z, 0);
+    }
+
+    public static Location spawnAt(World world, int x, int z) {
+        return at(world, x, z, 1);
+    }
+
+    private static Location at(World world, int x, int z, int slope) {
         if (!world.isChunkLoaded(x >> 4, z >> 4)) return null;
         int floor = world.getHighestBlockYAt(x, z, HeightMap.MOTION_BLOCKING_NO_LEAVES);
         var point = new Location(world, x + 0.5, floor + 1, z + 0.5);
-        return valid(point) ? point : null;
+        return valid(point, slope) ? point : null;
     }
 
-    static boolean valid(Location point) {
+    static boolean valid(Location point) { return valid(point, 0); }
+
+    static boolean validSpawn(Location point) { return valid(point, 1); }
+
+    private static boolean valid(Location point, int slope) {
         World world = point.getWorld();
         int x = point.getBlockX(), z = point.getBlockZ(), floor = point.getBlockY() - 1;
         if (world == null || floor < world.getMinHeight() || floor + 2 >= world.getMaxHeight()
@@ -33,11 +45,13 @@ final class SafeArenaSurface {
             for (int dz = -1; dz <= 1; dz++) {
                 int columnX = x + dx, columnZ = z + dz;
                 if (!world.isChunkLoaded(columnX >> 4, columnZ >> 4)) return false;
-                if (world.getHighestBlockYAt(columnX, columnZ, HeightMap.MOTION_BLOCKING_NO_LEAVES) != floor
-                        || ocean(world, columnX, floor, columnZ)
-                        || !safeFloor(world.getBlockAt(columnX, floor, columnZ).getType())
-                        || !world.getBlockAt(columnX, floor + 1, columnZ).getType().isAir()
-                        || !world.getBlockAt(columnX, floor + 2, columnZ).getType().isAir()) return false;
+                int surface = world.getHighestBlockYAt(columnX, columnZ, HeightMap.MOTION_BLOCKING_NO_LEAVES);
+                int allowedSlope = dx == 0 && dz == 0 ? 0 : slope;
+                if (Math.abs(surface - floor) > allowedSlope || surface + 2 >= world.getMaxHeight()
+                        || ocean(world, columnX, surface, columnZ)
+                        || !safeFloor(world.getBlockAt(columnX, surface, columnZ).getType())
+                        || !world.getBlockAt(columnX, surface + 1, columnZ).getType().isAir()
+                        || !world.getBlockAt(columnX, surface + 2, columnZ).getType().isAir()) return false;
             }
         }
         return true;

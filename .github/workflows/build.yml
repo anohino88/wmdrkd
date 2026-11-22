@@ -96,6 +96,7 @@ jobs:
       - name: Boot Paper 26.3 and check AugmentWild
         env:
           AW_BORDER_PROBE: '1'
+          AW_ARENA_START_PROBE: '1'
         run: bash scripts/test-paper-smoke.sh
       - name: Kill and restart disposable Paper supply world
         run: python3 scripts/test-supply-crash.py "$RUNNER_TEMP/augmentwild-paper-smoke"
@@ -143,16 +144,15 @@ jobs:
         with:
           name: augmentwild-jar
           path: build/libs
-      - name: Measure a full 1000x1000 arena scan
-        env:
-          AW_ARENA_BENCHMARK: '1'
-        run: bash scripts/test-paper-smoke.sh
-      - name: Upload arena benchmark log
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Compare the previous ZERO scan with the new stratified scan
+        run: bash scripts/compare-arena-search.sh
+      - name: Upload arena benchmark logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: paper-arena-benchmark-log
-          path: ${{ runner.temp }}/augmentwild-paper-smoke/server.log
+          path: ${{ runner.temp }}/arena-*/augmentwild-paper-smoke/server.log
           if-no-files-found: ignore
   paper-combat-load:
     needs: build

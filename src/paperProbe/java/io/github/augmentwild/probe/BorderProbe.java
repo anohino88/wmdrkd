@@ -133,6 +133,8 @@ public final class BorderProbe extends JavaPlugin implements Listener {
         }
         verifyResonanceShield(spawn);
         verifyPhase64(spawn);
+        ArenaStartProbe.run(world);
+        getLogger().info("AW_ARENA_START_PASS borders=500,1000,2000,5000 flat=true slope=true hazard=true ocean=true");
         getLogger().info("AW_PHASE64_PROBE_PASS: diamond debit, lossless reward preflight, marked chest lifecycle and obstructed ray");
         combatLoad = new SyntheticCombatLoad(this, spawn);
         combatLoad.start();

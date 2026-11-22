@@ -82,11 +82,16 @@ public final class AugmentWildPlugin extends JavaPlugin {
             sender.sendMessage(matches.labCommand(sender, java.util.Arrays.copyOfRange(args, 2, args.length)));
             return true;
         }
-        if (args.length == 3 && args[0].equalsIgnoreCase("admin") && args[1].equalsIgnoreCase("arena")
-                && args[2].equalsIgnoreCase("preview")) {
-            sender.sendMessage(sender.hasPermission("augmentwild.admin")
-                    ? arenaSearch.preview(sender, matches.previewPlayerCount())
-                    : "관리자 권한이 없습니다.");
+        if (args.length == 3 && args[0].equalsIgnoreCase("admin") && args[1].equalsIgnoreCase("arena")) {
+            if (!sender.hasPermission("augmentwild.admin")) {
+                sender.sendMessage("관리자 권한이 없습니다.");
+                return true;
+            }
+            switch (args[2].toLowerCase(Locale.ROOT)) {
+                case "check" -> sender.sendMessage(matches.arenaCheck());
+                case "preview" -> sender.sendMessage(arenaSearch.preview(sender, matches.previewPlayerCount()));
+                default -> { return false; }
+            }
             return true;
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("admin")) {

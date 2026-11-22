@@ -100,7 +100,7 @@ final class ArenaPlacement {
         var column = attempt.column();
         if (!attempt.chunk().isCompletedExceptionally() && attempt.chunk().getNow(null) != null
                 && safe.contains(column.x() + 0.5, column.z() + 0.5, margin)) {
-            target = SafeArenaSurface.at(world, column.x(), column.z());
+            target = SafeArenaSurface.spawnAt(world, column.x(), column.z());
         }
         if (target == null || (failures.getOrDefault(id, 0) < attemptsPerCycle / 2
                 && nearSurvivor(target, player, session))) {
