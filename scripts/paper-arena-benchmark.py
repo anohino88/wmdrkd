@@ -65,6 +65,14 @@ def benchmark_arena(command, log, wait_for):
         matches.append((requests,elapsed,float(match[4])))
         print(f"AW_ARENA_TRIAL {policy} {trial + 1} {match[0]}", flush=True)
     command("forceload remove all")
+    if policy != "ZERO":
+        command("worldborder set 2000")
+        command("worldborder center 50000 50000")
+        command("aw admin arena preview")
+        wait_for("스폰 주변 탐색 범위와 보더 내부 유효 범위가 겹치지 않습니다",10)
+        command("setworldspawn 50000 -60 50000")
+        command("aw admin arena preview")
+        wait_for("미생성 또는 로드 불가 청크 (생성 금지)",25)
     summary = (f"AW_ARENA_COMPARE policy={policy} successes={len(matches)}/2 "
                f"mean_ms={statistics.mean(row[1] for row in matches):.0f} "
                f"max_ms={max(row[1] for row in matches)} requests={statistics.mean(row[0] for row in matches):.0f} "

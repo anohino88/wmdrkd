@@ -154,6 +154,35 @@ jobs:
           name: paper-arena-benchmark-log
           path: ${{ runner.temp }}/arena-*/augmentwild-paper-smoke/server.log
           if-no-files-found: ignore
+  paper-match-start:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: actions/download-artifact@v4
+        with:
+          name: augmentwild-jar
+          path: build/libs
+      - uses: actions/download-artifact@v4
+        with:
+          name: paper-probe-jar
+          path: build/paper-probe
+      - name: Start matches with 1, 2 and 17 connected protocol clients
+        env:
+          AW_BORDER_PROBE: '1'
+          AW_START_CLIENTS: '1'
+        run: bash scripts/test-paper-smoke.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: paper-match-start-log
+          path: ${{ runner.temp }}/augmentwild-paper-smoke/server.log
+          if-no-files-found: ignore
   paper-combat-load:
     needs: build
     runs-on: ubuntu-latest

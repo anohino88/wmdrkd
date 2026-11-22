@@ -52,6 +52,16 @@ public final class BorderProbe extends JavaPlugin implements Listener {
     private boolean sawOutsideBorderDamage;
 
     @Override public void onEnable() {
+        if ("1".equals(System.getenv("AW_START_CLIENTS"))) {
+            getServer().getScheduler().runTask(this, () -> {
+                var lab = new org.bukkit.WorldCreator("aw_lab").type(org.bukkit.WorldType.FLAT)
+                        .generateStructures(false).seed(67026).createWorld();
+                if (lab == null) throw new IllegalStateException("Isolated test fixture world was not created");
+                lab.setSpawnLocation(0,-60,0);
+                getLogger().info("AW_START_FIXTURE_READY");
+            });
+            return;
+        }
         String recoveryStage = System.getenv("AW_SUPPLY_CRASH_PHASE");
         if (recoveryStage != null) {
             getServer().getScheduler().runTask(this, () -> {

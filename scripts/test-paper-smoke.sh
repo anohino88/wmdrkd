@@ -48,6 +48,34 @@ dev:
     world: fixture_lab_unloaded
 YAML
 fi
+if [[ "${AW_START_CLIENTS:-0}" == 1 ]]; then
+    printf 'level-type=minecraft:flat\nlevel-seed=67026\nonline-mode=false\nenforce-secure-profile=false\nnetwork-compression-threshold=-1\n' >> server.properties
+    printf 'settings:\n  connection-throttle: -1\n' > bukkit.yml
+    mkdir -p plugins/AugmentWild
+    cat > plugins/AugmentWild/config.yml <<'YAML'
+game:
+  allow-solo-practice: true
+  auto-join-online-players: true
+arena:
+  world: world
+  width: 512
+  height: 512
+  search:
+    radius: 0
+    expand-within-world-border: false
+    generate-missing-chunks: true
+border:
+  start-size: 512
+dev:
+  combat-lab:
+    enabled: true
+    world: aw_lab
+    allow-solo: true
+    arena-size: 128
+    search-radius: 0
+    generate-missing-chunks: true
+YAML
+fi
 python3 - "$root" <<'PY'
 import os
 import pathlib
@@ -79,6 +107,13 @@ with log.open("wb") as output:
         try:
             wait_for('Done (', 140)
             wait_for('Enabling AugmentWild', 5)
+            if os.environ.get("AW_START_CLIENTS") == "1":
+                driver = runpy.run_path(str(pathlib.Path(sys.argv[1]) / "scripts/paper-start-clients.py"))
+                driver["exercise"](command,log)
+                command("stop")
+                if server.wait(timeout=45) != 0:
+                    raise RuntimeError("Paper exited with an error")
+                sys.exit(0)
             command("aw status")
             wait_for('경기 단계 WAITING', 15)
             command("aw augments")

@@ -370,7 +370,7 @@ public final class ArenaSearchService implements Listener {
                 long burst = System.nanoTime() - inspectionStart;
                 maxInspectionBurst = Math.max(maxInspectionBurst,burst);
                 if (!safe) {
-                    reject("바다 바이옴");
+                    reject(plan.zero ? "바다 바이옴" : "바다 비율 초과 (표본 추정)");
                     return false;
                 }
                 if (burst >= inspectionBudget) return false;
@@ -495,6 +495,8 @@ public final class ArenaSearchService implements Listener {
                     if (!SafeArenaSurface.ocean(world, x, y, z)) continue;
                     if (plan.zero) return false;
                     oceanWeight += (long) weightX * weightZ;
+                    double upper = refining ? plan.maximumOcean : plan.maximumOcean + plan.refineBand;
+                    if (OceanSampling.exceeds(oceanWeight, (long) width * height, upper)) return false;
                 }
             }
             for (int i = 0; i < spawnSamplesPerChunk; i++) {
