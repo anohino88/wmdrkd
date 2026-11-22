@@ -556,7 +556,7 @@ public final class PaperArt implements Listener {
             if (loaded.contains(player.getUniqueId()) && playable.test(player)) {
                 if (PlayerUi.enabled(player,PlayerUi.Option.SOUND)) player.playSound(at,"augmentwild:supply",.65f,1f);
                 render(player,supplyCenter(at,1.75),premium ? "premium" : "supply",ARRIVE);
-            } else if (PlayerUi.enabled(player,PlayerUi.Option.SOUND)) {
+            } else if (playable.test(player) && PlayerUi.enabled(player,PlayerUi.Option.SOUND)) {
                 player.playSound(at,Sound.BLOCK_CHEST_OPEN,1,.8f);
             }
         }

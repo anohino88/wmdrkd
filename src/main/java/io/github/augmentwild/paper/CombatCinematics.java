@@ -107,20 +107,29 @@ final class CombatCinematics {
     }
 
     private static boolean sees(Location eye, Location at) {
+        var world = eye.getWorld();
+        int minX = Math.min(eye.getBlockX(),at.getBlockX()) >> 4;
+        int maxX = Math.max(eye.getBlockX(),at.getBlockX()) >> 4;
+        int minZ = Math.min(eye.getBlockZ(),at.getBlockZ()) >> 4;
+        int maxZ = Math.max(eye.getBlockZ(),at.getBlockZ()) >> 4;
+        // Paper ray tracing may touch chunk data. Never trace through a region that is not resident.
+        for (int x = minX; x <= maxX; x++)
+            for (int z = minZ; z <= maxZ; z++)
+                if (!world.isChunkLoaded(x,z)) return false;
         var delta = at.toVector().subtract(eye.toVector());
         double length = delta.length();
-        return length < .05 || eye.getWorld().rayTraceBlocks(eye,delta.multiply(1 / length),
+        return length < .05 || world.rayTraceBlocks(eye,delta.multiply(1 / length),
                 length - .04,FluidCollisionMode.NEVER,true) == null;
     }
 
     private boolean visible(Player viewer, Cue cue) {
         if (!eligible(viewer) || !viewer.getWorld().equals(cue.point.getWorld())
                 || viewer.getLocation().distanceSquared(cue.point) > RANGE * RANGE) return false;
+        if (cue.target != null && !viewer.getUniqueId().equals(cue.key.target)
+                && (!viewer.canSee(cue.target) || cue.target.isInvisible()
+                    || !cue.target.getWorld().equals(cue.point.getWorld()))) return false;
         if (viewer.getUniqueId().equals(cue.key.source)) return sees(viewer.getEyeLocation(),cue.point);
-        if (!viewer.canSee(cue.source) || cue.source.isInvisible()
-                || cue.target != null && !viewer.getUniqueId().equals(cue.key.target)
-                   && (!viewer.canSee(cue.target) || cue.target.isInvisible()
-                       || !cue.target.getWorld().equals(cue.point.getWorld()))) return false;
+        if (!viewer.canSee(cue.source) || cue.source.isInvisible()) return false;
         var eye = viewer.getEyeLocation();
         Location source = cue.source.getEyeLocation();
         var pair = new Pair(viewer.getUniqueId(),cue.key.source);

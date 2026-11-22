@@ -139,6 +139,7 @@ final class PublicArtProbe {
         final JavaPlugin probe;
         final Location site;
         final Pig anchor;
+        final org.bukkit.Chunk chunk;
         final List<Viewer> all = new ArrayList<>();
         final double[] timing = new double[MEASURED];
         final java.util.Random random = new java.util.Random();
@@ -158,6 +159,8 @@ final class PublicArtProbe {
             site.setX((site.getBlockX() & ~15)+7.5);
             site.setZ((site.getBlockZ() & ~15)+7.5);
             site.setY(Math.floor(site.getY())+24.5);
+            chunk = site.getChunk();
+            require(chunk.addPluginChunkTicket(probe),"retain VFX benchmark chunk");
             anchor = site.getWorld().spawn(site,Pig.class);
             anchor.setAI(false);
             anchor.setGravity(false);
@@ -258,10 +261,16 @@ final class PublicArtProbe {
             double mean = java.util.Arrays.stream(timing).average().orElseThrow();
             long over = java.util.Arrays.stream(timing).filter(t -> t > 50).count();
             java.util.Arrays.sort(timing);
+            String metricsLine = (String) metrics.invoke(art);
+            int cap = Integer.parseInt(java.util.regex.Pattern.compile("peak_displays=(\\d+)").matcher(metricsLine)
+                    .results().findFirst().orElseThrow().group(1));
+            require(cap <= 24 && (mode < 2 ? cap == 0 : cap > 0),"VFX benchmark reached configured display path");
+            require(mode == 0 ? metricsLine.contains("public_requests=0 ") : !metricsLine.contains("public_requests=0 "),
+                    "VFX benchmark reached configured rendition");
             probe.getLogger().info(String.format(java.util.Locale.ROOT,
                     "AW_VFX_LOAD mode=%s viewers=%d ticks=%d seed=67026 mean=%.3f p50=%.3f p95=%.3f p99=%.3f max=%.3f over50=%d heap_start=%d heap_peak=%d gc_ms=%d %s",
                     MODES.get(mode),size,MEASURED,mean,percentile(.5),percentile(.95),percentile(.99),timing[MEASURED-1],over,
-                    heapAtStart,peakHeap,gc()-gcAtStart,metrics.invoke(art)));
+                    heapAtStart,peakHeap,gc()-gcAtStart,metricsLine));
             if (++mode == MODES.size()) {
                 mode = 0;
                 size *= 2;
@@ -277,6 +286,7 @@ final class PublicArtProbe {
             if (task != null) task.cancel();
             org.bukkit.event.HandlerList.unregisterAll(this);
             anchor.remove();
+            chunk.removePluginChunkTicket(probe);
             if (clear != null) {
                 try { clear.invoke(art); }
                 catch (ReflectiveOperationException failure) { throw new AssertionError("VFX load fixture cleanup",failure); }

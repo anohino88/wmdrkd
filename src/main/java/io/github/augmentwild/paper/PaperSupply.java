@@ -225,7 +225,9 @@ final class PaperSupply implements Listener {
         stats.count(Counter.CREATED);
         notice.accept(label(delivery) + "이 도착했습니다.");
         art.supply(location,delivery.plan.premium());
-        PlayerUi.audience(location,PlayerUi.Option.PARTICLES,p -> p.spawnParticle(Particle.END_ROD, location.clone().add(0,1,0),15,.4,.3,.4,.02));
+        PlayerUi.audience(location,PlayerUi.Option.PARTICLES,p -> {
+            if (active.test(p)) p.spawnParticle(Particle.END_ROD,location.clone().add(0,1,0),15,.4,.3,.4,.02);
+        });
     }
 
     private boolean claimable(Delivery delivery) {
