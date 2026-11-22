@@ -70,6 +70,27 @@ DISPATCH = {"forbidden_deal":"PaperAugments.chooseExchange","xp_silver":"Augment
             "rear":"PaperAugments.combat","fall":"PaperAugments.combat","defense":"PaperAugments.combat","eureka":"PaperOfficialCombat.cooldown",
             "speed":"PaperAugments.syncEffects"}
 
+TIMING = {"SWEEP": "검격·이동 3+5틱", "GROW": "확산·수렴 4+7틱", "HOLD": "형성·잔류 5+10틱"}
+SKILL_LIFECYCLE = {
+    "shadow_dash": "성공한 이동의 출발·도착·경로와 질주 오라",
+    "earthquake_mage": "실제 출발점과 지연된 경로 타격",
+    "time_rewind": "복귀한 위치와 저장된 경로 표본",
+    "calamity_giant": "실제 지면 충격 반경과 달리기 발자국",
+    "duel_contract": "상호 시야의 계약 연결과 상태 오라",
+    "bomb_alchemy": "투사체 비행·명중·폭발 반경과 제거",
+    "void_lord": "실제 장판의 범위·맥동·종료 수축",
+}
+AURAS = {"heal", "armor", "berserk", "pursuit", "immortal_berserker", "last_demon"}
+
+def timing(source, key, family):
+    for section, value in (("CASTS", key), ("MOTIONS", family)):
+        block = source.split(section + " = ", 1)[1].split(");", 1)[0]
+        match = re.search(r'"' + re.escape(value) + r'",\s*new Motion\((SWEEP|HOLD|GROW)', block)
+        if match:
+            return TIMING[match.group(1)]
+    return TIMING["GROW"]
+
+
 def bodies(source,method):
     # Restrict each match to a declared instance method. Join overloads (e.g. grant).
     pattern = r"^    (?:public |private |protected |static |final )*[\w<>?,.]+ "+method+r"\([^;{}]*\)\s*\{"
@@ -108,17 +129,19 @@ def report():
         fallback=({"fire":"FLAME","frost":"SNOWFLAKE","time":"SNOWFLAKE","blade":"CRIT","impact":"CRIT","void":"PORTAL",
                   "growth":"HAPPY_VILLAGER","blood":"HAPPY_VILLAGER"}).get(family,"ELECTRIC_SPARK")
         path=(dispatch+" → " if dispatch else "")+src+"."+" → ".join(route)
-        rows.append(f"| `{key}` | {conditions[key]} | `{path}` | `{family}` | {fallback} | PASS | NOT_RUN |")
+        lifetime = SKILL_LIFECYCLE.get(key, "경기 시계 오라·만료" if key in AURAS else "발동 모션 후 제거")
+        rows.append(f"| `{key}` | {conditions[key]} | `{path}` | `{family}` | "
+                    f"{timing(sources['PaperArt'],key,family)} · {lifetime} | {fallback} | PASS | NOT_RUN |")
     return """# 증강 발동 연출 대조표
 
 각 ID는 고유 아이콘 `augment/<ID>`와 전투용 `proc/<ID>`를 가진다. 전투 모델은 해당 Blender 형태와 고유 문양을 결합한다. 아래 경로는 해당 증강의 실제 효과를 대표하는 발동 또는 능력 적용 지점이다. 충전·스택 증가·교환은 각각 해당 상태가 변경될 때 표시한다.
 
-발동 시 전용 모델을 열고 형태별로 3~5틱 발동과 5~10틱 소멸을 보간한 뒤 제거한다. 패밀리별 이동·회전·확장과 액티브 7종의 개별 모션을 사용한다. 효과음은 Kenney의 `augmentwild:cast`이며 패밀리별 음높이를 사용한다. 간소 표현은 본인에게만 바닐라 파티클 4개와 자수정 소리를 재생한다. 소리·시각 설정과 동시 표시 상한이 적용된다. 아래 종료는 시각 연출의 종료다. 버프 만료 시각은 기존 전투 원장이 관리한다.
+발동 시 전용 모델을 열고 형태별로 3~5틱 발동과 5~10틱 소멸을 보간한 뒤 제거한다. 패밀리별 이동·회전·확장과 액티브 7종의 개별 모션을 사용한다. 효과음은 Kenney의 `augmentwild:cast`이며 패밀리별 음높이를 사용한다. 간소 표현은 본인에게만 바닐라 파티클 4개와 자수정 소리를 재생한다. 소리·시각 설정과 동시 표시 상한이 적용된다. 아래 종료는 시각 연출의 종료다. 버프 만료 시각은 기존 전투 원장이 관리한다. 모델과 표의 간소 파티클은 발동한 플레이어에게 전달한다. STANDARD는 중심 모델을 보내고 HIGH는 외곽 모델과 재질음, ULTRA는 추가 룬을 사용한다. 품질별 구성은 예산과 플레이어 설정에 따라 축소될 수 있다.
 
 **검사 범위**  소스 검사는 카탈로그의 전체 ID, 선언된 실제 메서드, 호출 간선, 시각 출력 지점, 모델의 고유 텍스처 참조를 확인한다. Paper 연출 프로브는 별도로 합성 뷰어에게 84개를 재생해 실제 엔티티의 모델 ID와 수명을 검사한다. 개별 실전 발동의 시청각 일치는 클라이언트 검증 열에 기록한다.
 
-| ID · 아이콘 · 효과 모델 | 발동 조건 | 코드 경로 | Blender 원형 | 간소 파티클 | 소스·모델 검사 | 클라이언트 |
-|---|---|---|---|---|---|---|
+| ID · 아이콘 · 효과 모델 | 발동 조건 | 코드 경로 | Blender 원형 | 발동·종료 및 지속 단계 | 간소 파티클 | 소스·모델 검사 | 클라이언트 |
+|---|---|---|---|---|---|---|---|
 """+ "\n".join(sorted(rows))+"\n"
 
 if __name__=="__main__":
