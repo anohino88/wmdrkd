@@ -25,6 +25,7 @@ final class ArtGallery implements PaperMenu {
     private final List<String> entries;
     private static final java.util.Map<Integer,String> SECTIONS = java.util.Map.of(
             46,"augment/",47,"model/",48,"growth/",50,"rarity/",51,"sound/",52,"screen/");
+    private Runnable back;
     private int page;
     private boolean simple;
 
@@ -56,10 +57,11 @@ final class ArtGallery implements PaperMenu {
             view.put(p,slot,Material.PAPER,journal ? "gui/journal" : "gui/supply",row);
             index++;
         }
+        view.returnTo(p,() -> p.performCommand("aw menu"));
         p.openInventory(view.inventory);
     }
 
-    static void detail(Player p, PaperArt art, String title, ItemStack card) {
+    static void detail(Player p, PaperArt art, String title, ItemStack card, Runnable back) {
         var view = new ArtGallery(p,art,PaperArt.Screen.DETAIL,title,3,List.of(),() -> false);
         view.inventory.setItem(4,card);
         var lore = card.getItemMeta().lore();
@@ -69,7 +71,13 @@ final class ArtGallery implements PaperMenu {
             note.editMeta(meta -> meta.displayName(text));
             view.inventory.setItem(9+i,art.icon(p,note,i == 3 ? "gui/gauge" : "gui/detail"));
         }
+        view.returnTo(p,back);
         p.openInventory(view.inventory);
+    }
+
+    private void returnTo(Player p, Runnable action) {
+        back = action;
+        put(p,inventory.getSize()-1,Material.ARROW,"gui/previous","이전 화면");
     }
 
     private void put(Player p, int slot, Material material, String model, String title, String... lore) {
@@ -99,7 +107,11 @@ final class ArtGallery implements PaperMenu {
     }
 
     private void activate(Player p, int slot) {
-        if (entries.isEmpty() || !allowed.getAsBoolean()) return;
+        if (entries.isEmpty()) {
+            if (back != null && slot == inventory.getSize()-1) back.run();
+            return;
+        }
+        if (!allowed.getAsBoolean()) return;
         if (slot == 49) simple = !simple;
         else if (SECTIONS.containsKey(slot)) {
             String type = SECTIONS.get(slot);
@@ -129,25 +141,14 @@ final class ArtGallery implements PaperMenu {
         var screen = rarity ? PaperArt.Screen.CHOICE : PaperArt.Screen.valueOf(parts[1].toUpperCase(Locale.ROOT));
         int rows = switch (screen) { case WARNING -> 1; case LAB,CODEX -> 6; case JOURNAL,SCOUT -> 5; default -> 3; };
         var sample = new ArtGallery(p,art,screen,"미리보기 · " + parts[1],rows,List.of(),() -> false);
-        String[] models = switch (screen) {
-            case CHOICE -> switch (parts[1]) {
-                case "gold" -> new String[]{"augment/steel_heart","augment/chain_impact","augment/xp_gold"};
-                case "prismatic" -> new String[]{"augment/time_rewind","augment/void_lord","augment/xp_prism"};
-                default -> new String[]{"augment/stack_dinosaur","augment/miner","augment/xp_silver"};
-            };
-            case WARNING -> new String[]{"gui/warning","gui/previous"};
-            case SLOTS -> new String[]{"augment/shadow_dash","gui/slots","gui/disabled"};
-            default -> new String[]{"gui/" + switch (screen) {
-                case DETAIL -> "detail"; case CODEX -> "codex"; case JOURNAL -> "journal";
-                case SETTINGS -> "settings"; case SUPPLY -> "supply"; case SCOUT -> "scout";
-                case RESULT -> "result"; case LAB -> "lab"; default -> "menu";
-            }};
-        };
-        for (int i = 0; i < models.length; i++) {
-            int slot = rows == 1 ? 3 + i * 2 : 10 + i * 3;
-            sample.put(p,slot,Material.PAPER,models[i],models[i],"미리보기");
+        var slots = art.sampleCards(screen);
+        if (rarity) {
+            String[] cards = art.rarityCards(parts[1]);
+            for (int i = 0; i < cards.length; i++) slots.put(10 + i * 3,cards[i]);
+            if (!simple && cards.length > 0) art.choice(p,cards[0].substring("augment/".length()),parts[1].toUpperCase(Locale.ROOT));
         }
-        if (rarity && !simple) art.choice(p,models[0].substring("augment/".length()),parts[1].toUpperCase(Locale.ROOT));
+        slots.forEach((slot,model) -> sample.put(p,slot,Material.PAPER,model,art.label(model),"예시 데이터 · 미리보기"));
+        sample.returnTo(p,() -> { if (allowed.getAsBoolean()) p.openInventory(inventory); });
         p.openInventory(sample.inventory);
     }
 
@@ -159,7 +160,7 @@ final class ArtGallery implements PaperMenu {
             if (!(event.getView().getTopInventory().getHolder() instanceof ArtGallery view)) return;
             boolean blocked = event.isCancelled();
             int slot = PaperMenu.lock(event,false);
-            if (blocked || slot < 0 || view.entries.isEmpty() || !(event.getWhoClicked() instanceof Player p)
+            if (blocked || slot < 0 || view.entries.isEmpty() && view.back == null || !(event.getWhoClicked() instanceof Player p)
                     || !p.getUniqueId().equals(view.owner)) return;
             Bukkit.getScheduler().runTask(plugin,() -> {
                 if (p.isOnline() && p.getOpenInventory().getTopInventory().getHolder() == view) view.activate(p,slot);

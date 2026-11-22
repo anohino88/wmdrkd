@@ -20,10 +20,10 @@ def bar(x, y, z, sx, sy, sz, color="light"):
     return mesh
 
 
-def ring(radius, y, color):
+def ring(radius, y, color, width=1.25):
     for i in range(12):
         angle = i * math.tau / 12
-        bar(8 + math.cos(angle)*radius, y, 8 + math.sin(angle)*radius, 1.25, .65, 1.25, color)
+        bar(8 + math.cos(angle)*radius, y, 8 + math.sin(angle)*radius, width, .65, width, color)
 
 
 def stepped_line(count, point, color):
@@ -38,7 +38,7 @@ def form(kind):
         bar(8, 9.6, 8, 9.5, 1.2, 7.5, "metal")
         for x in (5, 11):
             bar(x, 7, 8, .75, 4.2, 7.2, "metal")
-            bar(x, 10.3, 8, .75, .4, 7.5, "light")
+            bar(x, 10.3, 8, .75, .4, 7.65, "light")
         bar(8, 8, 4.35, 2.0, 1.6, .35, "accent")
         if kind == "premium":
             for y, width in ((10.8, 3), (11.7, 2), (12.6, 1)):
@@ -52,18 +52,18 @@ def form(kind):
             bar(8, 8, 8, 2.4, 1, 2.4, "light")
         elif kind == "time":
             bar(8, 8, 6, .65, .8, 4.5)
-            bar(9.2, 8, 8, 2.5, .8, .65, "accent")
+            bar(9.2, 8.23, 8, 2.5, .8, .65, "accent")
         else:
-            ring(2.4, 8.1, "accent")
+            ring(2.4, 8.1, "accent", .8)
             bar(8, 7.6, 8, 3, .7, 3, "dark")
         return
     if kind in ("blade", "bolt", "rush", "blood"):
         stepped_line(9, lambda i: (4+i*.85, 5+i*.67, 8+(i-4)**2*.11), "light")
         if kind == "blade":
-            stepped_line(7, lambda i: (4+i*.91, 4.2+i*.62, 8.6+(i-4)**2*.11), "accent")
+            stepped_line(7, lambda i: (4.16+i*.91, 4.2+i*.62, 8.6+(i-4)**2*.11), "accent")
         elif kind == "rush":
             for offset in (-2, 2):
-                stepped_line(5, lambda i: (4+i*.95, 5+i*.67, 8+offset), "metal")
+                stepped_line(5, lambda i: (4.22+i*.95, 4.76+i*.67, 8+offset+i*.12), "metal")
         elif kind == "bolt":
             for y, size in ((9, 2), (10, 3), (11, 2)):
                 bar(11, y, 10, size, 1, size, "accent")
@@ -78,7 +78,7 @@ def form(kind):
             bar(8 + math.cos(angle)*3.5, 8.7, 8 + math.sin(angle)*3.5, 1.6, 2, 1.6)
     elif kind == "ward":
         for y, width in ((5, 2), (6.5, 4), (8, 6), (9.5, 7), (11, 6)):
-            bar(8, y, 8, width, 1.55, .65, "metal")
+            bar(8, y, 8, width, 1.49, .65, "metal")
             bar(8, y, 7.58, width*.65, 1, .25, "light")
         bar(8, 8.5, 7.3, 1.5, 2.5, .4, "accent")
     elif kind in ("growth", "frost", "fire"):

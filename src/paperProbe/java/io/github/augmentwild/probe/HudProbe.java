@@ -66,8 +66,13 @@ final class HudProbe {
             io.github.augmentwild.paper.PlayerUi.toggle(p,option);
         }
         io.github.augmentwild.paper.PlayerUi.result(p,List.of("우승 · A","처치 3 · 사망 1"));
-        if (viewer.menu.getItem(0)==null || viewer.menu.getItem(1)==null || viewer.menu.getItem(2)!=null)
-            throw new AssertionError("result inventory");
+        var winner = viewer.menu.getItem(4);
+        var stats = viewer.menu.getItem(9);
+        var plain = net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText();
+        if (winner == null || stats == null || !"우승 · A".equals(plain.serialize(winner.getItemMeta().displayName()))
+                || !"처치 3 · 사망 1".equals(plain.serialize(stats.getItemMeta().displayName()))
+                || java.util.Arrays.stream(viewer.menu.getContents()).filter(java.util.Objects::nonNull).count() != 2)
+            throw new AssertionError("result cards must preserve the winner and personal statistics");
     }
 
     static void run(Pig pig) {

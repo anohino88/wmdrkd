@@ -1,5 +1,6 @@
 package io.github.augmentwild.paper;
 
+import io.github.augmentwild.augment.AugmentDefinition;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -46,6 +47,7 @@ public final class PaperArt implements Listener {
     private final Map<UUID, Long> nextCue = new HashMap<>();
     private final Set<String> quiet = new HashSet<>(), noVisual = new HashSet<>();
     private final Map<String,String> labels = new HashMap<>();
+    private final Properties screens = new Properties();
     private final Properties motifs = new Properties();
     private final ResourcePackInfo pack;
     private long tick;
@@ -120,6 +122,9 @@ public final class PaperArt implements Listener {
         pack = settings(plugin);
         try (var input = plugin.getResource("art-motifs.properties")) {
             if (input != null) motifs.load(input);
+            try (var layouts = plugin.getResource("art-screen-samples.properties")) {
+                if (layouts != null) screens.load(layouts);
+            }
         } catch (IOException failure) {
             plugin.getLogger().log(java.util.logging.Level.WARNING,"Unable to read augment artwork mapping",failure);
         }
@@ -192,7 +197,27 @@ public final class PaperArt implements Listener {
         return item;
     }
 
-    void label(String id, String name) { labels.put(id,name); }
+    private final Map<String,List<String>> byRarity = new HashMap<>();
+
+    Map<Integer,String> sampleCards(Screen screen) {
+        var slots = new LinkedHashMap<Integer,String>();
+        String value = screens.getProperty(screen.name().toLowerCase(Locale.ROOT),"");
+        if (!value.isBlank()) for (String pair : value.split(" ")) {
+            String[] fields = pair.split("=",2);
+            slots.put(Integer.parseInt(fields[0]),fields[1]);
+        }
+        return slots;
+    }
+
+    void register(AugmentDefinition definition) {
+        labels.put(definition.id(),definition.name());
+        byRarity.computeIfAbsent(definition.rarity().name(),ignored -> new ArrayList<>()).add(definition.id());
+    }
+
+    String[] rarityCards(String tier) {
+        return byRarity.getOrDefault(tier.toUpperCase(Locale.ROOT),List.of()).stream()
+                .sorted().limit(3).map(id -> "augment/" + id).toArray(String[]::new);
+    }
 
     String label(String key) {
         String id = key.substring(key.indexOf('/') + 1);
@@ -220,7 +245,7 @@ public final class PaperArt implements Listener {
     private void showProc(Player player, String id, String motif, boolean simple) {
         var at = near(player);
         if (!noVisual.contains(id) && !simple && loaded.contains(player.getUniqueId()) && displaysAvailable) {
-            render(player,at,"proc/" + id,CASTS.getOrDefault(id,MOTIONS.getOrDefault(motif,PULSE)),true);
+            render(player,at,"proc/" + id,CASTS.getOrDefault(id,MOTIONS.getOrDefault(motif,PULSE)));
         } else if (!noVisual.contains(id) && PlayerUi.enabled(player,PlayerUi.Option.PARTICLES)) {
             Particle particle = switch (motif) {
                 case "fire" -> Particle.FLAME;
@@ -246,7 +271,7 @@ public final class PaperArt implements Listener {
     void choice(Player p, String id, String rarity) {
         if (!playable.test(p) || !loaded.contains(p.getUniqueId())) return;
         var motion = switch (rarity) { case "PRISMATIC" -> GROWTH.get("magic_missile"); case "GOLD" -> MOTIONS.get("ward"); default -> PULSE; };
-        render(p,near(p),"proc/" + id,motion,true);
+        render(p,near(p),"proc/" + id,motion);
     }
 
     void cast(Player player, String id) {
@@ -280,7 +305,7 @@ public final class PaperArt implements Listener {
             }
             case "model" -> {
                 if (simple || !loaded.contains(p.getUniqueId())) showProc(p,id,id,true);
-                else render(p,near(p),id,MOTIONS.getOrDefault(id,ARRIVE),true);
+                else render(p,near(p),id,MOTIONS.getOrDefault(id,ARRIVE));
             }
             case "sound" -> sound(p,id,Sound.BLOCK_NOTE_BLOCK_CHIME);
         }
@@ -289,14 +314,14 @@ public final class PaperArt implements Listener {
     void growth(Player player, String id, boolean visible) {
         if (!visible || pack == null || !loaded.contains(player.getUniqueId())) return;
         String motif = SIGNATURES.getOrDefault(id,motifs.getProperty(id,"growth"));
-        render(player,near(player),motif,GROWTH.getOrDefault(id,PULSE),true);
+        render(player,near(player),motif,GROWTH.getOrDefault(id,PULSE));
     }
 
     void supply(Location at, boolean premium) {
         for (Player player : at.getNearbyPlayers(32)) {
             if (loaded.contains(player.getUniqueId()) && playable.test(player)) {
                 if (PlayerUi.enabled(player,PlayerUi.Option.SOUND)) player.playSound(at,"augmentwild:supply",.65f,1f);
-                render(player,supplyCenter(at,1.75),premium ? "premium" : "supply",ARRIVE,true);
+                render(player,supplyCenter(at,1.75),premium ? "premium" : "supply",ARRIVE);
             } else if (PlayerUi.enabled(player,PlayerUi.Option.SOUND)) {
                 player.playSound(at,Sound.BLOCK_CHEST_OPEN,1,.8f);
             }
@@ -358,12 +383,11 @@ public final class PaperArt implements Listener {
         return at.add(at.getDirection().setY(0).multiply(1.35)).add(0,.8,0);
     }
 
-    private void render(Player viewer, Location at, String motif, Motion motion, boolean priority) {
+    private void render(Player viewer, Location at, String motif, Motion motion) {
         UUID id = viewer.getUniqueId();
         if (pack == null || !loaded.contains(id) || !displaysAvailable || !playable.test(viewer)
                 || !PlayerUi.enabled(viewer,PlayerUi.Option.PARTICLES)
                 || !at.getWorld().equals(viewer.getWorld()) || !at.isChunkLoaded()) return;
-        if (!priority && cues.containsKey(id)) return;
         if (!cues.containsKey(id) && cues.size() >= MAX_DISPLAYS) return;
         removeCue(id);
         ItemDisplay display = null;

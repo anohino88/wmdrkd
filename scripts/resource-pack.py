@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import io
+import itertools
 import json
 import os
 import re
@@ -187,8 +188,21 @@ def verify(rarities, motifs, sources):
                 assert all(0 <= a < b <= 16 for a,b in zip(part["from"],part["to"])), (key,part)
                 assert set(part["faces"]) == {"north","south","east","west","up","down"}
                 assert all(face["texture"][1:] in model["textures"] for face in part["faces"].values())
+            # Overlapping outward faces on the same plane flicker under camera rotation.
+            for a,b in itertools.combinations(model["elements"],2):
+                for axis in range(3):
+                    overlap = all(min(a["to"][i],b["to"][i]) > max(a["from"][i],b["from"][i])
+                                  for i in range(3) if i != axis)
+                    if overlap:
+                        assert all(a[side][axis] != b[side][axis] for side in ("from","to")), (key,a,b)
             assert len({tuple(part["from"] + part["to"]) for part in model["elements"]}) == len(model["elements"])
     screens = json.loads((SOURCE / "screens.json").read_text())
+    samples = dict(row.split("=",1) for row in (ROOT / "src/main/resources/art-screen-samples.properties").read_text().splitlines())
+    assert samples.keys() == screens.keys()
+    for screen, controls in samples.items():
+        pairs = [pair.split("=") for pair in controls.split()]
+        assert len({slot for slot,key in pairs}) == len(pairs)
+        assert all(0 <= int(slot) < screens[screen][0]*9 and key in keys for slot,key in pairs)
     providers = json.loads((ASSETS / "font/interface.json").read_text())["providers"]
     assert len(screens) == 12 and len(providers) == 13
     for index, (screen, (rows, _, slots)) in enumerate(screens.items()):

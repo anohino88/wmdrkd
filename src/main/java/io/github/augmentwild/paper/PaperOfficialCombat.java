@@ -192,7 +192,7 @@ final class PaperOfficialCombat implements Listener {
         this.protection = protection;
         this.owned = owned;
         catalog = new OfficialAugments(plugin, registry);
-        registry.all().forEach(definition -> art.label(definition.id(),definition.name()));
+        registry.all().forEach(art::register);
         for (String id : catalog.rules.keySet()) {
             String path = path(id);
             art.configure(id,catalog.config.getBoolean(path + "particles",true),catalog.config.getBoolean(path + "sound",true));

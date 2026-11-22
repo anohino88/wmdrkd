@@ -675,7 +675,11 @@ final class PaperAugments implements Listener {
                     plugin.getServer().getScheduler().runTask(plugin,() -> {
                         if (!player.isOnline() || player.getOpenInventory().getTopInventory().getHolder() != codex) return;
                         var profile = profiles.getOrDefault(codex.owner,new Profile());
-                        ArtGallery.detail(player,art,def.name(),augmentItem(player,profile,def,true));
+                        ArtGallery.detail(player,art,def.name(),augmentItem(player,profile,def,true),() -> {
+                            if (!Objects.equals(codex.match,match)) return;
+                            renderCodex(player,codex);
+                            player.openInventory(codex.inventory);
+                        });
                     });
                     return;
                 }

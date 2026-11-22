@@ -14,21 +14,21 @@ scene = bpy.context.scene
 bpy.ops.object.select_all(action="SELECT")
 bpy.ops.object.delete(use_global=False)
 scene.render.engine = "CYCLES"
-scene.cycles.samples = 5
+scene.cycles.samples = 24
 scene.cycles.use_denoising = False
 scene.render.film_transparent = True
-scene.render.resolution_x = scene.render.resolution_y = 200
+scene.render.resolution_x = scene.render.resolution_y = 240
 scene.render.resolution_percentage = 100
 scene.world.color = (.35,.35,.35)
 camera = bpy.data.cameras.new("Orthographic product view")
 cam = bpy.data.objects.new("Camera",camera)
 scene.collection.objects.link(cam)
-cam.location = (12,-23,15)
+cam.location = (12,23,15)
 cam.rotation_euler = (-cam.location).to_track_quat("-Z","Y").to_euler()
 camera.type = "ORTHO"
-camera.ortho_scale = 18
+camera.ortho_scale = 16
 scene.camera = cam
-for loc, energy, size in [((-7,-10,15),3200,9),((8,7,11),4200,8),((5,-10,4),1100,7)]:
+for loc, energy, size in [((-7,10,15),3200,9),((8,-7,11),4200,8),((5,10,4),1100,7)]:
     light = bpy.data.lights.new("Studio softbox","AREA")
     ob = bpy.data.objects.new("Softbox",light)
     scene.collection.objects.link(ob)

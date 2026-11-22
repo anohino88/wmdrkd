@@ -62,6 +62,8 @@ final class ArtProbe {
             require(ids.size() == 84);
             // Exercise the plugin's private cosmetic adapter using real Paper ItemDisplays.
             var preview = PaperArt.class.getDeclaredMethod("preview",Player.class,String.class,boolean.class);
+            var cue = PaperArt.class.getDeclaredMethod("cue",Player.class,String.class);
+            cue.setAccessible(true);
             var tick = PaperArt.class.getDeclaredMethod("tick");
             var clear = PaperArt.class.getDeclaredMethod("clear");
             preview.setAccessible(true);
@@ -69,14 +71,17 @@ final class ArtProbe {
             clear.setAccessible(true);
             for (String key : ids.stringPropertyNames()) {
                 shown[0] = null;
-                preview.invoke(art,p,"augment/" + key,false);
+                cue.invoke(art,p,key);
                 var display = shown[0];
                 require(display != null && display.isValid() && !display.isPersistent() && !display.isVisibleByDefault());
                 require(display.getItemStack().getItemMeta().getItemModel().getKey().equals("proc/" + key));
+                cue.invoke(art,p,key);
+                require(shown[0] == display);
                 for (int i = 0; i < 12; i++) tick.invoke(art);
                 require(display.isValid() && display.getInterpolationDuration() == 6);
                 tick.invoke(art);
                 require(!display.isValid());
+                for (int i = 13; i < 20; i++) tick.invoke(art);
             }
             preview.invoke(art,p,"model/premium",false);
             require(shown[0].isValid());

@@ -66,15 +66,11 @@ def main():
           [("supply","일반 보급","#8cc9af"),("premium","고급 보급","#eac67b")]],2,230,195,159)
     sheet("rarity","선택 카드","실제 선택 아이콘의 테두리와 하단 마름모  /  등급별 비교",
           [(n,icon("augment/"+k),colors[r]) for n,k,r in [("실버","stack_dinosaur","SILVER"),("골드","magic_missile","GOLD"),("프리즘","time_rewind","PRISMATIC")]],3,150,151,111)
-    layouts={"menu":("빠른 메뉴",{4:"menu",12:"choice",13:"settings",14:"slots",16:"supply",21:"journal",22:"result"}),
-             "choice":("증강 선택",{10:"augment/steel_heart",13:"augment/magic_missile",16:"augment/venom_swarm",22:"reroll",26:"gauge"}),
-             "detail":("상세 카드",{13:"augment/magic_missile"}),"codex":("도감",{i:"augment/"+k for i,k in enumerate(list(names)[:45])}),
-             "slots":("스킬 퀵슬롯",{10:"slots",11:"slots",12:"slots",13:"next",15:"disabled",26:"previous"}),
-             "settings":("개인 설정",{**{i:"enabled" if i%3 else "disabled" for i in range(16)},18:"settings",26:"previous"}),
-             "lab":("연출 실험실",{**{i:"augment/"+k for i,k in enumerate(active)},49:"settings",53:"next"}),
-             "result":("경기 결과",{4:"result",9:"report",10:"report",11:"gauge",12:"slots",13:"codex"}),"supply":("보급 길잡이",{10:"supply",13:"supply",16:"supply"}),
-             "journal":("전투 기록",{i:"journal" for i in range(8)}),"warning":("종료 확인",{3:"warning",5:"previous"}),
-             "scout":("망원경 정찰",{0:"scout",1:"augment/steel_heart",2:"augment/overgrowth"})}
+    labels={'menu': '빠른 메뉴', 'choice': '증강 선택', 'detail': '상세 카드', 'codex': '도감', 'slots': '스킬 퀵슬롯', 'settings': '개인 설정', 'lab': '연출 실험실', 'result': '경기 결과', 'supply': '보급 길잡이', 'journal': '전투 기록', 'warning': '종료 확인', 'scout': '망원경 정찰'}
+    layouts={}
+    for line in (ROOT/"src/main/resources/art-screen-samples.properties").read_text().splitlines():
+        screen,items=line.split("=",1)
+        layouts[screen]=(labels[screen],{int(slot):key for pair in items.split() for slot,key in [pair.split("=")]})
     panels=[]
     for key,(rows,accent,_) in json.loads((SOURCE/"screens.json").read_text()).items():
         title,slots=layouts[key]
