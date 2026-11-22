@@ -17,7 +17,7 @@ final class AwCompletion implements TabCompleter {
     private static final List<String> PLAYER = List.of(
             "menu", "join", "leave", "status", "augment", "augments", "ui", "combatlog",
             "supply", "result", "scout", "death", "skill", "cast");
-    private static final List<String> SKILL = List.of("bind", "select", "next", "unbind", "use", "status","menu");
+    private static final List<String> SKILL = List.of("bind", "select", "next", "unbind", "use", "status","menu","input");
     private static final List<String> LAB = List.of(
             "status", "start", "solo", "presets", "preset", "grant", "remove",
             "list", "clear", "report", "reset", "progress", "health","preview","advance","dummy","cast","gear","heal","shield","cooldowns");
@@ -45,6 +45,7 @@ final class AwCompletion implements TabCompleter {
             choices = roots;
         } else if (first.equals("skill") && play) {
             if (args.length == 2) choices = SKILL;
+            else if (args.length == 3 && args[1].equalsIgnoreCase("input")) choices = List.of("hotbar","cycle","menu");
             else if (args.length == 3 && args[1].equalsIgnoreCase("bind")) {
                 var opts = new ArrayList<>(List.of("1", "2", "3"));
                 if (player != null) opts.addAll(matches.availableSkills(player));

@@ -62,13 +62,14 @@ final class CombatFeedback implements Listener {
     private final Predicate<Location> arena;
     private final PaperAugments augments;
     private final PaperHud hud;
+    private final PaperArt art;
     private final JavaPlugin plugin;
     private boolean floating;
     private final int maxNumbers;
-    CombatFeedback(JavaPlugin plugin, Predicate<Player> active, Predicate<Location> arena, PaperAugments augments, PaperHud hud) {
+    CombatFeedback(JavaPlugin plugin, Predicate<Player> active, Predicate<Location> arena, PaperAugments augments, PaperHud hud, PaperArt art) {
         floating = plugin.getConfig().getBoolean("hud.floating-damage");
         maxNumbers = Math.clamp(plugin.getConfig().getInt("hud.max-floating-numbers",16),0,64);
-        this.plugin = plugin; this.active = active; this.arena = arena; this.augments = augments; this.hud = hud;
+        this.plugin = plugin; this.active = active; this.arena = arena; this.augments = augments; this.hud = hud; this.art = art;
     }
     private boolean eligible(Player p) { return active.test(p) && p.getGameMode() != GameMode.SPECTATOR; }
     @EventHandler(priority=EventPriority.LOWEST)
@@ -132,6 +133,10 @@ final class CombatFeedback implements Listener {
         if (health > 0 && s.victim instanceof Player) received.merge(id,health,Double::sum);
         if (s.owner == null) return;
         if (health > 0) dealt.merge(s.owner.getUniqueId(),health,Double::sum);
+        if (s.victim instanceof Player victim && !augments.trace(s.event).synthetic()) {
+            var form = s.blocked || s.shield > 0 ? CombatCinematics.Form.GUARD : CombatCinematics.Form.HIT;
+            art.combat(s.owner,victim,s.root,"confirmed",form,s.impact,0);
+        }
         var key = new CombatView.OriginTarget(s.owner.getUniqueId(),id,s.root);
         var existing = groups.get(key);
         if (existing != null && s.time - existing.start >= CombatView.DAMAGE_WINDOW) {

@@ -28,7 +28,10 @@ final class ArtProbe {
         try {
             config.set("art.url","https://example.com/augmentwild.zip");
             config.set("art.sha1",hash);
+            PublicArtProbe.run(host,pig,id);
             art = new PaperArt(host,p -> true);
+        } catch (ReflectiveOperationException failure) {
+            throw new AssertionError("Public artwork lifecycle",failure);
         } finally {
             config.set("art.url",previousUrl);
             config.set("art.sha1",previousHash);

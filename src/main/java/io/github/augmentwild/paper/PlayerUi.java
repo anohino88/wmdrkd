@@ -15,7 +15,7 @@ public final class PlayerUi implements Listener {
         PROC("증강 발동 알림"), PARTICLES("강조 파티클"), SOUND("효과음"), FEED("킬 피드"), SUPPLY("보급 안내"),
         INCOMING("피격 방향"), STATUS("상태 효과"), BORDER("자기장 경고"), CRISIS("생존 위기"),
         GROWTH("진화와 시너지"), KILL_FX("처치 연출"), AUTO("자동 발동 상태"),
-        HOTBAR("웅크리기 + 핫바 1~3 스킬 선택"), AUTO_BIND("빈 슬롯에 스킬 자동 등록");
+        HOTBAR("스킬 전환 입력"), AUTO_BIND("빈 슬롯에 스킬 자동 등록");
         final String title;
         final NamespacedKey key;
         Option(String title) {
@@ -26,6 +26,26 @@ public final class PlayerUi implements Listener {
     public static boolean enabled(Player player, Option option) {
         return !player.getPersistentDataContainer().has(option.key, PersistentDataType.BYTE);
     }
+    enum SkillInput {
+        HOTBAR("웅크리기 + 핫바 1~3"),
+        CYCLE("웅크리기 + F로 순환 · /aw skill use로 발동"),
+        MENU("메뉴 또는 명령어로 전환");
+        final String label;
+        SkillInput(String label) { this.label = label; }
+    }
+    private static final NamespacedKey SKILL_INPUT = new NamespacedKey("augmentwild","skill_input");
+    static SkillInput skillInput(Player player) {
+        var name = player.getPersistentDataContainer().get(SKILL_INPUT,PersistentDataType.STRING);
+        if (name != null) {
+            try { return SkillInput.valueOf(name); }
+            catch (IllegalArgumentException ignored) { /* Use the legacy preference below. */ }
+        }
+        return enabled(player,Option.HOTBAR) ? SkillInput.HOTBAR : SkillInput.MENU;
+    }
+    static void skillInput(Player player,SkillInput input) {
+        player.getPersistentDataContainer().set(SKILL_INPUT,PersistentDataType.STRING,input.name());
+    }
+
     enum Quality {
         LOW(4), STANDARD(8), HIGH(12), ULTRA(16);
         final int samples;
@@ -121,6 +141,12 @@ public final class PlayerUi implements Listener {
         }
     }
     private static void paint(Player p, Menu menu, Option option) {
+        if (option == Option.HOTBAR) {
+            menu.inventory.setItem(option.ordinal(),PaperIntel.item(PaperIntel.card(Material.COMPASS,
+                    option.title + " · " + skillInput(p).label, "클릭 · 다음 입력 방식")));
+            if (menu.art != null) menu.art.button(p,menu.inventory,option.ordinal(),"slots");
+            return;
+        }
         boolean on = enabled(p, option);
         menu.inventory.setItem(option.ordinal(), PaperIntel.item(PaperIntel.card(on ? Material.LIME_DYE : Material.GRAY_DYE,
                 option.title + (on ? " ON" : " OFF"))));
@@ -187,7 +213,10 @@ public final class PlayerUi implements Listener {
             });
         } else if (slot < Option.values().length) {
             var option = Option.values()[slot];
-            toggle(p, option);
+            if (option == Option.HOTBAR) {
+                var inputs = SkillInput.values();
+                skillInput(p,inputs[(skillInput(p).ordinal()+1) % inputs.length]);
+            } else toggle(p, option);
             paint(p, menu, option);
         }
     }

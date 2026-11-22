@@ -39,6 +39,7 @@ public final class PaperArt implements Listener {
     private static final float[] HOLD = {.45f, 1.2f, .85f};
     private long privateParticles, displaySpawns, displayUpdates;
     private int peakDisplays;
+    private final Map<UUID,Integer> cueSounds = new HashMap<>();
     private final Map<UUID,Integer> particleUnits = new HashMap<>();
     private static final int MAX_DISPLAYS = 24;
     private final JavaPlugin plugin;
@@ -46,9 +47,11 @@ public final class PaperArt implements Listener {
     private final Map<UUID,PlayerResourcePackStatusEvent.Status> reports = new HashMap<>();
     private final Map<UUID,Long> lastOffer = new HashMap<>();
     private final Set<UUID> loaded = new HashSet<>();
-    private final Map<UUID, Animation> cues = new HashMap<>();
+    private record PrivateCue(UUID owner, String model) {}
+    private final Map<PrivateCue, Animation> cues = new HashMap<>();
     private final Map<Location, Marker> supply = new HashMap<>();
-    private final Map<UUID, Long> nextCue = new HashMap<>();
+    private final Map<PrivateCue, Long> nextCue = new HashMap<>();
+    private final CombatCinematics combat;
     private final Set<String> quiet = new HashSet<>(), noVisual = new HashSet<>();
     private final Map<String,String> labels = new HashMap<>();
     private final Properties screens = new Properties();
@@ -139,8 +142,15 @@ public final class PaperArt implements Listener {
     }
 
     public PaperArt(JavaPlugin plugin, Predicate<Player> playable) {
+        this(plugin,playable,() -> true,at -> at.getNearbyPlayers(24));
+    }
+
+    PaperArt(JavaPlugin plugin, Predicate<Player> playable, java.util.function.BooleanSupplier running,
+             CombatCinematics.Audience audience) {
         this.plugin = plugin;
         this.playable = playable;
+        combat = new CombatCinematics(plugin,playable,p -> loaded.contains(p.getUniqueId()),running,
+                this::roomForCombat,this::spawn,audience);
         pack = settings(plugin);
         try (var input = plugin.getResource("art-motifs.properties")) {
             if (input != null) motifs.load(input);
@@ -252,15 +262,15 @@ public final class PaperArt implements Listener {
     }
 
     void cue(UUID owner, String id) {
-        if (tick < nextCue.getOrDefault(owner,0L)) return;
         Player player = plugin.getServer().getPlayer(owner);
         if (player != null) cue(player,id);
     }
 
     void cue(Player player, String id) {
         String motif = motifs.getProperty(id);
-        if (motif == null || !playable.test(player) || tick < nextCue.getOrDefault(player.getUniqueId(),0L)) return;
-        nextCue.put(player.getUniqueId(),tick + 12);
+        var key = new PrivateCue(player.getUniqueId(),"proc/" + id);
+        if (motif == null || !playable.test(player) || tick < nextCue.getOrDefault(key,0L)) return;
+        nextCue.put(key,tick + 12);
         showProc(player,id,motif,false);
     }
 
@@ -284,28 +294,27 @@ public final class PaperArt implements Listener {
             privateParticles++;
         }
         if (quiet.contains(id) || !PlayerUi.enabled(player,PlayerUi.Option.SOUND)) return;
-        float pitch = switch (motif) {
-            case "impact","blood","void" -> .78f;
-            case "time","frost","bolt" -> 1.32f;
-            case "growth","ward" -> .95f;
-            default -> 1.12f;
+        int used = cueSounds.getOrDefault(player.getUniqueId(),0);
+        if (used >= 2) return;
+        cueSounds.put(player.getUniqueId(),used+1);
+        Sound cue = switch (motif) {
+            case "blade","rush" -> Sound.ENTITY_PLAYER_ATTACK_SWEEP;
+            case "frost" -> Sound.BLOCK_GLASS_HIT;
+            case "fire" -> Sound.ITEM_FIRECHARGE_USE;
+            case "void" -> Sound.BLOCK_RESPAWN_ANCHOR_DEPLETE;
+            case "time" -> Sound.BLOCK_NOTE_BLOCK_CHIME;
+            case "impact" -> Sound.BLOCK_BASALT_HIT;
+            case "ward" -> Sound.BLOCK_CHAIN_HIT;
+            case "blood" -> Sound.BLOCK_BEACON_AMBIENT;
+            case "growth" -> Sound.BLOCK_AMETHYST_BLOCK_CHIME;
+            case "bolt" -> Sound.BLOCK_COPPER_BULB_TURN_ON;
+            default -> Sound.BLOCK_ENCHANTMENT_TABLE_USE;
         };
-        if (!simple && loaded.contains(player.getUniqueId())) {
-            player.playSound(at,"augmentwild:cast",.30f,pitch);
-            if (PlayerUi.quality(player).ordinal() >= PlayerUi.Quality.HIGH.ordinal()) {
-                Sound material = switch (motif) {
-                    case "frost" -> Sound.BLOCK_GLASS_HIT;
-                    case "fire" -> Sound.BLOCK_FIRE_AMBIENT;
-                    case "void" -> Sound.BLOCK_PORTAL_AMBIENT;
-                    case "time" -> Sound.BLOCK_NOTE_BLOCK_CHIME;
-                    case "impact" -> Sound.BLOCK_BASALT_HIT;
-                    case "blade","ward" -> Sound.BLOCK_CHAIN_HIT;
-                    default -> Sound.BLOCK_AMETHYST_BLOCK_HIT;
-                };
-                player.playSound(at,material,.18f,pitch);
-            }
-        }
-        else player.playSound(at,Sound.BLOCK_AMETHYST_BLOCK_CHIME,.32f,pitch);
+        player.playSound(at,cue,.28f,1f);
+        if (!simple && loaded.contains(player.getUniqueId()) && used == 0
+                && PlayerUi.quality(player).ordinal() >= PlayerUi.Quality.HIGH.ordinal())
+            player.playSound(at,"augmentwild:cast",.13f,1.15f);
+
     }
 
     void choice(Player p, String id, String rarity) {
@@ -325,13 +334,21 @@ public final class PaperArt implements Listener {
 
         String motif = motifs.getProperty(id);
         if (motif != null) {
-            nextCue.put(player.getUniqueId(),tick + 12);
+            nextCue.put(new PrivateCue(player.getUniqueId(),"proc/" + id),tick + 12);
             var at = switch (id) {
                 case "earthquake_mage", "void_lord" -> origin.clone().add(0,.35,0);
                 case "shadow_dash","time_rewind","calamity_giant" -> destination.clone().add(0,.45,0);
                 default -> near(player);
             };
             showProc(player,id,motif,false,at);
+            var form = switch (id) {
+                case "shadow_dash" -> CombatCinematics.Form.ARC;
+                case "time_rewind" -> CombatCinematics.Form.RETURN;
+                case "earthquake_mage" -> CombatCinematics.Form.BLAST;
+                case "void_lord" -> CombatCinematics.Form.VOID;
+                default -> null;
+            };
+            if (form != null) combat(player,null,null,id,form,at,0);
             if (!noVisual.contains(id) && PlayerUi.quality(player).ordinal() >= PlayerUi.Quality.HIGH.ordinal())
                 path(player,at,geometry(motif),.85,.65,Particle.ENCHANTED_HIT);
         }
@@ -600,13 +617,34 @@ public final class PaperArt implements Listener {
         return at.add(at.getDirection().setY(0).multiply(1.35)).add(0,.8,0);
     }
 
+    void combat(Player source, Player target, UUID origin, String id, CombatCinematics.Form form, Location point, double radius) {
+        combat.offer(source,target,origin,id,form,point,radius,!noVisual.contains(id),!quiet.contains(id));
+    }
+
+    private boolean roomForCombat() {
+        if (!displaysAvailable) return false;
+        if (displayCount() < MAX_DISPLAYS) return true;
+        for (var animation : cues.values()) {
+            if (animation.ornaments().isEmpty()) continue;
+            animation.ornaments().removeLast().remove();
+            return true;
+        }
+        var iterator = cues.values().iterator();
+        if (!iterator.hasNext()) return false;
+        iterator.next().remove();
+        iterator.remove();
+        return true;
+    }
+
     private void render(Player viewer, Location at, String motif, Motion motion) {
         UUID id = viewer.getUniqueId();
         if (pack == null || !loaded.contains(id) || !displaysAvailable || !playable.test(viewer)
                 || !PlayerUi.enabled(viewer,PlayerUi.Option.PARTICLES)
                 || !at.getWorld().equals(viewer.getWorld()) || !at.isChunkLoaded()) return;
-        if (!cues.containsKey(id) && displayCount() >= MAX_DISPLAYS) return;
-        removeCue(id);
+        var key = new PrivateCue(id,motif);
+        var previous = cues.remove(key);
+        if (previous != null) previous.remove();
+        if (displayCount() >= MAX_DISPLAYS) return;
         ItemDisplay display = null;
         List<ItemDisplay> ornaments = new ArrayList<>();
         try {
@@ -614,10 +652,10 @@ public final class PaperArt implements Listener {
             var quality = PlayerUi.quality(viewer);
             int layers = quality == PlayerUi.Quality.ULTRA ? 2 : quality == PlayerUi.Quality.HIGH ? 1 : 0;
             if (layers > 0 && !PlayerUi.reducedFlash(viewer) && Bukkit.getAverageTickTime() < 45 && motif.startsWith("proc/")) {
-                String key = motif.substring(5);
+                String augment = motif.substring(5);
                 int occupied = 1 + displayCount();
                 if (occupied + layers <= MAX_DISPLAYS) {
-                    String family = motifs.getProperty(key,"rune");
+                    String family = motifs.getProperty(augment,"rune");
                     for (int i = 0; i < layers; i++) {
                         String outer = switch (family) {
                             case "blade","rush" -> "crescent";
@@ -630,8 +668,8 @@ public final class PaperArt implements Listener {
                     }
                 }
             }
-            cues.put(id,new Animation(viewer,display,at,tick,motion,ornaments));
-            nextCue.put(id,tick + 20);
+            cues.put(key,new Animation(viewer,display,at,tick,motion,ornaments));
+            if (motif.startsWith("proc/")) nextCue.put(key,tick + 20);
             viewer.showEntity(plugin,display);
             peakDisplays = Math.max(peakDisplays,displayCount());
         } catch (RuntimeException failure) {
@@ -676,7 +714,7 @@ public final class PaperArt implements Listener {
     }
 
     private int displayCount() {
-        int count = supply.size() + fields.size();
+        int count = supply.size() + fields.size() + combat.size();
         for (var animation : cues.values()) count += 1 + animation.ornaments().size();
         return count;
     }
@@ -684,7 +722,7 @@ public final class PaperArt implements Listener {
     String metrics() {
         return "display_spawns=" + displaySpawns + " display_transforms=" + displayUpdates
                 + " peak_displays=" + peakDisplays + " active_displays=" + displayCount()
-                + " private_particle_sends=" + privateParticles;
+                + " private_particle_sends=" + privateParticles + " " + combat.metrics();
     }
 
     void tick() {
@@ -695,8 +733,11 @@ public final class PaperArt implements Listener {
         });
         tick++;
         particleUnits.clear();
-        if (cues.isEmpty()) return;
+        cueSounds.clear();
+        nextCue.values().removeIf(expiry -> expiry <= tick);
         try {
+            combat.tick();
+            peakDisplays = Math.max(peakDisplays,displayCount());
             cues.entrySet().removeIf(entry -> {
                 var animation = entry.getValue();
                 long age = tick - animation.began();
@@ -741,15 +782,19 @@ public final class PaperArt implements Listener {
     void stopPreview(Player player) { removeCue(player.getUniqueId()); }
 
     private void removeCue(UUID id) {
-        var animation = cues.remove(id);
-        if (animation != null) animation.remove();
+        cues.entrySet().removeIf(entry -> {
+            if (!entry.getKey().owner.equals(id)) return false;
+            entry.getValue().remove();
+            return true;
+        });
     }
 
     void forget(UUID id) {
+        combat.forget(id);
         auras.remove(id);
         for (var key : Set.copyOf(fields.keySet())) if (key.owner.equals(id)) endField(key);
         removeCue(id);
-        nextCue.remove(id);
+        nextCue.keySet().removeIf(key -> key.owner.equals(id));
         if (supply.isEmpty()) return;
         Player viewer = plugin.getServer().getPlayer(id);
         for (Marker marker : supply.values()) {
@@ -758,12 +803,15 @@ public final class PaperArt implements Listener {
     }
 
     void clear() {
+        combat.clear();
+        combat.resetMetrics();
         cues.values().forEach(Animation::remove);
         for (var field : fields.values()) field.model.remove();
         fields.clear();
         cues.clear();
         auras.clear();
         particleUnits.clear();
+        cueSounds.clear();
         nextCue.clear();
         supply.values().forEach(marker -> marker.entity().remove());
         supply.clear();

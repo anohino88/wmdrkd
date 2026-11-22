@@ -28,10 +28,9 @@ import org.bukkit.scheduler.BukkitTask;
 /** Read-only ZERO-policy preview of existing terrain. All block access runs on the server thread. */
 public final class ArenaSearchService implements Listener {
     private record Cell(int x, int z) { }
-    private enum Inspection { CLEAR, OCEAN, UNAVAILABLE }
     private final JavaPlugin plugin;
     private final Random random = new Random();
-    private List<CompletableFuture<Inspection>> abandoned = List.of();
+    private List<CompletableFuture<Chunk>> abandoned = List.of();
     private Scan scan;
     private BukkitTask task;
 
@@ -130,11 +129,14 @@ public final class ArenaSearchService implements Listener {
         private long totalSamples, chunkRequests;
         private int peakPending;
         private double maxTickMillis;
+        private long maxInspectionBurst;
+        private final long inspectionBudget;
         private ArenaContext result;
         private final int width, height, radius, attempts, stride, pipeline, spacing, margin;
         private final double historyBuffer;
         private final List<Arena> occupied = new ArrayList<>();
-        private final Map<Cell, CompletableFuture<Inspection>> pending = new LinkedHashMap<>();
+        private final Map<Cell, CompletableFuture<Chunk>> pending = new LinkedHashMap<>();
+        private final LinkedHashSet<Cell> retried = new LinkedHashSet<>();
         private final List<Location> spawns = new ArrayList<>();
         private final Map<String,Integer> rejected = new LinkedHashMap<>();
         private final long started = System.nanoTime();
@@ -162,6 +164,8 @@ public final class ArenaSearchService implements Listener {
             spawnSamplesPerChunk = cfg.getInt("arena.search.spawn-probes-per-chunk");
             spawnPoolSize = cfg.getInt("arena.search.spawn-pool-size");
             pipeline = cfg.getInt("arena.search.chunks-per-tick");
+            int micros = cfg.getInt("arena.search.inspection-budget-micros",1500);
+            inspectionBudget = TimeUnit.MICROSECONDS.toNanos(Math.clamp(micros,250,5000));
             spacing = cfg.getInt("arena.spawn.min-player-distance");
             margin = cfg.getInt("arena.spawn.border-margin");
             historyBuffer = cfg.getDouble("arena.search.used-region-buffer-blocks");
@@ -210,6 +214,7 @@ public final class ArenaSearchService implements Listener {
                 sender.sendMessage("경기장 후보 " + attempt + " | 검사 청크 "
                         + (next - pending.size()) + "/" + cells.size() + " | 표면 " + samples);
             }
+            long inspectionStart = System.nanoTime();
             int handled = 0;
             var iterator = pending.entrySet().iterator();
             while (iterator.hasNext() && handled < pipeline) {
@@ -221,12 +226,30 @@ public final class ArenaSearchService implements Listener {
                     reject("청크 요청 실패");
                     return false;
                 }
-                Inspection inspection = request.getValue().join();
+                Chunk chunk = request.getValue().join();
+                Cell cell = request.getKey();
                 iterator.remove();
-                if (inspection != Inspection.CLEAR) {
-                    reject(inspection == Inspection.OCEAN ? "바다 바이옴" : "생성 또는 로드되지 않은 청크");
+                if (chunk == null) {
+                    reject("생성 또는 로드되지 않은 청크");
                     return false;
                 }
+                if (!world.isChunkLoaded(chunk.getX(),chunk.getZ())) {
+                    if (!retried.add(cell)) {
+                        reject("검사 전 청크 언로드");
+                        return false;
+                    }
+                    pending.put(cell,world.getChunkAtAsync(cell.x(),cell.z(),generate));
+                    chunkRequests++;
+                    break;
+                }
+                boolean safe = inspect(chunk);
+                long burst = System.nanoTime() - inspectionStart;
+                maxInspectionBurst = Math.max(maxInspectionBurst,burst);
+                if (!safe) {
+                    reject("바다 바이옴");
+                    return false;
+                }
+                if (burst >= inspectionBudget) return false;
             }
             if (next == cells.size() && pending.isEmpty()) {
                 var spaced = spacedSpawns();
@@ -245,12 +268,7 @@ public final class ArenaSearchService implements Listener {
             }
             for (int issued = 0; issued < pipeline && next < cells.size() && pending.size() < pipeline; issued++) {
                 var cell = cells.get(next++);
-                pending.put(cell, world.getChunkAtAsync(cell.x(), cell.z(), generate).thenApply(chunk -> {
-                    // Paper completes this future on the main thread while the requested chunk is loaded.
-                    if (scan != this || cells.isEmpty() || chunk == null
-                            || !world.isChunkLoaded(chunk.getX(), chunk.getZ())) return Inspection.UNAVAILABLE;
-                    return inspect(chunk) ? Inspection.CLEAR : Inspection.OCEAN;
-                }));
+                pending.put(cell, world.getChunkAtAsync(cell.x(),cell.z(),generate));
                 chunkRequests++;
                 peakPending = Math.max(peakPending, pending.size());
             }
@@ -337,16 +355,17 @@ public final class ArenaSearchService implements Listener {
             long elapsed = (finished ? finishedAt : System.nanoTime()) - started;
             plugin.getLogger().info(String.format(java.util.Locale.ROOT,
                     "Arena search %s: size=%dx%d step=%d candidates=%d examined=%d finalSamples=%d "
-                            + "chunkRequests=%d peakPending=%d elapsedMs=%d maxTickMs=%.2f maxTickOverrunMs=%.2f rejected=%s",
+                            + "chunkRequests=%d peakPending=%d elapsedMs=%d maxTickMs=%.2f maxTickOverrunMs=%.2f maxInspectionBurstMs=%.2f rejected=%s",
                     outcome, width, height, stride, attempt, totalSamples, result == null ? 0 : samples,
                     chunkRequests, peakPending, TimeUnit.NANOSECONDS.toMillis(elapsed), maxTickMillis,
-                    Math.max(0, maxTickMillis - 50), rejected));
+                    Math.max(0, maxTickMillis - 50),maxInspectionBurst / 1_000_000.0,rejected));
         }
 
         void reject(String reason) {
             rejected.merge(reason, 1, Integer::sum);
             // The outstanding batch remains bounded. Drain it before trying another candidate.
             cells = List.of();
+            retried.clear();
             next = 0;
             samples = 0;
             safeColumns = 0;

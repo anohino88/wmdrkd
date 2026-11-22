@@ -1,5 +1,6 @@
 package io.github.augmentwild.paper;
 
+import io.github.augmentwild.paper.CombatCinematics.Form;
 import io.github.augmentwild.augment.AugmentBalance;
 import io.github.augmentwild.augment.AugmentCombinations;
 import io.github.augmentwild.augment.AugmentEvolution;
@@ -1275,7 +1276,8 @@ final class PaperOfficialCombat implements Listener {
             particle(player, state, kind, at);
             art.cue(player,id);
         }
-        if (catalog.config.getBoolean(path(id) + "sound")) PlayerUi.audience(at, PlayerUi.Option.SOUND, p -> p.playSound(at,sound,.45f,1.2f));
+        if (catalog.config.getBoolean(path(id) + "sound") && PlayerUi.enabled(player,PlayerUi.Option.SOUND))
+            player.playSound(at,sound,.34f,1.2f);
     }
     private void charge(Player player, Fighter state, String id) {
         CombatReaction r = reaction(state, id);
@@ -1373,17 +1375,17 @@ final class PaperOfficialCombat implements Listener {
                 }));
             } else {
                 visual(player, state, id, center, Particle.FLAME, Sound.ENTITY_TNT_PRIMED);
-                if (catalog.config.getBoolean(path(id) + "particles")) {
-                    for (int i = 0; i < 12; i++) {
-                        double angle = i * Math.PI / 6;
-                        double radius = option(id, "radius");
-                        particle(player, state, Particle.FLAME, center.clone().add(radius * Math.cos(angle), .1, radius * Math.sin(angle)));
-                    }
-                }
+                var origin = originalHit == null ? null : originalHit.id();
+                double radius = option(id,"radius");
+                int pending = state.pending.size();
                 later(state, id, interval(id, "duration"), () -> {
+                    art.combat(player,null,origin,id,Form.BLAST,center.clone().add(0,.2,0),radius);
                     visual(player, state, id, center, Particle.EXPLOSION, Sound.ENTITY_GENERIC_EXPLODE);
                     area(player, center, option(id, "radius"), id, rule(id).amount(), other -> {});
                 });
+                if (state.pending.size() > pending)
+                    art.combat(player,victim instanceof Player targetPlayer ? targetPlayer : null,origin,id,
+                            Form.DANGER,center.clone().add(0,.2,0),radius);
             }
         }
     }
@@ -1431,9 +1433,18 @@ final class PaperOfficialCombat implements Listener {
     }
 
     String skill(Player player, String[] args) {
+        String op = args[1].toLowerCase(Locale.ROOT);
+        if (op.equals("input")) {
+            if (args.length == 2) return PlayerUi.skillInput(player).label;
+            if (args.length != 3) return "/aw skill input <hotbar|cycle|menu>";
+            try {
+                var input = PlayerUi.SkillInput.valueOf(args[2].toUpperCase(Locale.ROOT));
+                PlayerUi.skillInput(player,input);
+                return input.label;
+            } catch (IllegalArgumentException invalid) { return "/aw skill input <hotbar|cycle|menu>"; }
+        }
         var state = fighters.get(player.getUniqueId());
         if (state == null) return "지정한 발동형 스킬이 없습니다.";
-        String op = args[1].toLowerCase(Locale.ROOT);
         var slots = state.slots;
         String usage = "/aw skill bind [1-3] <id> | select <1-3> | next | unbind | use | status";
         if (op.equals("bind") && (args.length == 3 || args.length == 4)) {
@@ -1518,6 +1529,9 @@ final class PaperOfficialCombat implements Listener {
                     long remaining = state.progress.cooldownRemaining(id,now());
                     var icon = art.slotIcon(player,id);
                     if (remaining > 0) icon = icon.color(net.kyori.adventure.text.format.NamedTextColor.DARK_GRAY);
+                    if (slot == state.slots.selected())
+                        icon = net.kyori.adventure.text.Component.text("[",net.kyori.adventure.text.format.NamedTextColor.GOLD)
+                                .append(icon).append(net.kyori.adventure.text.Component.text("]",net.kyori.adventure.text.format.NamedTextColor.GOLD));
                     message.append(icon);
                 }
                 message.append(net.kyori.adventure.text.Component.text(lines.get(slot - 1)));
@@ -1557,7 +1571,7 @@ final class PaperOfficialCombat implements Listener {
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void selectWithHotbar(org.bukkit.event.player.PlayerItemHeldEvent event) {
         Player player = event.getPlayer();
-        if (!player.isSneaking() || !valid(player) || !PlayerUi.enabled(player, PlayerUi.Option.HOTBAR)) return;
+        if (!player.isSneaking() || !valid(player) || PlayerUi.skillInput(player) != PlayerUi.SkillInput.HOTBAR) return;
         Fighter state = fighters.get(player.getUniqueId());
         int slot = event.getNewSlot() + 1;
         if (state == null || state.slots.selected() == slot || state.slots.at(slot) == null) return;
@@ -1570,7 +1584,17 @@ final class PaperOfficialCombat implements Listener {
     public void swapSkill(org.bukkit.event.player.PlayerSwapHandItemsEvent event) {
         Player player = event.getPlayer();
         Fighter state = fighters.get(player.getUniqueId());
-        if (!player.isSneaking() || state == null || state.slots.current() == null || !owns(player, state.slots.current())) return;
+        if (!player.isSneaking() || state == null || !valid(player)) return;
+        if (PlayerUi.skillInput(player) == PlayerUi.SkillInput.CYCLE) {
+            int previous = state.slots.selected();
+            state.slots.next();
+            if (state.slots.selected() == previous) return;
+            event.setCancelled(true);
+            state.hudSecond = -1;
+            hud.skillInput(player,state.slots.selected() + " · " + skillStatus(player,state,state.slots.current()));
+            return;
+        }
+        if (state.slots.current() == null || !owns(player,state.slots.current())) return;
         event.setCancelled(true);
         String result = cast(player, state.slots.current());
         hud.skillInput(player,result);
@@ -1600,7 +1624,7 @@ final class PaperOfficialCombat implements Listener {
                     Location center = player.getLocation();
                     double radius = catalog.setting("calamity-slam-radius");
                     area(player,center,radius,id,catalog.setting("calamity-slam-damage"),target -> { });
-                    art.ring(player,center,radius,Particle.CRIT,false);
+                    art.combat(player,null,null,id,Form.BLAST,center.clone().add(0,.2,0),radius);
                 });
             }
             case "duel_contract" -> {
@@ -1693,7 +1717,8 @@ final class PaperOfficialCombat implements Listener {
             boolean expires = second >= zone.expiresAt();
             if (zone.augment().equals("void_lord")) {
                 double radius = catalog.setting("void-radius");
-                art.ring(player,zone.start(),expires ? radius * .25 : radius,Particle.REVERSE_PORTAL,expires);
+                art.combat(player,null,null,zone.augment(),expires ? Form.VOID : Form.DANGER,
+                        zone.start().clone().add(0,.2,0),expires ? 0 : radius);
             }
             if (expires) iterator.remove();
         }
@@ -1761,7 +1786,7 @@ final class PaperOfficialCombat implements Listener {
         event.setCancelled(true);
         removeBomb(state);
         if (!valid(player) || !safe.test(point)) return;
-        art.ring(player,point,catalog.setting("bomb-area-radius"),Particle.FLAME,false);
+        art.combat(player,null,bomb.getUniqueId(),"bomb_alchemy",Form.BLAST,point,catalog.setting("bomb-area-radius"));
         state.zones.add(new Zone("bomb_alchemy", point, point, now() + rule("bomb_alchemy").duration(),
                 rule("bomb_alchemy").amount()));
         afterDamage(player, () -> area(player, point, catalog.setting("bomb-area-radius"), "bomb_alchemy",
@@ -2031,6 +2056,8 @@ final class PaperOfficialCombat implements Listener {
             var missile = shot.missile();
             boolean reached = missile.advance(player, catalog.setting("missile-speed"), this::opponent);
             if (!state.barrage || catalog.synergies.getBoolean("infinite_barrage.particles")) {
+                if (Bukkit.getCurrentTick() % 4 == 0)
+                    art.combat(player,null,shot.root() == null ? null : shot.root().id(),"magic_missile",Form.TRAIL,missile.position,0);
                 particle(player, state, Particle.END_ROD, missile.position);
             }
             if (reached) {
@@ -2059,7 +2086,7 @@ final class PaperOfficialCombat implements Listener {
     }
 
     private void particle(Player player, Fighter state, Particle kind, Location location) {
-        if (particleAvailable(state)) PlayerUi.audience(location,PlayerUi.Option.PARTICLES, p -> p.spawnParticle(kind,location,1));
+        if (particleAvailable(state)) art.spark(player,location,kind);
     }
 
     private boolean particleAvailable(Fighter state) {
@@ -2294,6 +2321,17 @@ final class PaperOfficialCombat implements Listener {
             }
         });
         if (hit) {
+            var form = switch (id) {
+                case "sword_wind","draw_the_sword","thousand_swords","storm_blade","dual_wielder","ultimate_hydra" -> Form.ARC;
+                case "magic_missile","ricochet_arrow","split_bow","storm_chaser","infinite_barrage" -> Form.BOLT;
+                case "earthquake_mage","calamity_giant","calamity_train","steel_king","bomb_alchemy","delayed_blast" -> Form.BLAST;
+                case "void_lord","hell_lord" -> Form.VOID;
+                default -> Form.HIT;
+            };
+            var impact = victim.getLocation().add(0,Math.min(1.1,victim.getHeight() * .65),0);
+            var approach = impact.toVector().subtract(source.getLocation().toVector());
+            if (!approach.isZero()) impact.setDirection(approach);
+            art.combat(source,victim instanceof Player target ? target : null,root == null ? null : root.id(),id,form,impact,0);
             if (!id.equals("triad_reactor")) triad(source, state, Action.REACTION);
             if (crit) art.cue(source,"jeweled_gauntlet");
             audit.add(id, Metric.PROC, 1);
@@ -2340,7 +2378,7 @@ final class PaperOfficialCombat implements Listener {
             for (int i = 0; i < 8 && particleAvailable(state); i++) {
                 double angle = i * Math.PI / 4;
                 var point = center.clone().add(Math.cos(angle),0,Math.sin(angle));
-                PlayerUi.audience(point,PlayerUi.Option.PARTICLES,p -> p.spawnParticle(Particle.DUST,point,1,dust));
+                if (PlayerUi.enabled(player,PlayerUi.Option.PARTICLES)) player.spawnParticle(Particle.DUST,point,1,dust);
             }
         }
         if (PlayerUi.enabled(player,PlayerUi.Option.SOUND) && catalog.synergies.getBoolean(synergy + ".sound"))
@@ -2666,6 +2704,7 @@ final class PaperOfficialCombat implements Listener {
             var ward = reaction(state, "ore_ward");
             ward.spendWard(millis(), interval("ore_ward", "cooldown"));
             visual(player, state, "ore_ward", player.getLocation(), Particle.CRIT, Sound.ITEM_SHIELD_BLOCK);
+            art.combat(player,null,null,"ore_ward",Form.GUARD,player.getEyeLocation(),0);
             hud.proc(player, "광맥 방벽 · 잔여 " + ward.charges());
             triad(player, state, Action.REACTION);
         }
@@ -2788,6 +2827,7 @@ final class PaperOfficialCombat implements Listener {
         hud.rescued(player,rule(applied).definition().name());
         audit.add(applied, Metric.REVIVED, 1);
         announceProc(player, applied);
+        art.combat(player,null,null,applied,Form.RESCUE,player.getLocation().add(0,.6,0),0);
         if (audit.sampleAvailable()) audit.sample(now(), "revive actor=" + audit.actor(id) + " effect=" + applied
                 + " health_after=" + player.getHealth() + " shield_grant=" + shield.shieldPoints());
         event.setCancelled(true);

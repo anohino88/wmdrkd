@@ -113,11 +113,11 @@ public final class PaperMatchService implements Listener {
                 this::consumePermit, player -> placement.protectedFromDamage(player.getUniqueId(), System.nanoTime()),
                 player -> session.state() == MatchState.AUGMENT_SELECTION && augmentMember(player.getUniqueId()),
                 this::labParticipant);
-        art = new PaperArt(plugin,this::augmentActive);
+        art = new PaperArt(plugin,this::augmentActive,() -> clock != null && !clock.isPaused(),at -> at.getNearbyPlayers(24));
         augments = new PaperAugments(plugin, () -> clock, this::augmentMember, this::augmentActive,
                 player -> placement.protectedFromDamage(player.getUniqueId(), System.nanoTime()),
                 () -> session.state(), this::insideAugmentArena, this::insideAugmentBorder, this::move, placement::protect, settings.rules().procDepth(), telemetry, hud, art);
-        feedback = new CombatFeedback(plugin,this::augmentActive,this::insideAugmentArena,augments,hud);
+        feedback = new CombatFeedback(plugin,this::augmentActive,this::insideAugmentArena,augments,hud,art);
         supply = new PaperSupply(plugin, SupplySettings.load(config, settings.rules().gatheringSeconds()),
                 this::augmentActive, this::insideAugmentBorder, this::notice, telemetry, art);
         intel = new PaperIntel(plugin, () -> clock, () -> session.participantIds(), this::augmentActive,

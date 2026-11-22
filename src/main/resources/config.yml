@@ -30,6 +30,7 @@ arena:
     spawn-probes-per-chunk: 8
     spawn-pool-size: 512
     chunks-per-tick: 8
+    inspection-budget-micros: 1500
     used-region-buffer-blocks: 100
     max-candidate-attempts: 80
     max-search-seconds: 120
