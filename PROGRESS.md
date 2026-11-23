@@ -357,3 +357,9 @@ PHASE 2B의 GitHub Actions #6에서 Java 버전 확인, `./gradlew clean build -
 - 원격 기준 `b091ae6f21337e5b5011ca0626b73279b37e748d`. 액티브 7종, 진화와 시너지의 Blender 조형 및 Paper 키프레임을 추가했다. 실제 전투 사건에서 개인 연출을 생성하고 공개 장식은 기존 공유 가시성 및 Display 상한 24개를 사용한다.
 - 84종 아이콘과 재질, 메인 메뉴와 상세 미리보기, 선택 스킬의 상태 표시를 갱신했다. SHA-1이 JAR과 일치할 때만 새 리소스팩 연출을 활성화한다.
 - 7.5 및 7.6을 동일 호스트와 고정 Paper 빌드에서 비교하는 CI를 실행한다. 실제 그래픽 클라이언트는 `NOT_RUN`. [설치, 비교 렌더, 감사표](docs/phase76-visual-revolution-ko.md)
+
+## PHASE 7.7 VISUAL REFORGE
+
+- 기준 원격 `f02a55bf9411ffc829d9cf3fc8cc6e61d5935f28`. 액티브 7종의 조형·키프레임, 공개 검기·폭발·방어 모델, 대표 시너지, 상세창 및 HUD를 개선했다.
+- 공개 효과 큐는 우선순위와 별도 생략 집계를 적용하고 동시 Display 상한 24개를 유지한다. 7.6과 7.7을 같은 호스트와 Paper 빌드에서 비교한다.
+- 실제 그래픽 클라이언트는 `NOT_RUN`. [설치와 오프라인 3D·GIF](docs/phase77-reforge-ko.md)

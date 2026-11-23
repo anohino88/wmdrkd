@@ -7,7 +7,9 @@ from pathlib import Path
 import bpy
 from mathutils import Vector, Quaternion
 
-project, baseline, output = (Path(arg).resolve() for arg in sys.argv[sys.argv.index("--")+1:])
+args = sys.argv[sys.argv.index("--")+1:]
+project, baseline, output = (Path(arg).resolve() for arg in args[:3])
+reforge = "--reforge" in args[3:]
 current = project / "resource-pack/pack/assets/augmentwild"
 previous = baseline / "resource-pack/pack/assets/augmentwild"
 output.mkdir(parents=True, exist_ok=True)
@@ -17,7 +19,7 @@ scene.render.engine = "CYCLES"
 scene.cycles.samples = 8
 scene.cycles.use_denoising = False
 scene.render.film_transparent = True
-scene.render.resolution_x = scene.render.resolution_y = 180
+scene.render.resolution_x = scene.render.resolution_y = 288 if reforge else 180
 scene.render.resolution_percentage = 100
 scene.render.fps = 20
 scene.view_settings.view_transform = "AgX"
@@ -31,7 +33,7 @@ scene.collection.objects.link(eye)
 eye.location = (18,-25,19)
 eye.rotation_euler = (-eye.location).to_track_quat("-Z","Y").to_euler()
 camera.type = "ORTHO"
-camera.ortho_scale = 17
+camera.ortho_scale = 14 if reforge else 17
 scene.camera = eye
 for point,energy,size in [((8,-12,18),2900,9),((-16,-5,10),1700,10),((0,13,10),3200,7)]:
     light = bpy.data.lights.new("Studio softbox","AREA")
@@ -133,10 +135,10 @@ for line in (project/"src/main/resources/art-signatures.tsv").read_text().splitl
         key,shape,sound,timeline = line.split("|")
         keys[key] = shape, [tuple(map(float,point.split(","))) for point in timeline.split(";")]
 active = list(keys)[:7]
-for key in active + ["crescent"]:
+for key in active + (["crescent","impact","fracture"] if reforge else ["crescent"]):
     shape = keys[key][0] if key in keys else key
     for label,root,keypath in [
-        ("before",previous,("proc/" if key in keys else "fx/")+key),
+        ("before",previous,("fx/sig_" if reforge and key in keys else "proc/" if key in keys else "fx/")+key),
         ("after",current,"fx/" + (("sig_" + shape) if key in keys else shape)),
     ]:
         group,pivot = create(root,f"{label} · {key}",model(root,keypath))
@@ -150,13 +152,17 @@ for key,(shape,frames) in keys.items():
     root_name = "sig_"+shape
     pair = next(((group,pivot) for group,pivot in gallery if group.name == f"after · {key}"),None)
     group,pivot = pair or create(current,key,model(current,"fx/"+root_name))
-    camera.ortho_scale = 39
+    camera.ortho_scale = 31 if reforge else 39
     group.hide_render = False
     animate(pivot,frames)
     if key in active or key in ("bomb_impact","void_collapse","thousand_swords"):
         for i,frame in enumerate(frames):
             scene.frame_set(int(frame[0])+1)
             render(f"motion-{key}-{i}")
+    if reforge and key in active:
+        for tick in range(int(frames[-1][0]) + 1):
+            scene.frame_set(tick+1)
+            render(f"clip-{key}-{tick:02}")
     scene.frame_set(1)
     group.hide_render = True
     if pair is None:
@@ -168,4 +174,4 @@ for index,(group,pivot) in enumerate(gallery):
 scene.frame_start,scene.frame_end = 1,24
 scene.frame_set(7)
 bpy.ops.file.pack_all()
-bpy.ops.wm.save_as_mainfile(filepath=str(output/"visual-revolution.blend"),compress=True)
+bpy.ops.wm.save_as_mainfile(filepath=str(output/("visual-reforge.blend" if reforge else "visual-revolution.blend")),compress=True)

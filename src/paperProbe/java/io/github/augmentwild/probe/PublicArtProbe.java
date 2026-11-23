@@ -268,6 +268,10 @@ final class PublicArtProbe {
             require(cap <= 24 && (mode < 2 ? cap == 0 : cap > 0),"VFX benchmark reached configured display path");
             require(mode == 0 ? metricsLine.contains("public_requests=0 ") : !metricsLine.contains("public_requests=0 "),
                     "VFX benchmark reached configured rendition");
+            if (size == 16 && mode != 0) {
+                require(metricsLine.contains("dropped_warning=0 ") && metricsLine.contains("dropped_impact=0 "),
+                        "warning and impact cues survive the sixteen-viewer mixed batch");
+            }
             probe.getLogger().info(String.format(java.util.Locale.ROOT,
                     "AW_VFX_LOAD mode=%s viewers=%d ticks=%d seed=67026 mean=%.3f p50=%.3f p95=%.3f p99=%.3f max=%.3f over50=%d heap_start=%d heap_peak=%d gc_ms=%d %s",
                     MODES.get(mode),size,MEASURED,mean,percentile(.5),percentile(.95),percentile(.99),timing[MEASURED-1],over,

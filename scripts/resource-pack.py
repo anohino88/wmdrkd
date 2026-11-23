@@ -35,7 +35,7 @@ SYNTH = runpy.run_path(str(SOURCE / "sound-design.py"))
 SOURCE_SOUNDS = {"cast", "evolve", "supply"}
 SOUNDS = SOURCE_SOUNDS | SYNTH["CUES"].keys()
 PACK_DIGEST = ROOT / "src/main/resources/art-pack.sha1"
-RELEASE_METADATA = {"release":"7.6","minecraft":"26.3","inventory_title":"native"}
+RELEASE_METADATA = {"release":"7.7","minecraft":"26.3","inventory_title":"native"}
 PACK_METADATA = {"pack": {"description": "AugmentWild • combat art for Java 26.3",
                           "min_format": [97, 1], "max_format": [97, 1]}}
 

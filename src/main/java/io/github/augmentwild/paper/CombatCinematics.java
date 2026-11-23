@@ -59,7 +59,7 @@ final class CombatCinematics {
         Iterable<? extends Player> nearby(Location location);
     }
 
-    private static final int RANGE = 24, MAX_QUEUED = 32, MAX_SOUNDS = 2;
+    private static final int RANGE = 24, MAX_QUEUED = 36, MAX_SOUNDS = 2;
     private final JavaPlugin plugin;
     private final Predicate<Player> playable, packed;
     private final BooleanSupplier running, room;
@@ -87,6 +87,20 @@ final class CombatCinematics {
         this.audience = audience;
     }
 
+    private final Map<String,Long> droppedByRole = new LinkedHashMap<>();
+
+    private void recordDrop(Key key) {
+        dropped++;
+        String role = key.form != Form.DANGER
+                && io.github.augmentwild.augment.AugmentCombinations.UNIQUE.containsKey(key.effect) ? "synergy" : switch (key.form) {
+            case DANGER -> "warning";
+            case HIT, HEAVY, CRITICAL, GUARD, ARC, BOLT, BLAST, RESCUE -> "impact";
+            case RETURN, VOID -> "active";
+            case TRAIL -> "decoration";
+        };
+        droppedByRole.merge(role,1L,Long::sum);
+    }
+
     void offer(Player source, Player target, UUID origin, String effect, Form form, Location point, double radius,
                boolean particles, boolean sound) {
         if (!running.getAsBoolean() || !eligible(source) || !source.getWorld().equals(point.getWorld())
@@ -97,8 +111,11 @@ final class CombatCinematics {
         if (pending.containsKey(key)) { duplicate++; return; }
         if (pending.size() >= MAX_QUEUED) {
             Key lowest = pending.keySet().stream().max(Comparator.comparingInt(k -> k.form.priority)).orElseThrow();
-            dropped++;
-            if (lowest.form.priority <= form.priority) return;
+            if (lowest.form.priority <= form.priority) {
+                recordDrop(key);
+                return;
+            }
+            recordDrop(lowest);
             pending.remove(lowest);
         }
         pending.put(key,new Cue(key,source,target,point.clone(),radius,particles,sound));
@@ -375,12 +392,18 @@ final class CombatCinematics {
     }
 
     void resetMetrics() {
+        droppedByRole.clear();
         received = duplicate = dropped = fallback = sent = samples = sounds = updates = removed = hidden = 0;
     }
 
     String metrics() {
         return "public_requests=" + received + " duplicate=" + duplicate + " queue_drops=" + dropped
                 + " fallback=" + fallback + " particle_calls=" + sent + " particle_count=" + samples
-                + " sound_calls=" + sounds + " public_updates=" + updates + " public_removed=" + removed + " visibility_revoked=" + hidden;
+                + " sound_calls=" + sounds + " public_updates=" + updates + " public_removed=" + removed + " visibility_revoked=" + hidden
+                + " dropped_warning=" + droppedByRole.getOrDefault("warning",0L)
+                + " dropped_impact=" + droppedByRole.getOrDefault("impact",0L)
+                + " dropped_active=" + droppedByRole.getOrDefault("active",0L)
+                + " dropped_synergy=" + droppedByRole.getOrDefault("synergy",0L)
+                + " dropped_decoration=" + droppedByRole.getOrDefault("decoration",0L);
     }
 }

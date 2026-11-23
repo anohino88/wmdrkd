@@ -1559,7 +1559,7 @@ final class PaperOfficialCombat implements Listener {
                         : id == null ? net.kyori.adventure.text.format.NamedTextColor.DARK_GRAY
                         : remaining > 0 ? net.kyori.adventure.text.format.NamedTextColor.GRAY
                         : net.kyori.adventure.text.format.NamedTextColor.AQUA;
-                String status = id == null ? "–" : remaining > 0 ? remaining + "s" : "✓";
+                String status = id == null ? "–" : remaining > 0 ? remaining + "초" : "✓";
                 message.append(net.kyori.adventure.text.Component.text(selected ? "[" + slot : Integer.toString(slot),color));
                 if (id != null) message.append(art.slotIcon(player,id).color(color));
                 message.append(net.kyori.adventure.text.Component.text(" " + status + (selected ? "]" : ""),color));
@@ -1787,7 +1787,15 @@ final class PaperOfficialCombat implements Listener {
         var edge = zone.end().clone().setDirection(delta);
         art.signatureAt(player,zone.augment(),edge.add(0,.32,0),true);
         art.link(player,zone.start(),zone.end(),Particle.CRIT);
-        art.ring(player,zone.end(),1.1,Particle.CRIT,false);
+        var lateral = delta.clone().setY(0);
+        if (lateral.lengthSquared() > 0) {
+            lateral.normalize();
+            var edgeOffset = new org.bukkit.util.Vector(-lateral.getZ(),0,lateral.getX()).multiply(width);
+            for (int side : new int[]{-1,1}) {
+                var shift = edgeOffset.clone().multiply(side).setY(.16);
+                art.link(player,zone.start().clone().add(shift),zone.end().clone().add(shift),Particle.CLOUD);
+            }
+        }
         particle(player, state, Particle.EXPLOSION, zone.end());
     }
 

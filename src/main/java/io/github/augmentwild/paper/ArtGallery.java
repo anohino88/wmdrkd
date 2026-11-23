@@ -95,7 +95,7 @@ final class ArtGallery implements PaperMenu {
             var note = new ItemStack(Material.PAPER);
             final Component text = lore.get(i);
             note.editMeta(meta -> meta.displayName(text));
-            view.inventory.setItem(9+i,art.icon(p,note,i == 3 ? "gui/gauge" : "gui/detail"));
+            view.inventory.setItem(9+i,art.icon(p,note,i == 0 ? "gui/detail" : i == 3 ? "gui/gauge" : "gui/" + (i == 4 ? "slots" : "report")));
         }
         view.returnTo(p,back);
         p.openInventory(view.inventory);

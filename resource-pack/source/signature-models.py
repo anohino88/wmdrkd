@@ -59,36 +59,83 @@ def build(kind, mesh):
         if kind == "thousand_swords":
             hoop(5.6,5.3,8,"accent",0,.39)
 
+    def beam(a,b,height,depth,tone):
+        x,z=a
+        u,v=b
+        part((x+u)/2,7.9+height,(z+v)/2,math.hypot(u-x,v-z)+depth*.68,
+             .36,depth,tone,"y",-math.degrees(math.atan2(v-z,u-x)))
+
+    def rim(radius,y,tone,depth,steps=8):
+        for i in range(steps):
+            angle=(i+.5)*math.tau/steps
+            chord=2*radius*math.tan(math.pi/steps)+depth*.37
+            part(8+radius*math.sin(angle),y+i*.006,8+radius*math.cos(angle),
+                 chord,.34,depth,tone,"y",math.degrees(angle))
+
     if kind in ("shadow_dash","crescent"):
-        count = 9
-        for i in range(count):
-            theta = math.radians(-107+i*26)
-            w = .55 + 1.1*math.sin(math.pi*(i+1)/(count+1))
-            x,z = 8 + 4.25*math.sin(theta), 8 + 4.45*math.cos(theta)
-            y = 7.1+i*.23
-            part(x,y,z,2.05,.34+w*.38,w*.73,"light","y",-math.degrees(theta))
-            part(8+(x-8)*.72,y-.45,8+(z-8)*.71,1.75,.27,.59,
-                 "dark" if kind == "shadow_dash" else "metal","y",-math.degrees(theta))
-        for x,y,z in [(3.2,6.3,3.9),(10.8,9.9,6.2),(12.7,10.3,9.1)]:
-            crystal(x,y,z,.7)
-    elif kind in ("earthquake_mage","calamity_train"):
-        fissure()
-        if kind == "calamity_train":
-            for x in (5,8,11):
-                part(x,8.6,8.2,1.75,1.22,2.65,"accent","x",22.5)
-    elif kind in ("time_rewind","duel_contract"):
-        hoop(5.1,7,12,"metal",0,.58)
-        if kind == "time_rewind":
-            hoop(3.05,7.65,8,"accent",0,.37)
-            part(8,8.1,6.8,.38,.27,3.6,"light","y",5)
-            part(9.15,8.3,8.55,3.1,.31,.44,"accent","y",22.5)
-            crystal(8,8.55,8,.9,"y")
+        for i in range(9):
+            theta=math.radians(-100+25*i)
+            x,z=8+5*math.sin(theta),8+4.8*math.cos(theta)
+            taper=.58+1.85*math.sin(math.pi*(i+1)/10)
+            part(x,8.1+i*.075,z,2.85,.44,taper,"light","y",math.degrees(theta))
+            part(8+(x-8)*.79,7.73+i*.075,8+(z-8)*.79,2.6,.37,taper*.91,
+                 "dark" if kind=="shadow_dash" else "metal","y",math.degrees(theta))
+        return
+    if kind in ("earthquake_mage","calamity_train"):
+        points=[(3,2.8),(5.7,5.2),(5.1,7.5),(8.5,8.6),(11.2,10.3),(11,13.7)]
+        for i,(a,b) in enumerate(zip(points,points[1:])):
+            beam(a,b,i*.013,1.25,"dark")
+            beam(a,b,.29+i*.017,.45,"light")
+        for i,(x,z) in enumerate([(4,5.5),(7.3,6),(8.1,10.6),(10.8,8.5),(12.5,12.4)]):
+            part(x,8.2+i*.21,z,1.2+i*.16,1.1+i*.39,1.55,"metal","z",(-1)**i*22.5)
+        if kind=="calamity_train":
+            part(8,9.45,8,4,2,6,"metal","z",0)
+            part(8,10.85,9.15,3.65,1.7,2.2,"dark","z",0)
+            part(8,11.24,6.35,.85,1.64,1,"accent","z",0)
+            part(8,9.13,4.7,3.9,.82,1.23,"light","x",22.5)
+        return
+    if kind in ("time_rewind","duel_contract","void_lord","life_echo","impact","fracture"):
+        rim(5.25,7.35,"metal",.88)
+        rim(4.52,7.56,"light",.39)
+        if kind=="time_rewind":
+            for i in range(4):
+                a=i*math.pi/2
+                part(8+4.88*math.sin(a),7.94,8+4.88*math.cos(a),.66,.33,1.18,"accent","y",i*90)
+            part(8,7.95,6.39,.40,.33,3.55,"light","y",0)
+            part(9.18,8.18,8,2.58,.33,.47,"accent","y",22.5)
+            crystal(8,8.42,8,.7,"y")
+        elif kind=="duel_contract":
+            for x in (5.8,10.2):
+                rim_x=x
+                part(rim_x,8.03,8,2.6,.42,2.6,"metal","y",45)
+                part(rim_x,8.30,8,1.37,.34,1.37,"light","y",45)
+            part(8,8.10,8,4.45,.29,.48,"accent","x",0)
+        elif kind in ("void_lord","life_echo"):
+            rim(3.46,8.55,"accent",.49)
+            for i in range(4):
+                a=i*math.pi/2
+                part(8+4.5*math.sin(a),8.64,8+4.5*math.cos(a),.54,1.58,.76,"metal","z",22.5)
+            part(8,9.37,8,2.78,3.02,2.72,"dark","y",45)
+            crystal(8,10.71,8,1.5,"z",45,"light")
+        elif kind=="impact":
+            for x,z in [(8,5.3),(5.2,8.6),(10.9,8.1),(8.8,10.7)]:
+                part(x,8.35,z,1.25,2.35,1.28,"accent","z",22.5)
+            crystal(8,9.45,8,2.5,"y")
         else:
-            for x in (5.7,10.3):
-                crystal(x,8.3,8,1.6,"y")
-                part(x,7.66,8.8,2.54,.28,.53,"accent","y",22.5)
-            part(8,8.2,8,5.1,.27,.29,"light","z",0)
-    elif kind in ("void_lord","life_echo","hell_lord","infernal_conductor"):
+            part(8,8.7,6.4,4.18,4.4,.59,"metal","z",0)
+            part(8,9.07,6.04,3.57,3.48,.32,"light","z",0)
+            part(8,9.08,5.78,1.72,1.72,.19,"accent","z",45)
+        return
+    if kind=="bomb_alchemy":
+        part(8,8,8,5.5,4.4,5.55,"dark","y",45)
+        part(8,5.65,8,4.5,1,4.42,"metal","y",45)
+        part(8,10.32,8,4.56,1.12,4.58,"metal","y",45)
+        rim(4.1,7.72,"metal",.58)
+        part(8,11.29,8,1.9,1.22,1.9,"accent","y",45)
+        part(8.48,12.26,8,1.7,.63,.55,"light","z",45)
+        part(8,8.37,4.22,1.65,1.72,.25,"light","z",45)
+        return
+    if kind in ("hell_lord","infernal_conductor"):
         hoop(5,5.4,8,"dark",0,.63)
         lift = kind in ("hell_lord","infernal_conductor")
         crystal(8,9.15,8,3.0 if not lift else 2.4,"y")
@@ -120,7 +167,12 @@ def build(kind, mesh):
             part(x,9.4+.3*(i%2),7.4,1.55,3.8,2.65,"metal","z",(i-1.5)*8)
             part(x+.08,10.8+.34*(i%2),6.12,1.2,.6,.37,"light","z",(i-1.5)*8)
         part(8,7.42,8.35,6.7,2.18,3.14,"dark","z",0)
-        part(5,7.5,8.11,1.72,2.65,2.31,"accent","z",-33)
+        part(5.2,8.02,7.92,1.83,2.72,2.82,"accent","z",-45)
+        part(7.9,6.20,9.12,4.02,1.41,2.83,"metal","x",22.5)
+        if kind == "steel_king":
+            for i,x in enumerate((5.1,8,10.9)):
+                part(x,12.55+.48*(i%2),7.52,1.21,1.55,.65,"light","z",45)
+            part(8,11.96,7.47,7.5,.48,.83,"accent")
         for x in (4.5,7.2,10.1,12.75):
             part(x,4.42,8.7,2.49,.54,.63,"accent","y",(-1 if x<8 else 1)*22.5)
         crystal(8,7.8,6.5,1.06,"z")

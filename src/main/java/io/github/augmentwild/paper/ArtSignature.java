@@ -27,6 +27,15 @@ record ArtSignature(String shape, String sound, List<Frame> frames) {
         private static float radians(float degrees) { return (float) Math.toRadians(degrees); }
     }
 
+    ArtSignature along(float distance, float climb) {
+        return new ArtSignature(shape,sound,frames.stream().map(frame -> {
+            float t = Math.clamp((frame.forward() + .23f) / .68f,0,1);
+            if (frame.tick() >= 8) t = 1;
+            return new Frame(frame.tick(),frame.right(),frame.up()+climb*t,distance*t,
+                    frame.yaw(),frame.pitch(),frame.roll(),frame.width(),frame.height(),frame.depth());
+        }).toList());
+    }
+
     int duration() { return frames.getLast().tick(); }
 
     static Map<String, ArtSignature> load(InputStream input) throws java.io.IOException {

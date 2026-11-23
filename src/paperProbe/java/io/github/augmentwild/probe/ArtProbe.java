@@ -232,7 +232,7 @@ final class ArtProbe {
             inspect.setAccessible(true);
             var fixture = java.nio.file.Path.of(System.getProperty("augmentwild.pack.fixture"));
             var archive = inspect.invoke(null,fixture);
-            require(archive.toString().startsWith("Archive[release=7.6,"));
+            require(archive.toString().startsWith("Archive[release=7.7,"));
             var invalid = java.nio.file.Files.createTempFile("aw-invalid-pack-", ".zip");
             try {
                 java.nio.file.Files.writeString(invalid,"not a resource pack");

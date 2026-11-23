@@ -133,7 +133,7 @@ def form(kind):
 def export(kind):
     bpy.ops.object.select_all(action="SELECT")
     bpy.ops.object.delete(use_global=False)
-    if kind.startswith("sig_") or kind == "crescent":
+    if kind.startswith("sig_") or kind in ("crescent","impact","fracture"):
         SIGNATURES["build"](kind.removeprefix("sig_"),bar)
     else:
         form(kind)
@@ -147,7 +147,7 @@ def export(kind):
     elif kind == "time":
         for x, z in ((8,4.3),(8,11.7),(4.3,8),(11.7,8)):
             bar(x, 8.4, z, .55, .8, .55, "accent")
-    elif kind == "impact":
+    elif kind == "impact_legacy":
         for i in range(4):
             bar(5+i*1.8, 7.5, 8+(-1)**i, 1.8, .5, .65, "dark")
     elif kind == "blade":

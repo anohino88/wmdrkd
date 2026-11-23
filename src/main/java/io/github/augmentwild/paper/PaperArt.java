@@ -171,7 +171,7 @@ public final class PaperArt implements Listener {
 
     String packStatus(Player p) {
         if (pack == null) return settingsIssue + " · 기본 표시";
-        if (!matchingPack) return "팩 SHA-1이 7.6 배포본과 다릅니다 · 기본 표시";
+        if (!matchingPack) return "팩 SHA-1이 7.7 배포본과 다릅니다 · 기본 표시";
         String mode = safe(p) ? " · 안전 모드" : "";
         if (loaded.contains(p.getUniqueId())) return "클라이언트 로드 응답 · " + pack.hash().substring(0,8) + mode;
         var status = reports.get(p.getUniqueId());
@@ -503,9 +503,11 @@ public final class PaperArt implements Listener {
         };
         if ((id.equals("shadow_dash") || id.equals("earthquake_mage")) && delta.lengthSquared() > .01)
             at.setDirection(delta);
-        if (!id.equals("calamity_giant")) signatureAt(player,id,at,true);
+        if (id.equals("shadow_dash") && destination.getWorld().equals(origin.getWorld()) && delta.lengthSquared() > .01) {
+            var anchor = origin.clone().add(0,.5,0).setDirection(delta);
+            signatureAt(player,id,anchor,true,signatures.get(id).along((float)Math.hypot(delta.getX(),delta.getZ()),(float)delta.getY()));
+        } else if (!id.equals("calamity_giant")) signatureAt(player,id,at,true);
         var form = switch (id) {
-            case "shadow_dash" -> CombatCinematics.Form.ARC;
             case "time_rewind" -> CombatCinematics.Form.RETURN;
             case "void_lord" -> CombatCinematics.Form.VOID;
             default -> null;
@@ -514,7 +516,10 @@ public final class PaperArt implements Listener {
     }
 
     void signatureAt(Player player,String id,Location at,boolean sound) {
-        var signature = signatures.get(id);
+        signatureAt(player,id,at,sound,signatures.get(id));
+    }
+
+    private void signatureAt(Player player,String id,Location at,boolean sound,ArtSignature signature) {
         String effect = switch (id) {
             case "bomb_impact" -> "bomb_alchemy";
             case "void_collapse" -> "void_lord";
@@ -998,7 +1003,12 @@ public final class PaperArt implements Listener {
                         layer.setInterpolationDuration(2);
                         layer.setInterpolationDelay(0);
                         displayUpdates++;
-                        layer.setTransformation(orbitPose(animation.motion(),t,i));
+                        if (signature != null && signature.shape().equals("time_rewind")) {
+                            float scale = .2f + .72f * (float)Math.sin(Math.PI*t);
+                            layer.setTransformation(new Transformation(new Vector3f(0,.3f,0),
+                                    new Quaternionf().rotateY(t * (i == 0 ? 5 : -5)),
+                                    new Vector3f(scale,.35f,scale),new Quaternionf()));
+                        } else layer.setTransformation(orbitPose(animation.motion(),t,i));
                     }
                 }
                 if (signature != null) {
