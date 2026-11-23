@@ -9,7 +9,8 @@ from mathutils import Vector, Quaternion
 
 args = sys.argv[sys.argv.index("--")+1:]
 project, baseline, output = (Path(arg).resolve() for arg in args[:3])
-reforge = "--reforge" in args[3:]
+ascension = "--ascension" in args[3:]
+reforge = ascension or "--reforge" in args[3:]
 current = project / "resource-pack/pack/assets/augmentwild"
 previous = baseline / "resource-pack/pack/assets/augmentwild"
 output.mkdir(parents=True, exist_ok=True)
@@ -135,7 +136,8 @@ for line in (project/"src/main/resources/art-signatures.tsv").read_text().splitl
         key,shape,sound,timeline = line.split("|")
         keys[key] = shape, [tuple(map(float,point.split(","))) for point in timeline.split(";")]
 active = list(keys)[:7]
-for key in active + (["crescent","impact","fracture"] if reforge else ["crescent"]):
+growth = [key for key in keys if key not in active and key not in ("bomb_impact","void_collapse")]
+for key in active + (growth if ascension else []) + (["crescent","impact","fracture"] if reforge else ["crescent"]):
     shape = keys[key][0] if key in keys else key
     for label,root,keypath in [
         ("before",previous,("fx/sig_" if reforge and key in keys else "proc/" if key in keys else "fx/")+key),
@@ -174,4 +176,4 @@ for index,(group,pivot) in enumerate(gallery):
 scene.frame_start,scene.frame_end = 1,24
 scene.frame_set(7)
 bpy.ops.file.pack_all()
-bpy.ops.wm.save_as_mainfile(filepath=str(output/("visual-reforge.blend" if reforge else "visual-revolution.blend")),compress=True)
+bpy.ops.wm.save_as_mainfile(filepath=str(output/("visual-ascension.blend" if ascension else "visual-reforge.blend" if reforge else "visual-revolution.blend")),compress=True)

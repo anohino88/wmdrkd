@@ -171,7 +171,7 @@ public final class PaperArt implements Listener {
 
     String packStatus(Player p) {
         if (pack == null) return settingsIssue + " · 기본 표시";
-        if (!matchingPack) return "팩 SHA-1이 7.7 배포본과 다릅니다 · 기본 표시";
+        if (!matchingPack) return "팩 SHA-1이 7.8 배포본과 다릅니다 · 기본 표시";
         String mode = safe(p) ? " · 안전 모드" : "";
         if (loaded.contains(p.getUniqueId())) return "클라이언트 로드 응답 · " + pack.hash().substring(0,8) + mode;
         var status = reports.get(p.getUniqueId());

@@ -28,6 +28,15 @@ public final class PaperQuickMenu implements Listener {
     private final JavaPlugin plugin;
     private final PaperMatchService matches;
 
+    // Map physical inventory positions to the existing actions. Headers have no action.
+    private static final java.util.Map<Integer,Integer> MAIN_ACTIONS = java.util.Map.ofEntries(
+            java.util.Map.entry(9,10), java.util.Map.entry(10,11), java.util.Map.entry(11,16),
+            java.util.Map.entry(12,15), java.util.Map.entry(14,12), java.util.Map.entry(15,18),
+            java.util.Map.entry(16,14), java.util.Map.entry(17,13), java.util.Map.entry(18,21),
+            java.util.Map.entry(19,22), java.util.Map.entry(20,19), java.util.Map.entry(21,17),
+            java.util.Map.entry(22,20), java.util.Map.entry(23,23), java.util.Map.entry(24,24),
+            java.util.Map.entry(25,25), java.util.Map.entry(26,26));
+
     private static final class Menu implements PaperMenu {
         final UUID owner;
         final UUID match;
@@ -143,6 +152,13 @@ public final class PaperQuickMenu implements Listener {
         art.button(player,menu.inventory,23,"solo");
         art.button(player,menu.inventory,24,"leave");
         art.button(player,menu.inventory,25,"start");
+        var controls = menu.inventory.getContents();
+        for (int slot = 9; slot < menu.inventory.getSize(); slot++)
+            menu.inventory.setItem(slot,MAIN_ACTIONS.containsKey(slot) ? controls[MAIN_ACTIONS.get(slot)] : null);
+        item(menu,1,Material.COMPASS,"경기 운영","참가 상태, 보급, 적 추적");
+        item(menu,7,Material.ENCHANTED_BOOK,"증강과 화면","선택, 도감, 스킬, 개인 설정");
+        art.button(player,menu.inventory,1,"status");
+        art.button(player,menu.inventory,7,"codex");
         player.openInventory(menu.inventory);
         return "빠른 메뉴 · 웅크리기 + 빈손 우클릭(공중)으로 다시 열 수 있습니다.";
     }
@@ -268,11 +284,12 @@ public final class PaperQuickMenu implements Listener {
         int slot = PaperMenu.lock(event, false);
         if (blocked || slot < 0 || menu.inventory.getItem(slot) == null || !(event.getWhoClicked() instanceof Player player)
                 || !player.getUniqueId().equals(menu.owner)) return;
+        if (!menu.skills && !MAIN_ACTIONS.containsKey(slot)) return;
         Bukkit.getScheduler().runTask(plugin, () -> {
             if (!player.isOnline() || !menu.match.equals(matches.menuSession())) return;
             if (player.getOpenInventory().getTopInventory().getHolder() != menu) return;
             player.closeInventory();
-            String response = menu.skills ? skillClick(player, menu, slot) : mainClick(player, slot);
+            String response = menu.skills ? skillClick(player, menu, slot) : mainClick(player, MAIN_ACTIONS.get(slot));
             if (response != null && !response.isBlank()) player.sendMessage(response);
         });
     }

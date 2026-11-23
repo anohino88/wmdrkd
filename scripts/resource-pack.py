@@ -35,7 +35,7 @@ SYNTH = runpy.run_path(str(SOURCE / "sound-design.py"))
 SOURCE_SOUNDS = {"cast", "evolve", "supply"}
 SOUNDS = SOURCE_SOUNDS | SYNTH["CUES"].keys()
 PACK_DIGEST = ROOT / "src/main/resources/art-pack.sha1"
-RELEASE_METADATA = {"release":"7.7","minecraft":"26.3","inventory_title":"native"}
+RELEASE_METADATA = {"release":"7.8","minecraft":"26.3","inventory_title":"native"}
 PACK_METADATA = {"pack": {"description": "AugmentWild • combat art for Java 26.3",
                           "min_format": [97, 1], "max_format": [97, 1]}}
 
@@ -126,6 +126,14 @@ def badge(path, original, rarity, motif, profile):
         draw.line([(8,29),(15,13),(31,5),(48,13),(56,28)],fill="#f6e8fe",width=2)
     rgb = ImageColor.getrgb(PALETTE[motif])
     art = Image.new("RGBA",silhouette.size,rgb)
+    if rarity != "GUI":
+        # Relief is clipped to each original symbol mask, including its internal holes.
+        for y in range(art.height):
+            for x in range(art.width):
+                height = 1 - y / max(1,art.height-1)
+                gleam = .10 if abs(x-y) < 3 else 0
+                tone = .76+.31*height+gleam
+                art.putpixel((x,y),tuple(min(255,round(c*tone)) for c in rgb))
     art.putalpha(silhouette)
     im.alpha_composite(art,((64-art.width)//2,(62-art.height)//2))
     tier = {"SILVER":1,"GOLD":2,"PRISMATIC":3,"GUI":0}[rarity]

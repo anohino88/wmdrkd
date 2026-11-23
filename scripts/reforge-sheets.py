@@ -9,6 +9,7 @@ from PIL import Image, ImageDraw
 parser = argparse.ArgumentParser()
 parser.add_argument("renders", type=Path)
 parser.add_argument("output", type=Path)
+parser.add_argument("--versions", nargs=2, default=("7.6","7.7"))
 args = parser.parse_args()
 args.output.mkdir(parents=True, exist_ok=True)
 
@@ -27,7 +28,7 @@ def paint(canvas, art, origin, width):
 
 for id, label in names.items():
     board,draw = page(label,"오프라인 Blender · 같은 카메라, 조명, 배율",900,504)
-    for position,(version,variant) in enumerate((("7.6","before"),("7.7","after"))):
+    for position,(version,variant) in enumerate(zip(args.versions,("before","after"))):
         x = 27+position*438
         draw.rounded_rectangle((x,104,x+407,484),radius=8,fill="#202c3a")
         paint(board,Image.open(args.renders/f"{variant}-{id}.png").convert("RGBA"),(x+31,113),344)

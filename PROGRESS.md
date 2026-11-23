@@ -363,3 +363,8 @@ PHASE 2B의 GitHub Actions #6에서 Java 버전 확인, `./gradlew clean build -
 - 기준 원격 `f02a55bf9411ffc829d9cf3fc8cc6e61d5935f28`. 액티브 7종의 조형·키프레임, 공개 검기·폭발·방어 모델, 대표 시너지, 상세창 및 HUD를 개선했다.
 - 공개 효과 큐는 우선순위와 별도 생략 집계를 적용하고 동시 Display 상한 24개를 유지한다. 7.6과 7.7을 같은 호스트와 Paper 빌드에서 비교한다.
 - 실제 그래픽 클라이언트는 `NOT_RUN`. [설치와 오프라인 3D·GIF](docs/phase77-reforge-ko.md)
+
+## PHASE 7.8 VISUAL ASCENSION
+
+- 기준 원격 `23c82f02008416fafac7425047c3a518c1554f67`. 액티브 7종의 변환, 진화 6종의 조형, 시너지·공명 조형과 변환, 증강 84종의 마스크 명암을 갱신했다.
+- 빠른 메뉴, 선택 후보, 도감 목록과 HUD를 바꾸고 16인 동일 호스트 비교를 7.7과 7.8로 설정했다. 실제 그래픽 클라이언트 `NOT_RUN`. [설치·검증 절차](docs/phase78-ascension-ko.md)

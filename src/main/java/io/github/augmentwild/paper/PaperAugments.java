@@ -35,7 +35,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 final class PaperAugments implements Listener {
     private static final Set<String> EXCHANGES = Set.of("forbidden_reconstruction", "forbidden_deal");
-    private static final int[] SLOTS = {10, 13, 16};
+    private static final int[] SLOTS = {11, 13, 15};
     private static final int REROLL = 22;
     private record ProcKey(UUID player, String effect) { }
 
@@ -64,7 +64,7 @@ final class PaperAugments implements Listener {
         boolean exchangeShown;
     }
 
-    private static final int CODEX_CARDS = 45;
+    private static final int CODEX_CARDS = 35;
 
     private enum Filter {
         ALL("전체",Material.BOOK), SILVER("실버",Material.IRON_INGOT), GOLD("골드",Material.GOLD_INGOT),
@@ -516,7 +516,7 @@ final class PaperAugments implements Listener {
             menu.inventory.setItem(SLOTS[i], augmentItem(player, profile, augment));
         }
         var odds = AugmentRarity.odds(profile.level);
-        menu.inventory.setItem(18, item(Material.EXPERIENCE_BOTTLE, Component.text("추첨 레벨 " + profile.level),
+        menu.inventory.setItem(0, item(Material.EXPERIENCE_BOTTLE, Component.text("추첨 레벨 " + profile.level),
                 List.of(Component.text(round.prismaticOnly() ? "최종 회차: 프리즘 100%"
                         : String.format(Locale.ROOT, "실버 %.1f%% / 골드 %.1f%% / 프리즘 %.1f%%",
                                 odds.silver(), odds.gold(), odds.prismatic())))));
@@ -595,7 +595,8 @@ final class PaperAugments implements Listener {
         } else {
             int offset = (menu.page - 1) * CODEX_CARDS;
             for (int i = offset; i < Math.min(offset + CODEX_CARDS, definitions.size()); i++) {
-                placeCodexCard(player,profile,menu,i-offset,definitions.get(i),favorites);
+                int card = i - offset;
+                placeCodexCard(player,profile,menu,1 + card / 7 * 9 + card % 7,definitions.get(i),favorites);
             }
         }
         if (definitions.isEmpty()) menu.inventory.setItem(22,PaperIntel.item(PaperIntel.card(Material.PAPER,"이 필터에 해당하는 증강 없음")));

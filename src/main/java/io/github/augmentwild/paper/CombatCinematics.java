@@ -70,6 +70,8 @@ final class CombatCinematics {
     private record Audible(UUID listener, UUID source, Form form) {}
     private final Map<Audible,Long> recentSounds = new HashMap<>();
     private final Map<Pair,Boolean> sourceSight = new HashMap<>();
+    private record SightRay(Location from, Location to) {}
+    private final Map<SightRay,Boolean> cueSight = new HashMap<>();
     private final Map<UUID,Integer> particleBudget = new HashMap<>();
     private final Map<UUID,Integer> ringBudget = new HashMap<>();
     private final Map<UUID,Integer> soundBudget = new HashMap<>();
@@ -141,19 +143,23 @@ final class CombatCinematics {
                 length - .04,FluidCollisionMode.NEVER,true) == null;
     }
 
+    private boolean seesCue(Location eye, Location point) {
+        return cueSight.computeIfAbsent(new SightRay(eye,point),ray -> sees(ray.from(),ray.to()));
+    }
+
     private boolean visible(Player viewer, Cue cue) {
         if (!eligible(viewer) || !viewer.getWorld().equals(cue.point.getWorld())
                 || viewer.getLocation().distanceSquared(cue.point) > RANGE * RANGE) return false;
         if (cue.target != null && !viewer.getUniqueId().equals(cue.key.target)
                 && (!viewer.canSee(cue.target) || cue.target.isInvisible()
                     || !cue.target.getWorld().equals(cue.point.getWorld()))) return false;
-        if (viewer.getUniqueId().equals(cue.key.source)) return sees(viewer.getEyeLocation(),cue.point);
+        if (viewer.getUniqueId().equals(cue.key.source)) return seesCue(viewer.getEyeLocation(),cue.point);
         if (!viewer.canSee(cue.source) || cue.source.isInvisible()) return false;
         var eye = viewer.getEyeLocation();
         Location source = cue.source.getEyeLocation();
         var pair = new Pair(viewer.getUniqueId(),cue.key.source);
         return sourceSight.computeIfAbsent(pair,k -> eye.distanceSquared(source) <= RANGE * RANGE && sees(eye,source))
-                && sees(eye,cue.point);
+                && seesCue(eye,cue.point);
     }
 
     int size() { return active.size(); }
@@ -165,6 +171,7 @@ final class CombatCinematics {
         soundBudget.clear();
         ringBudget.clear();
         sourceSight.clear();
+        cueSight.clear();
         particleBudget.clear();
         for (var iterator = active.iterator(); iterator.hasNext();) {
             Display display = iterator.next();
@@ -269,7 +276,15 @@ final class CombatCinematics {
                 rotation.rotateZ(-.52f*t).rotateX(.28f*t);
                 shape.mul(1.4f,1.1f,.75f);
             }
-            case BLAST,DANGER -> {
+            case BLAST -> {
+                offset.y = contact ? .17f : .08f;
+                rotation.rotateY(.44f*t);
+                // Final shockwave stays wide while its height collapses, then the display expires.
+                shape.set(stage == 0 ? .25f : contact ? 1.75f : 2.25f,
+                        stage == 0 ? .14f : contact ? .64f : .035f,
+                        stage == 0 ? .25f : contact ? 1.75f : 2.25f);
+            }
+            case DANGER -> {
                 offset.y = .06f;
                 rotation.rotateY(.8f*t);
                 shape.mul(1.4f,.3f,1.4f);
@@ -388,6 +403,7 @@ final class CombatCinematics {
         soundBudget.clear();
         ringBudget.clear();
         sourceSight.clear();
+        cueSight.clear();
         particleBudget.clear();
     }
 

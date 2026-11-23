@@ -1559,7 +1559,8 @@ final class PaperOfficialCombat implements Listener {
                         : id == null ? net.kyori.adventure.text.format.NamedTextColor.DARK_GRAY
                         : remaining > 0 ? net.kyori.adventure.text.format.NamedTextColor.GRAY
                         : net.kyori.adventure.text.format.NamedTextColor.AQUA;
-                String status = id == null ? "–" : remaining > 0 ? remaining + "초" : "✓";
+                String status = id == null ? "–" : remaining > 0 ? remaining + "초"
+                        : clock.get().isPaused() || protectedPlayer.test(player) || !available ? "잠김" : "✓";
                 message.append(net.kyori.adventure.text.Component.text(selected ? "[" + slot : Integer.toString(slot),color));
                 if (id != null) message.append(art.slotIcon(player,id).color(color));
                 message.append(net.kyori.adventure.text.Component.text(" " + status + (selected ? "]" : ""),color));

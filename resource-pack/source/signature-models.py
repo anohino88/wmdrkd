@@ -88,11 +88,18 @@ def build(kind, mesh):
             beam(a,b,.29+i*.017,.45,"light")
         for i,(x,z) in enumerate([(4,5.5),(7.3,6),(8.1,10.6),(10.8,8.5),(12.5,12.4)]):
             part(x,8.2+i*.21,z,1.2+i*.16,1.1+i*.39,1.55,"metal","z",(-1)**i*22.5)
+        if kind=="earthquake_mage":
+            for i,(first,last) in enumerate([((5.7,5.2),(2.4,7.7)),((8.5,8.6),(12.6,6.2)),((11.2,10.3),(14,12.7))]):
+                beam(first,last,.02+i*.022,.77,"dark")
+                beam(first,last,.31+i*.021,.23,"accent")
         if kind=="calamity_train":
             part(8,9.45,8,4,2,6,"metal","z",0)
             part(8,10.85,9.15,3.65,1.7,2.2,"dark","z",0)
             part(8,11.24,6.35,.85,1.64,1,"accent","z",0)
             part(8,9.13,4.7,3.9,.82,1.23,"light","x",22.5)
+            for x in (5.55,10.45):
+                for z in (6.09,10.12):
+                    part(x,8.51,z,1.32,1.94,1.72,"dark","x",45)
         return
     if kind in ("time_rewind","duel_contract","void_lord","life_echo","impact","fracture"):
         rim(5.25,7.35,"metal",.88)
@@ -112,12 +119,17 @@ def build(kind, mesh):
             part(8,8.10,8,4.45,.29,.48,"accent","x",0)
         elif kind in ("void_lord","life_echo"):
             rim(3.46,8.55,"accent",.49)
-            for i in range(4):
+            for i in range(4 if kind == "void_lord" else 0):
                 a=i*math.pi/2
                 part(8+4.5*math.sin(a),8.64,8+4.5*math.cos(a),.54,1.58,.76,"metal","z",22.5)
             part(8,9.37,8,2.78,3.02,2.72,"dark","y",45)
             crystal(8,10.71,8,1.5,"z",45,"light")
+            if kind == "life_echo":
+                for x,angle in ((6.81,-22.5),(9.19,22.5)):
+                    part(x,10.13,6.31,2.23,2.41,.59,"light","z",angle)
+                part(8,9.05,6.27,2.65,2.65,.67,"accent","z",45)
         elif kind=="impact":
+            rim(3.73,8.06,"accent",.38)
             for x,z in [(8,5.3),(5.2,8.6),(10.9,8.1),(8.8,10.7)]:
                 part(x,8.35,z,1.25,2.35,1.28,"accent","z",22.5)
             crystal(8,9.45,8,2.5,"y")
@@ -135,32 +147,7 @@ def build(kind, mesh):
         part(8.48,12.26,8,1.7,.63,.55,"light","z",45)
         part(8,8.37,4.22,1.65,1.72,.25,"light","z",45)
         return
-    if kind in ("hell_lord","infernal_conductor"):
-        hoop(5,5.4,8,"dark",0,.63)
-        lift = kind in ("hell_lord","infernal_conductor")
-        crystal(8,9.15,8,3.0 if not lift else 2.4,"y")
-        for i in range(6):
-            theta = i * math.tau / 6
-            x,z = 8+4.1*math.cos(theta),8+4.1*math.sin(theta)
-            part(x,7.2+i*.61,z,.65,2.8 if lift else 1.9,.69,"accent","z",(-1)**i*(22.5+i*3))
-        if kind == "life_echo":
-            hoop(4.2,10.7,8,"accent",0,.39)
-        if lift:
-            part(8,12.15,8,.95,2.2,.95,"light","z",33)
-    elif kind in ("bomb_alchemy","tank_engine","berserk_engine","steel_heart"):
-        part(8,8,8,4.4,3.6,4.1,"dark","y",22.5)
-        crystal(8,8.5,8,2.8,"y")
-        for i in range(8):
-            angle = i*math.pi/4
-            part(8+4.3*math.sin(angle),8+.23*(i%2),8+4.3*math.cos(angle),.65,4,.61,
-                 "metal","y",-i*45 if i<=4 else 360-i*45)
-        hoop(4.3,6.1,8,"accent",0,.38)
-        if kind == "bomb_alchemy":
-            part(8.1,11.5,8.1,1.27,1.4,1.1,"metal","z",22.5)
-            crystal(8.6,12.8,8.05,.9,"z",-30)
-        if kind == "tank_engine":
-            part(8,7.8,4.85,5,.66,1.3,"light","z",0)
-    elif kind in ("calamity_giant","steel_king"):
+    if kind in ("calamity_giant","steel_king"):
         across = 1.28 if kind == "steel_king" else 1
         for i in range(4):
             x = 8+(i-1.5)*1.78*across
@@ -169,21 +156,85 @@ def build(kind, mesh):
         part(8,7.42,8.35,6.7,2.18,3.14,"dark","z",0)
         part(5.2,8.02,7.92,1.83,2.72,2.82,"accent","z",-45)
         part(7.9,6.20,9.12,4.02,1.41,2.83,"metal","x",22.5)
+        if kind == "calamity_giant":
+            part(8,9.02,9.33,6.82,2.08,1.75,"dark","x",22.5)
+            for i,x in enumerate((5.27,7.06,8.85,10.64)):
+                part(x,9.24+.13*i,6.04,1.17,1.93,.47,"accent","x",22.5)
         if kind == "steel_king":
             for i,x in enumerate((5.1,8,10.9)):
                 part(x,12.55+.48*(i%2),7.52,1.21,1.55,.65,"light","z",45)
             part(8,11.96,7.47,7.5,.48,.83,"accent")
+            for x,angle in ((4.48,-22.5),(11.52,22.5)):
+                part(x,6.96,7.1,2.16,2.08,1.3,"light","z",angle)
         for x in (4.5,7.2,10.1,12.75):
             part(x,4.42,8.7,2.49,.54,.63,"accent","y",(-1 if x<8 else 1)*22.5)
         crystal(8,7.8,6.5,1.06,"z")
-    elif kind in ("thousand_swords","sword_wind","infinite_barrage","magic_missile"):
-        blades(5 if kind == "thousand_swords" else 3,2.3,kind)
-        if kind in ("infinite_barrage","magic_missile"):
-            for x,y,z in [(8,12.4,10),(6,10.3,11),(10,9.2,12.3)]:
-                crystal(x,y,z,1.05,"x")
-    elif kind == "stacking":
-        for i in range(5):
-            crystal(8,4.9+i*1.59,8,2.55-.29*i,"y",(-1)**i*45)
-        hoop(4.3,5.1,8,"accent",0,.38)
-    else:
-        raise ValueError(kind)
+        return
+    # Separate the mechanical body from its emitted energy, using one display per form.
+    if kind == "steel_heart":
+        for x,angle in ((5.9,-22.5),(10.1,22.5)):
+            part(x,9,8,3.65,3.95,3.3,"metal","z",angle)
+            part(x,9.3,6.21,2.42,2.87,.32,"light","z",angle)
+        part(8,7.27,8,4.35,4.35,3.18,"dark","z",45)
+        part(8,7.27,6.15,2.88,2.88,.39,"accent","z",45)
+        return
+    if kind in ("magic_missile","infinite_barrage"):
+        lanes = (8,) if kind == "magic_missile" else (4.35,8,11.65)
+        for i,x in enumerate(lanes):
+            y=8.25+(.43 if x==8 else 0)
+            part(x,y,8,1.3,1.3,7.2,"metal","z",45)
+            part(x,y,4.6,1.43,1.43,1.52,"light","z",45)
+            for j in (-1,1):
+                part(x+j*.91,y,10.46,.46,1.7,2.15,"accent","z",j*22.5)
+        if kind == "magic_missile":
+            rim(3.5,7.08,"accent",.43)
+        return
+    if kind == "berserk_engine":
+        part(8,8.04,8,6.9,6.45,2.97,"dark","z",45)
+        part(8,8,6.40,4.92,4.92,.69,"metal","z",45)
+        for i in range(8):
+            a=i*math.pi/4
+            part(8+4.13*math.cos(a),8+4.13*math.sin(a),7.32,1.45,1.63,1.24,"accent","z",i*45)
+        part(8,8,5.82,2.15,2.15,.51,"light","z",45)
+        return
+    if kind in ("hell_lord","infernal_conductor"):
+        if kind == "hell_lord":
+            part(8,6.45,8,8.2,1.17,3.51,"dark")
+            for x,y,angle in ((4.9,8.45,-22.5),(8,9.36,0),(11.1,8.52,22.5)):
+                part(x,y,8,1.75,4.55,1.57,"metal","z",angle)
+                part(x,y+.39,6.88,.83,3,.43,"light","z",angle)
+        else:
+            for x,z in ((5.7,6.1),(10.3,6.1),(8,10.6)):
+                part(x,8.38,z,1.49,6.31,1.52,"metal","z",22.5 if x<8 else -22.5)
+                crystal(x,11.73,z,1.36,"y")
+            rim(4.48,5.7,"dark",.6)
+            crystal(8,8.65,8,1.8,"y")
+        return
+    if kind == "tank_engine":
+        part(8,6.48,8,6.59,2.27,8.58,"dark")
+        part(8,8.25,8.15,4.37,2.14,4.27,"metal","y",45)
+        part(8,8.41,4.85,1.08,1.17,4.65,"light")
+        for x in (4.21,11.79):
+            part(x,6.64,8,1.61,1.84,9.06,"metal")
+            for i in range(4):
+                part(x,5.58+i*.04,4.74+i*2.11,1.79,.41,.83,"accent")
+        return
+    if kind == "sword_wind":
+        part(8,9.21,8,1.02,7.76,.43,"light","z",-22.5)
+        part(6.41,5.71,8,3.22,.47,.81,"metal","z",-22.5)
+        part(6.16,4.58,8,.68,2.27,.65,"dark","z",-22.5)
+        for i in range(7):
+            a=math.radians(-70+i*25)
+            part(8+4.25*math.sin(a),7.24+.18*i,8+4.4*math.cos(a),2.43,.33,.69,"accent","y",math.degrees(a))
+        return
+    if kind == "thousand_swords":
+        blades(5,2.35,kind)
+        for x in (4.63,8.23,11.83):
+            part(x,5.34,10.13,2.15,.46,.42,"accent","y",-22.5)
+        return
+    if kind == "stacking":
+        for i,side in enumerate((9.5,7.5,5.5,3.5)):
+            part(8,4.8+i*1.49,8,side,.78,side,"metal","y",22.5 if i%2 else 0)
+        crystal(8,11.21,8,2,"z")
+        return
+    raise ValueError(kind)
