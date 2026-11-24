@@ -1561,10 +1561,14 @@ final class PaperOfficialCombat implements Listener {
                         : id == null ? net.kyori.adventure.text.format.NamedTextColor.DARK_GRAY
                         : remaining > 0 || locked ? net.kyori.adventure.text.format.NamedTextColor.GRAY
                         : net.kyori.adventure.text.format.NamedTextColor.AQUA;
-                String status = id == null ? "비어 있음" : locked ? "잠김" : remaining > 0 ? remaining + "초" : "✓";
+                var mark = id == null ? PaperArt.SlotMark.EMPTY : locked ? PaperArt.SlotMark.LOCKED
+                        : remaining > 0 ? PaperArt.SlotMark.COOLDOWN : PaperArt.SlotMark.READY;
                 message.append(net.kyori.adventure.text.Component.text(selected ? "[" + slot : Integer.toString(slot),color));
                 if (id != null) message.append(art.slotIcon(player,id).color(color));
-                message.append(net.kyori.adventure.text.Component.text(" " + status + (selected ? "]" : ""),color));
+                message.append(art.slotMark(player,mark));
+                if (mark == PaperArt.SlotMark.COOLDOWN)
+                    message.append(net.kyori.adventure.text.Component.text(" " + remaining + "초",color));
+                if (selected) message.append(net.kyori.adventure.text.Component.text("]",color));
             }
             message.append(net.kyori.adventure.text.Component.text("  ·  " +
                     (state.slots.current() == null ? "선택 슬롯 비어 있음" : skillStatus(player,state,state.slots.current()))));

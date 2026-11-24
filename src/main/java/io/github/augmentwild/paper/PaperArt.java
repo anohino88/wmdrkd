@@ -58,6 +58,7 @@ public final class PaperArt implements Listener {
     private final Properties screens = new Properties();
     private final Properties motifs = new Properties();
     private final Map<String,ArtSignature> signatures;
+    private final Map<String,List<ArtRig.Part>> rigs;
     private final boolean matchingPack;
     private final ResourcePackInfo pack;
     private final String settingsIssue;
@@ -68,11 +69,12 @@ public final class PaperArt implements Listener {
     private long tick;
     private boolean displaysAvailable = true;
 
+    private record Layer(ItemDisplay display, ArtRig.Part part) {}
     private record Animation(Player viewer, ItemDisplay entity, Location at, long began, Motion motion,
-                             List<ItemDisplay> ornaments, ArtSignature signature) {
+                             List<Layer> ornaments, ArtSignature signature) {
         void remove() {
             entity.remove();
-            ornaments.forEach(ItemDisplay::remove);
+            ornaments.forEach(layer -> layer.display().remove());
         }
     }
     private record Marker(ItemDisplay entity, Set<UUID> viewers) {}
@@ -125,6 +127,19 @@ public final class PaperArt implements Listener {
         return Component.text(String.valueOf((char)(0xe100 + index))).font(Key.key("augmentwild:skills"));
     }
 
+    enum SlotMark { READY, COOLDOWN, LOCKED, EMPTY }
+
+    Component slotMark(Player player, SlotMark state) {
+        if (custom(player))
+            return Component.text(String.valueOf((char)(0xe110 + state.ordinal()))).font(Key.key("augmentwild:skills"));
+        return Component.text(switch (state) {
+            case READY -> "✓";
+            case COOLDOWN -> "⌛";
+            case LOCKED -> "×";
+            case EMPTY -> "–";
+        });
+    }
+
     Component title(Player p, Screen screen, String label) {
         // Inventory text uses the native baseline and layout. Large title glyphs can paint across slots.
         return Component.text(label).font(Key.key("minecraft:default"));
@@ -158,6 +173,10 @@ public final class PaperArt implements Listener {
             var meta = stack.getItemMeta();
             var model = meta.getItemModel();
             if (model == null || !model.getNamespace().equals("augmentwild")) continue;
+            if (Set.of("gui/bezel","gui/rail_left","gui/rail_right").contains(model.getKey())) {
+                inventory.clear(i);
+                continue;
+            }
             meta.setItemModel(null);
             stack.setItemMeta(meta);
             inventory.setItem(i,stack);
@@ -171,7 +190,7 @@ public final class PaperArt implements Listener {
 
     String packStatus(Player p) {
         if (pack == null) return settingsIssue + " · 기본 표시";
-        if (!matchingPack) return "팩 SHA-1이 7.9 배포본과 다릅니다 · 기본 표시";
+        if (!matchingPack) return "팩 SHA-1이 8.0 배포본과 다릅니다 · 기본 표시";
         String mode = safe(p) ? " · 안전 모드" : "";
         if (loaded.contains(p.getUniqueId())) return "클라이언트 로드 응답 · " + pack.hash().substring(0,8) + mode;
         var status = reports.get(p.getUniqueId());
@@ -197,6 +216,7 @@ public final class PaperArt implements Listener {
             String shipped = digest == null ? "" : new String(digest.readAllBytes(),StandardCharsets.UTF_8).strip();
             matchingPack = pack != null && pack.hash().equals(shipped);
             signatures = ArtSignature.load(plugin.getResource("art-signatures.tsv"));
+            rigs = ArtRig.load(plugin.getResource("arcane-parts.tsv"),signatures);
         } catch (IOException failure) {
             throw new IllegalStateException("Could not read AugmentWild artwork settings",failure);
         }
@@ -373,6 +393,13 @@ public final class PaperArt implements Listener {
             forget(player);
             if (previouslyLoaded) restoreMenuIcons(event.getPlayer());
         }
+    }
+
+    void inlay(Player viewer, Inventory inventory, String finish, int... slots) {
+        if (!custom(viewer)) return;
+        var tile = icon(viewer,PaperIntel.item(PaperIntel.card(Material.GRAY_STAINED_GLASS_PANE," ")), "gui/" + finish);
+        for (int slot : slots)
+            if (inventory.getItem(slot) == null) inventory.setItem(slot,tile);
     }
 
     public ItemStack icon(Player viewer, ItemStack item, String key) {
@@ -903,7 +930,7 @@ public final class PaperArt implements Listener {
         if (displayCount() < MAX_DISPLAYS) return true;
         for (var animation : cues.values()) {
             if (animation.ornaments().isEmpty()) continue;
-            animation.ornaments().removeLast().remove();
+            animation.ornaments().removeLast().display().remove();
             return true;
         }
         var iterator = cues.values().iterator();
@@ -931,26 +958,20 @@ public final class PaperArt implements Listener {
         if (previous != null) previous.remove();
         if (displayCount() >= MAX_DISPLAYS) return;
         ItemDisplay display = null;
-        List<ItemDisplay> ornaments = new ArrayList<>();
+        List<Layer> ornaments = new ArrayList<>();
         try {
             display = spawn(at,motif,signature == null ? pose(at,motion,0) : signature.frames().getFirst().pose(at));
             var quality = PlayerUi.quality(viewer);
             int layers = quality == PlayerUi.Quality.ULTRA ? 2 : quality == PlayerUi.Quality.HIGH ? 1 : 0;
-            if (layers > 0 && !PlayerUi.reducedFlash(viewer) && Bukkit.getAverageTickTime() < 45 && (motif.startsWith("proc/") || signature != null)) {
-                String augment = signature == null ? motif.substring(5) : signature.shape();
-                int occupied = 1 + displayCount();
-                if (occupied + layers <= MAX_DISPLAYS) {
-                    String family = motifs.getProperty(augment,"rune");
-                    for (int i = 0; i < layers; i++) {
-                        String outer = switch (family) {
-                            case "blade","rush" -> "crescent";
-                            case "ward","impact","frost" -> "fracture";
-                            default -> "helix";
-                        };
-                        var satellite = spawn(at,i == 0 ? outer : "rune",orbitPose(motion,0,i));
-                        ornaments.add(satellite);
-                        viewer.showEntity(plugin,satellite);
-                    }
+            if (layers > 0 && signature != null && !PlayerUi.reducedFlash(viewer) && Bukkit.getAverageTickTime() < 45
+                    && viewer.getLocation().distanceSquared(at) <= 16 * 16) {
+                var parts = rigs.getOrDefault(signature.id(),List.of());
+                int count = Math.min(Math.min(layers,parts.size()),MAX_DISPLAYS - 1 - displayCount());
+                for (int index = 0; index < count; index++) {
+                    var part = parts.get(index);
+                    var satellite = spawn(at,part.model(),part.pose(signature,at,part.frames().getFirst()));
+                    ornaments.add(new Layer(satellite,part));
+                    viewer.showEntity(plugin,satellite);
                 }
             }
             cues.put(key,new Animation(viewer,display,at,tick,motion,ornaments,signature));
@@ -959,7 +980,7 @@ public final class PaperArt implements Listener {
             peakDisplays = Math.max(peakDisplays,displayCount());
         } catch (RuntimeException failure) {
             if (display != null) display.remove();
-            ornaments.forEach(ItemDisplay::remove);
+            ornaments.forEach(layer -> layer.display().remove());
             disableDisplays(failure);
         }
     }
@@ -986,16 +1007,6 @@ public final class PaperArt implements Listener {
                 (float)direction.getZ()*motion.travel()*t),
                 new Quaternionf().rotationY((float)Math.toRadians(-at.getYaw()) + motion.spin()*t),
                 new Vector3f(motion.scales()[frame], motion.scales()[frame] * (motion.scales() == SWEEP && frame == 1 ? .55f : 1f), motion.scales()[frame]), new Quaternionf());
-    }
-
-    private static Transformation orbitPose(Motion motion, float t, int layer) {
-        float phase = (layer == 0 ? 1 : -1) * (t * 4.2f + motion.spin()) + layer * 2;
-        float envelope = (float)Math.sin(Math.PI * t);
-        float radius = .13f + envelope * (motion.scales() == SWEEP ? .95f : .52f);
-        return new Transformation(new Vector3f(radius * (float)Math.cos(phase),
-                .22f * layer + envelope * motion.rise(), radius * (float)Math.sin(phase)),
-                new Quaternionf().rotateY(-phase).rotateX(envelope * .8f),
-                new Vector3f(.08f + envelope * .45f),new Quaternionf());
     }
 
     private int displayCount() {
@@ -1037,19 +1048,25 @@ public final class PaperArt implements Listener {
                     animation.remove();
                     return true;
                 }
-                if (!animation.ornaments().isEmpty() && (age & 1) == 1) {
-                    float t = Math.min(1f,(age + 1f) / duration);
-                    for (int i = 0; i < animation.ornaments().size(); i++) {
-                        var layer = animation.ornaments().get(i);
-                        layer.setInterpolationDuration(2);
-                        layer.setInterpolationDelay(0);
+                for (var iterator = animation.ornaments().iterator(); iterator.hasNext();) {
+                    var layer = iterator.next();
+                    if (!layer.display().isValid() || age > layer.part().frames().getLast().tick()
+                            || player.getLocation().distanceSquared(animation.at()) > 16 * 16
+                            || PlayerUi.reducedFlash(player) || PlayerUi.quality(player).ordinal() < PlayerUi.Quality.HIGH.ordinal()) {
+                        layer.display().remove();
+                        iterator.remove();
+                        continue;
+                    }
+                    var frames = layer.part().frames();
+                    for (int i = 0; i < frames.size() - 1; i++) {
+                        var start = frames.get(i);
+                        if (age != start.tick() + 1) continue;
+                        var end = frames.get(i + 1);
+                        layer.display().setInterpolationDelay(0);
+                        layer.display().setInterpolationDuration(end.tick() - start.tick());
+                        layer.display().setTransformation(layer.part().pose(signature,animation.at(),end));
                         displayUpdates++;
-                        if (signature != null && signature.shape().equals("time_rewind")) {
-                            float scale = .2f + .72f * (float)Math.sin(Math.PI*t);
-                            layer.setTransformation(new Transformation(new Vector3f(0,.3f,0),
-                                    new Quaternionf().rotateY(t * (i == 0 ? 5 : -5)),
-                                    new Vector3f(scale,.35f,scale),new Quaternionf()));
-                        } else layer.setTransformation(orbitPose(animation.motion(),t,i));
+                        break;
                     }
                 }
                 if (signature != null) {

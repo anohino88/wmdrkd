@@ -41,9 +41,9 @@ for j,(release,project) in enumerate(zip(args.versions,(args.baseline,root))):
         tile(image,draw,inventory(project,screen,name,rows),26+j*552,y,542,222 if rows==3 else 426,release+" · "+name)
 image.save(args.output/"menus.png",optimize=True)
 
-if args.versions == ["7.8","7.9"]:
+if args.versions in (["7.8","7.9"],["7.9","8.0"]):
     image,draw = page("3슬롯 스킬 HUD","오프라인 예시 · 배포 팩의 슬롯 아이콘과 런타임 상태 문구",1146,340)
-    for col,(release,project,statuses) in enumerate(zip(args.versions,(args.baseline,root),(("–","6초","잠김"),("비어 있음","잠김","잠김")))):
+    for col,(release,project,statuses) in enumerate(zip(args.versions,(args.baseline,root),(("비어 있음","잠김","잠김"),("비어 있음","잠김","잠김")))):
         x=27 + col*552
         draw.rounded_rectangle((x,104,x+530,310),radius=8,fill="#202c3a")
         draw.text((x+18,119),release,font=font(18,True),fill="#dfe9ef")
@@ -56,7 +56,13 @@ if args.versions == ["7.8","7.9"]:
             if skill:
                 icon=m["art"](project,"augment/"+skill).resize((32,32),Image.Resampling.LANCZOS)
                 image.paste(icon,(left+31,178),icon)
-            draw.text((left+70,187),status,font=font(16),fill=color)
+            if release=="8.0":
+                state = Image.open(project/"resource-pack/pack/assets/augmentwild/textures/gui/skill_state.png").convert("RGBA")
+                pixel = (48,32,32)[index]
+                symbol = state.crop((pixel,0,pixel+16,16)).resize((32,32),Image.Resampling.NEAREST)
+                image.paste(symbol,(left+78,185),symbol)
+            else:
+                draw.text((left+70,187),status,font=font(16),fill=color)
         draw.text((x+18,254),"재앙의 거인 · 부활 보호 중",
                   font=font(17),fill="#dfe9ef")
     image.save(args.output/"hud.png",optimize=True)

@@ -23,6 +23,7 @@ sha=$(jq -er 'first(.[] | select(.channel == "STABLE") | .downloads["server:defa
 [[ "$url" == https://fill-data.papermc.io/* && "$sha" =~ ^[0-9a-f]{64}$ ]]
 curl --fail --silent --show-error --max-time 60 "$url" -o paper.jar
 printf '%s  paper.jar\n' "$sha" | sha256sum -c -
+printf 'AW_PAPER_BINARY source=%s sha256=%s\n' "$url" "$sha"
 # Disposable CI server only.
 printf 'eula=true\n' > eula.txt
 printf 'server-ip=127.0.0.1\nserver-port=25565\nview-distance=3\nsimulation-distance=3\npause-when-empty-seconds=-1\n' > server.properties
@@ -142,6 +143,7 @@ with log.open("wb") as output:
                 if os.environ.get("AW_SIGNATURE_PROBE") == "1":
                     wait_for("AW_ART_SIGNATURE_PASS",15)
                     wait_for("AW_ART_CINEMA_PASS",15)
+                    wait_for("AW_ART_RIG_PASS",15)
                 wait_for("AW_PUBLIC_ART_PASS", 15)
                 wait_for("AW_PACK_RECOVERY_PASS", 15)
                 wait_for("AW_ART_SUSTAIN ticks=1200 created=1 remaining=0", 20)

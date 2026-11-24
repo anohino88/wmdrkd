@@ -526,6 +526,7 @@ final class PaperAugments implements Listener {
                 Component.text(rerolled ? "재추첨 사용 완료" : "재추첨 · 경기당 1회"), List.of()));
         setCountdown(menu, clock.get().selectionRemainingSeconds());
         art.button(player,menu.inventory,REROLL,rerolled ? "disabled" : "reroll");
+        art.inlay(player,menu.inventory,"bezel",1,3,5,7,10,12,14,16,19,21,23,25);
         profile.shown = round.round();
         player.openInventory(menu.inventory);
     }
@@ -614,6 +615,8 @@ final class PaperAugments implements Listener {
         art.button(player,menu.inventory,45,"previous");
         art.button(player,menu.inventory,49,"codex");
         art.button(player,menu.inventory,53,"next");
+        art.inlay(player,menu.inventory,"rail_left",46,47,48);
+        art.inlay(player,menu.inventory,"rail_right",50,51,52);
     }
 
     private void placeCodexCard(Player player, Profile profile, SummaryMenu menu, int slot,

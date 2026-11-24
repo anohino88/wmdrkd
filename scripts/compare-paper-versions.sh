@@ -7,10 +7,10 @@ out="$root/build/version-comparison"
 mkdir -p "$out"
 trap 'rm -rf "$fixture"' EXIT
 
-for version in 7.8 7.9; do
+for version in 7.9 8.0; do
     case "$version" in
-        7.8) commit=fcd3a804a6c23634338b24398afcfeb1a2f6bc40 ;;
-        7.9) commit=$(git -C "$root" rev-parse HEAD) ;;
+        7.9) commit=17ef30b5a73ae0936ddd08c41b8396615008fd7d ;;
+        8.0) commit=$(git -C "$root" rev-parse HEAD) ;;
     esac
     if ! git -C "$root" cat-file -e "$commit^{commit}"; then
         git -C "$root" fetch --no-tags --depth=1 origin "$commit"
@@ -34,8 +34,28 @@ for original, replacement in (
         raise SystemExit(f"Fixture contract changed for {probe.name}")
     text = text.replace(original, replacement)
 probe.write_text(text)
+vfx = root / "src/paperProbe/java/io/github/augmentwild/probe/PublicArtProbe.java"
+text = vfx.read_text()
+assert "WARMUP = 12, MEASURED = 48" in text
+text = text.replace("WARMUP = 12, MEASURED = 48", "WARMUP = 32, MEASURED = 96")
+text = text.replace("total_ticks=960","total_ticks=1920")
+marker = "            java.util.Arrays.sort(timing);"
+assert marker in text
+text = text.replace(marker, """
+            if (size == 16) {
+                for (int window = 0; window < 2; window++) {
+                    var half = java.util.Arrays.copyOfRange(timing,window * 48,(window + 1) * 48);
+                    java.util.Arrays.sort(half);
+                    probe.getLogger().info(String.format(java.util.Locale.ROOT,
+                            "AW_VFX_WINDOW mode=%s viewers=16 window=%d p95=%.3f",
+                            MODES.get(mode),window + 1,half[45]));
+                }
+            }
+""" + marker)
+vfx.write_text(text)
 smoke = root / "scripts/test-paper-smoke.sh"
 text = smoke.read_text().replace("pause-when-empty-seconds=-1", "pause-when-empty-seconds=-1\\nlevel-seed=67026")
+text = text.replace("total_ticks=960\", 150", "total_ticks=1920\", 220")
 text = text.replace('select(.channel == "STABLE")', 'select(.channel == "STABLE" and .id == 257)')
 # Independent servers still use one pinned Paper binary.
 text = text.replace('else 30)', 'else 65)')
@@ -47,5 +67,5 @@ PY
         AW_BORDER_PROBE=1 AW_EXTENDED_LOAD=1 RUNNER_TEMP="$checkout" bash scripts/test-paper-smoke.sh
     )
     cp "$checkout/augmentwild-paper-smoke/server.log" "$out/$version.log"
-    grep -E 'SYNTHETIC_LOAD_TEST|AW_VFX_LOAD mode=.*viewers=16' "$out/$version.log"
+    grep -E 'SYNTHETIC_LOAD_TEST|AW_VFX_WINDOW|AW_VFX_LOAD mode=.*viewers=16' "$out/$version.log"
 done

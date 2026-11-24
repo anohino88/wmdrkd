@@ -159,6 +159,10 @@ public final class PaperQuickMenu implements Listener {
         item(menu,7,Material.ENCHANTED_BOOK,"증강 관리","선택 · 도감 · 스킬");
         art.button(player,menu.inventory,1,"status");
         art.button(player,menu.inventory,7,"codex");
+        art.button(player,menu.inventory,4,"atlas");
+        art.inlay(player,menu.inventory,"rail_left",0,2,3);
+        art.inlay(player,menu.inventory,"rail_right",5,6,8);
+        art.inlay(player,menu.inventory,"bezel",13);
         player.openInventory(menu.inventory);
         return "빠른 메뉴 · 웅크리기 + 빈손 우클릭(공중)으로 다시 열 수 있습니다.";
     }
@@ -287,6 +291,7 @@ public final class PaperQuickMenu implements Listener {
         if (!menu.skills && !MAIN_ACTIONS.containsKey(slot)) return;
         Bukkit.getScheduler().runTask(plugin, () -> {
             if (!player.isOnline() || !menu.match.equals(matches.menuSession())) return;
+            matches.art().sound(player,"ui",org.bukkit.Sound.UI_BUTTON_CLICK);
             if (player.getOpenInventory().getTopInventory().getHolder() != menu) return;
             player.closeInventory();
             String response = menu.skills ? skillClick(player, menu, slot) : mainClick(player, MAIN_ACTIONS.get(slot));

@@ -90,6 +90,8 @@ final class ArtGallery implements PaperMenu {
     static void detail(Player p,PaperArt art,String id,String title,ItemStack card,Runnable back) {
         var view = new ArtGallery(p,art,PaperArt.Screen.DETAIL,title,3,List.of(),() -> false);
         view.inventory.setItem(4,card);
+        art.inlay(p,view.inventory,"rail_left",0,1,2,3);
+        art.inlay(p,view.inventory,"rail_right",5,8);
         view.put(p,6,Material.AMETHYST_SHARD,"proc/" + id,"외형 미리보기",art.packStatus(p));
         view.put(p,7,Material.BLAZE_POWDER,"gui/showcase","발동 연출 미리보기","경기 참가 중 사용 가능 · 본인에게만 표시");
         view.detailPreview = id;
@@ -128,6 +130,7 @@ final class ArtGallery implements PaperMenu {
             };
             put(p,i,Material.AMETHYST_SHARD,model,art.label(key),key,key.startsWith("augment/") ? "현재 동작 · " + mode : "클릭 · " + key);
         }
+        art.inlay(p,inventory,"bezel",45,53);
         put(p,42,Material.SPYGLASS,"gui/showcase","촬영 거리 · " + DISTANCES[distanceIndex] + "블록",
                 "시선 앞에 연출 배치 · 클릭하여 3 / 8 / 16 / 24블록 전환");
         put(p,43,Material.REPEATER,"gui/reroll","반복 · " + (repeat ? "3회" : "1회"),

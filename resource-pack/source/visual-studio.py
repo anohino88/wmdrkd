@@ -9,7 +9,8 @@ from mathutils import Vector, Quaternion
 
 args = sys.argv[sys.argv.index("--")+1:]
 project, baseline, output = (Path(arg).resolve() for arg in args[:3])
-fight = "--fight" in args[3:]
+arcane = "--arcane" in args[3:]
+fight = arcane or "--fight" in args[3:]
 ascension = fight or "--ascension" in args[3:]
 reforge = ascension or "--reforge" in args[3:]
 current = project / "resource-pack/pack/assets/augmentwild"
@@ -35,7 +36,7 @@ scene.collection.objects.link(eye)
 eye.location = (18,-25,19)
 eye.rotation_euler = (-eye.location).to_track_quat("-Z","Y").to_euler()
 camera.type = "ORTHO"
-camera.ortho_scale = 14 if reforge else 17
+camera.ortho_scale = 20 if arcane else 14 if reforge else 17
 scene.camera = eye
 for point,energy,size in [((8,-12,18),2900,9),((-16,-5,10),1700,10),((0,13,10),3200,7)]:
     light = bpy.data.lights.new("Studio softbox","AREA")
@@ -70,6 +71,30 @@ def material(root,reference):
     return mat
 
 
+def surface(part, material, collection, parent, name):
+    xyz = list(zip(part["from"],part["to"]))
+    for face in part["faces"]:
+        axis,which,u,v = {
+            "north":(2,0,0,1),"south":(2,1,0,1),
+            "east":(0,1,2,1),"west":(0,0,2,1),
+            "up":(1,1,0,2),"down":(1,0,0,2),
+        }[face]
+        verts = []
+        for a,b in ((0,0),(1,0),(1,1),(0,1)):
+            point = [0,0,0]
+            point[axis],point[u],point[v] = xyz[axis][which],xyz[u][a],xyz[v][b]
+            verts.append(coord(*point))
+        mesh = bpy.data.meshes.new(name + " " + face)
+        mesh.from_pydata(verts,[],[(0,1,2,3)])
+        mesh.materials.append(material)
+        mesh.uv_layers.new()
+        for index,uv in enumerate(((0,0),(1,0),(1,1),(0,1))):
+            mesh.uv_layers.active.data[index].uv = uv if axis != 1 else (uv[0],1-uv[1])
+        obj = bpy.data.objects.new(mesh.name,mesh)
+        collection.objects.link(obj)
+        obj.parent = parent
+
+
 def create(root,name,model):
     collection = bpy.data.collections.new(name)
     scene.collection.children.link(collection)
@@ -77,6 +102,10 @@ def create(root,name,model):
     collection.objects.link(pivot)
     texture = {name: material(root,image) for name,image in model["textures"].items()}
     for part in model["elements"]:
+        shade = next(iter(part["faces"].values()))["texture"][1:]
+        if len(part["faces"]) == 2 and shade == "surface":
+            surface(part,texture[shade],collection,pivot,name)
+            continue
         low,high = part["from"],part["to"]
         dx,dy,dz = (b-a for a,b in zip(low,high))
         center = coord(*[(a+b)/2 for a,b in zip(low,high)])
@@ -142,10 +171,21 @@ def fight_stage():
     return fixture
 
 
-def animate(pivot,frames):
+def offset_at(frames,tick):
+    before = frames[0]
+    for after in frames[1:]:
+        if tick <= after[0]:
+            mix = (tick-before[0])/(after[0]-before[0])
+            return tuple(a+(b-a)*mix for a,b in zip(before[1:4],after[1:4]))
+        before = after
+    return before[1:4]
+
+
+def animate(pivot,frames,root=None):
     pivot.rotation_mode = "QUATERNION"
     for tick,right,up,forward,yaw,pitch,roll,width,height,depth in frames:
-        pivot.location = (right*16,-forward*16,up*16)
+        dx,dy,dz = offset_at(root,tick) if root else (0,0,0)
+        pivot.location = ((right+dx)*16,-(forward+dz)*16,(up+dy)*16)
         pivot.scale = (width,depth,height)
         pivot.rotation_quaternion = (Quaternion((0,0,1),math.radians(yaw))
                                      @ Quaternion((1,0,0),math.radians(pitch))
@@ -164,6 +204,12 @@ for line in (project/"src/main/resources/art-signatures.tsv").read_text().splitl
     if line and not line.startswith("#"):
         key,shape,sound,timeline = line.split("|")
         keys[key] = shape, [tuple(map(float,point.split(","))) for point in timeline.split(";")]
+parts = {}
+if arcane:
+    for line in (project/"src/main/resources/arcane-parts.tsv").read_text().splitlines():
+        if line and not line.startswith("#"):
+            name,_,_,_,track = line.split("|")
+            parts.setdefault(name[4:-2],[]).append((name,[tuple(map(float,p.split(","))) for p in track.split(";")]))
 active = list(keys)[:7]
 growth = [key for key in keys if key not in active and key not in ("bomb_impact","void_collapse")]
 for key in active + (growth if ascension else []) + (["crescent","impact","fracture"] if reforge else ["crescent"]):
@@ -179,6 +225,8 @@ for key in active + (growth if ascension else []) + (["crescent","impact","fract
             gallery.append((group,pivot))
         else:
             group.hide_viewport = True
+if "--stills" in args[3:]:
+    sys.exit(0)
 fixture = fight_stage() if fight else None
 studio_eye = eye.location.copy()
 simulated_views = ((3,"near"),(8,"mid"),(16,"far"),(24,"edge"))
@@ -189,6 +237,12 @@ for key,(shape,frames) in keys.items():
     camera.ortho_scale = 31 if reforge else 39
     group.hide_render = False
     animate(pivot,frames)
+    layers = []
+    for name,track in parts.get(key,[]):
+        child,handle = create(current,name,model(current,"fx/"+name))
+        animate(handle,track,frames)
+        child.hide_render = False
+        layers.append((child,handle))
     if key in active or key in ("bomb_impact","void_collapse","thousand_swords"):
         for i,frame in enumerate(frames):
             scene.frame_set(int(frame[0])+1)
@@ -217,13 +271,22 @@ for key,(shape,frames) in keys.items():
             fixture.hide_render = True
     scene.frame_set(1)
     group.hide_render = True
+    for child,handle in layers:
+        child.hide_render = True
+        for obj in list(child.objects):
+            child.objects.unlink(obj)
+            group.objects.link(obj)
+        # Attach through a non-animated group transform so baked runtime offsets remain local.
+        bpy.data.collections.remove(child)
     if pair is None:
         gallery.append((group,pivot))
 for index,(group,pivot) in enumerate(gallery):
     group.hide_render = False
-    pivot.delta_location = ((index%5)*26,(index//5)*26,0)
+    for obj in group.objects:
+        if obj.parent is None:
+            obj.delta_location = ((index%5)*26,(index//5)*26,0)
     scene.timeline_markers.new(group.name,frame=1+index)
 scene.frame_start,scene.frame_end = 1,24
 scene.frame_set(7)
 bpy.ops.file.pack_all()
-bpy.ops.wm.save_as_mainfile(filepath=str(output/("visual-fight.blend" if fight else "visual-ascension.blend" if ascension else "visual-reforge.blend" if reforge else "visual-revolution.blend")),compress=True)
+bpy.ops.wm.save_as_mainfile(filepath=str(output/("arcane-engine.blend" if arcane else "visual-fight.blend" if fight else "visual-ascension.blend" if ascension else "visual-reforge.blend" if reforge else "visual-revolution.blend")),compress=True)

@@ -171,6 +171,22 @@ final class ArtProbe {
             for (int i = 0; i < 36; i++) tick.invoke(art);
             require(observed.size() == 2 && observed.stream().noneMatch(ItemDisplay::isValid));
             Bukkit.getLogger().info("AW_ART_CINEMA_PASS permission=true repeat=true cleanup=true");
+            storage.set(qualityKey,org.bukkit.persistence.PersistentDataType.STRING,"HIGH");
+            observed.clear();
+            preview.invoke(art,p,"augment/time_rewind",false);
+            require(observed.size() == 2);
+            var part = observed.getFirst();
+            var body = observed.getLast();
+            require("fx/rig_time_rewind_a".equals(part.getItemStack().getItemMeta().getItemModel().getKey()));
+            require("fx/sig_time_rewind".equals(body.getItemStack().getItemMeta().getItemModel().getKey()));
+            var old = part.getTransformation();
+            for (int i = 0; i < 6; i++) tick.invoke(art);
+            require(part.isValid() && !old.getLeftRotation().equals(part.getTransformation().getLeftRotation())
+                    && !body.getTransformation().getLeftRotation().equals(part.getTransformation().getLeftRotation()));
+            for (int i = 0; i < 25; i++) tick.invoke(art);
+            require(observed.stream().noneMatch(ItemDisplay::isValid));
+            storage.set(qualityKey,org.bukkit.persistence.PersistentDataType.STRING,"STANDARD");
+            Bukkit.getLogger().info("AW_ART_RIG_PASS private=true independent_rotation=true cleanup=true");
             var sustain = PaperArt.class.getDeclaredMethod("sustain",Player.class,String.class,org.bukkit.Location.class,boolean.class);
             sustain.setAccessible(true);
             observed.clear();
@@ -250,7 +266,7 @@ final class ArtProbe {
             inspect.setAccessible(true);
             var fixture = java.nio.file.Path.of(System.getProperty("augmentwild.pack.fixture"));
             var archive = inspect.invoke(null,fixture);
-            require(archive.toString().startsWith("Archive[release=7.9,"));
+            require(archive.toString().startsWith("Archive[release=8.0,"));
             var invalid = java.nio.file.Files.createTempFile("aw-invalid-pack-", ".zip");
             try {
                 java.nio.file.Files.writeString(invalid,"not a resource pack");

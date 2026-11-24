@@ -20,9 +20,37 @@ CUES = {
     "evolution": (.49, 260, 690, .06, 7, .036),
     "synergy": (.51, 194, 550, .09, 5, .041),
     "seal": (.31, 392, 510, .12, 8, .024),
-    "prism": (.33, 451, 914, .04, 9, .020),
+    "prism": (.55, 451, 914, .04, 9, .020),
+    "ui": (.19, 660, 470, .05, 0, .005),
 }
 
+
+# gain, frequency ratio, onset and decay. Separate the contact noise from the tonal tail.
+VOICES = {
+    "rift": ((.34,.49,0,9),(.21,3.0,.033,13),(.13,.26,.084,11)),
+    "sweep": ((.27,1.7,0,14),(.33,.49,.04,21)),
+    "stone_break": ((.48,.65,0,17),(.26,3.12,.018,21),(.18,1.25,.052,19)),
+    "rewind": ((.29,1.33,0,12),(.20,1.67,.063,14),(.15,2.4,.136,10)),
+    "focus": ((.34,.5,0,7),(.21,1.77,.07,9),(.12,2.07,.15,12)),
+    "ignite": ((.31,2.3,0,15),(.25,1.1,.032,17),(.14,1.44,.084,14)),
+    "detonate": ((.59,.75,0,11),(.27,2.22,.023,17),(.19,3.48,.074,21)),
+    "shield_form": ((.24,1.33,0,13),(.31,1.78,.07,10),(.18,2.9,.14,12)),
+    "shield_break": ((.43,1.18,0,29),(.25,1.41,.018,22),(.14,1.67,.04,24)),
+    "seal": ((.24,.67,0,13),(.18,2.11,.022,11),(.26,1.53,.072,12)),
+    "evolution": ((.24,1,0,12),(.23,1.25,.09,10),(.19,1.5,.18,10)),
+    "synergy": ((.31,1,0,11),(.25,1.5,.12,11),(.24,2,.20,10)),
+    "prism": ((.24,1,0,10),(.24,1.25,.09,10),(.24,1.5,.18,10),(.20,2,.27,10)),
+    "ui": ((.3,1.25,0,26),(.24,2,.023,21)),
+}
+
+
+def voice(time, start, profile):
+    total = 0
+    for gain,ratio,onset,decay in profile:
+        elapsed = time-onset
+        if elapsed > 0:
+            total += gain * math.sin(math.tau * start * ratio * elapsed) * min(1,elapsed*250) * math.exp(-decay*elapsed)
+    return total
 
 def bake(sounds, temporary):
     rate = 24000
@@ -38,7 +66,8 @@ def bake(sounds, temporary):
             smoothed += (.24 if noise > .5 else .075) * (white - smoothed)
             env = min(1, time / attack) * (1-t)**2.15
             carrier = (math.sin(phase) + .30*math.sin(phase*1.504) + .18*math.sin(phase*2.001))
-            signal = (carrier*(1-noise)*.52 + smoothed*noise*2.8) * env
+            signal = (carrier*(1-noise)*.22 + smoothed*noise*1.8) * env
+            signal += .64 * voice(time,start,VOICES[name]) * min(1,(duration-time)*30)
             signal *= .83 + .17 * math.cos(math.tau * beat * time) if beat else 1
             pcm.append(int(max(-1,min(1,signal)) * 25100))
         if sys.byteorder == "big":

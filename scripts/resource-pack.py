@@ -5,6 +5,7 @@ import hashlib
 import io
 import itertools
 import json
+import math
 import os
 import re
 import runpy
@@ -30,13 +31,14 @@ PALETTE = {
 SIGNATURES = runpy.run_path(str(SOURCE / "signature-models.py"))
 FORMS = {"sig_" + key: color for key,color in SIGNATURES["PALETTES"].items()}
 PALETTE.update(FORMS)
+ARCANE = runpy.run_path(str(SOURCE / "arcane.py"))
 MENU_MARKS = runpy.run_path(str(SOURCE / "menu-marks.py"))
 SYNTH = runpy.run_path(str(SOURCE / "sound-design.py"))
 SOURCE_SOUNDS = {"cast", "evolve", "supply"}
 SOUNDS = SOURCE_SOUNDS | SYNTH["CUES"].keys()
 RARITY_MARKS = dict(silver="#b7cbe0", gold="#ffd077", prismatic="#eab8ff")
 PACK_DIGEST = ROOT / "src/main/resources/art-pack.sha1"
-RELEASE_METADATA = {"release":"7.9","minecraft":"26.3","inventory_title":"native"}
+RELEASE_METADATA = {"release":"8.0","minecraft":"26.3","inventory_title":"native"}
 PACK_METADATA = {"pack": {"description": "AugmentWild • combat art for Java 26.3",
                           "min_format": [97, 1], "max_format": [97, 1]}}
 
@@ -49,7 +51,24 @@ def write_json(path, data):
 def skill_font():
     skills = ("bomb_alchemy","calamity_giant","duel_contract","earthquake_mage","shadow_dash","time_rewind","void_lord")
     return {"providers":[{"type":"bitmap","file":f"augmentwild:item/augment/{skill}.png","height":8,
-                          "ascent":7,"chars":[chr(0xe100 + i)]} for i,skill in enumerate(skills)]}
+                          "ascent":7,"chars":[chr(0xe100 + i)]} for i,skill in enumerate(skills)] +
+            [{"type":"bitmap","file":"augmentwild:gui/skill_state.png","height":7,"ascent":6,
+              "chars":["".join(chr(0xe110 + index) for index in range(4))]}]}
+
+
+def skill_marks(output):
+    from PIL import Image, ImageDraw
+    image = Image.new("RGBA",(64,16))
+    ink = ImageDraw.Draw(image)
+    for offset,color,contour in ((0,"#aedecd",[(2,8),(8,2),(14,8),(8,14)]),
+                                 (16,"#ffe19d",[(4,2),(12,2),(10,6),(9,8),(12,13),(4,13),(7,8),(6,6)]),
+                                 (32,"#ffb3a7",[(3,7),(3,13),(13,13),(13,7)]),
+                                 (48,"#93abb3",[(3,8),(8,3),(13,8),(8,13)])):
+        ink.line([(x+offset,y) for x,y in contour+[contour[0]]],fill=color,width=2)
+    ink.line([(37,7),(37,4),(40,2),(43,4),(43,7)],fill="#ffb3a7",width=2)
+    ink.polygon([(6,8),(8,6),(10,8),(8,10)],fill="#e9fff1")
+    output.parent.mkdir(parents=True,exist_ok=True)
+    image.save(output,optimize=True)
 
 
 def inputs():
@@ -100,47 +119,49 @@ def badge(path, original, rarity, motif, profile):
     silhouette = ImageChops.multiply(art.convert("L"), art.getchannel("A"))
     silhouette = silhouette.crop(silhouette.getbbox())
     silhouette.thumbnail((43,43), Image.Resampling.LANCZOS)
-    im = Image.new("RGBA",(64,64))
+    im = Image.new("RGBA",(128,128))
     draw = ImageDraw.Draw(im)
-    rim = {"SILVER":"#a6b9cc","GOLD":"#f1bd6f","PRISMATIC":"#dcb1ff","GUI":"#77d8c5"}[rarity]
-    shapes = {
-        "SILVER": [(12,5),(52,5),(59,12),(59,52),(52,59),(12,59),(5,52),(5,12)],
-        "GOLD": [(11,3),(53,3),(59,14),(57,46),(48,57),(32,62),(16,57),(7,46),(5,14)],
-        "PRISMATIC": [(32,1),(52,10),(62,30),(56,51),(32,63),(8,51),(2,30),(12,10)],
-        "GUI": [(14,4),(50,4),(60,14),(60,50),(50,60),(14,60),(4,50),(4,14)],
+    border = {"SILVER":("#d9f2fa","#385262"),"GOLD":("#ffe1a0","#6b3227"),
+              "PRISMATIC":("#edc3ff","#43366f"),"GUI":("#abe8dc","#203755")}
+    edge,shadow = border[rarity]
+    center = 64
+    contours = {
+        "SILVER": [(17,13),(111,13),(121,25),(121,103),(110,115),(18,115),(7,103),(7,25)],
+        "GOLD": [(20,9),(108,9),(120,21),(115,90),(94,111),(64,124),(34,111),(13,90),(8,21)],
+        "PRISMATIC": [(64,2),(102,16),(126,61),(107,101),(64,126),(21,101),(2,61),(26,16)],
+        "GUI": [(26,9),(102,9),(117,24),(117,104),(102,119),(26,119),(11,104),(11,24)],
     }
-    dark = {"SILVER":"#101e2b","GOLD":"#201820","PRISMATIC":"#1b152d","GUI":"#101b27"}[rarity]
-    draw.polygon(shapes[rarity],fill=dark,outline=rim,width=2)
-    for i in range(0,len(shapes[rarity]),2):
-        a,b = shapes[rarity][i-1],shapes[rarity][i]
-        draw.line((a,b),fill="#f8edcf" if rarity == "GOLD" else "#d9e7f7",width=1)
+    outline = contours[rarity]
+    def inset(factor):
+        return [(round(center + (x-center)*factor),round(center + (y-center)*factor)) for x,y in outline]
+    draw.polygon(outline,fill="#10141f",outline="#080912",width=4)
+    draw.polygon(inset(.97),fill=shadow,outline=edge,width=3)
+    draw.polygon(inset(.78),fill="#141a2d",outline="#0a0d15",width=3)
+    for index,(x,y) in enumerate(inset(.9)):
+        a,b = inset(.9)[index-1]
+        shade=edge if y < 64 or b < 64 else shadow
+        draw.line((a,b,x,y),fill=shade,width=4)
+        draw.polygon(((x-4,y),(x,y-4),(x+4,y),(x,y+4)),fill=edge)
     if rarity == "PRISMATIC":
-        for x,y in ((22,15),(44,20),(16,41),(46,44)):
-            draw.line((x,y,32,32),fill="#614a87",width=1)
-    if rarity == "GOLD":
-        draw.line((15,8,49,8,53,13),fill="#e39853",width=2)
-    draw.polygon([(32,8),(48,14),(54,31),(48,49),(32,55),(16,49),(10,31),(16,14)],
-                 fill="#1c273a")
-    draw.polygon([(13,30),(20,16),(32,10),(31,22),(19,34)],fill="#2b3a50")
-    draw.line([(14,43),(22,51),(32,55),(42,51),(50,43)],fill="#344860",width=2)
-    if rarity == "PRISMATIC":
-        draw.line([(8,29),(15,13),(31,5),(48,13),(56,28)],fill="#f6e8fe",width=2)
+        draw.line((23,44,63,12,105,46),fill="#d9cffc",width=4)
+        draw.line((18,84,64,117,109,84),fill="#8bded5",width=3)
+    elif rarity == "GOLD":
+        draw.line((18,44,28,21,101,21,112,43),fill="#deb176",width=3)
     rgb = ImageColor.getrgb(PALETTE[motif])
-    art = Image.new("RGBA",silhouette.size,rgb)
-    if rarity != "GUI":
-        # Relief is clipped to each original symbol mask, including its internal holes.
-        for y in range(art.height):
-            for x in range(art.width):
-                height = 1 - y / max(1,art.height-1)
-                gleam = .10 if abs(x-y) < 3 else 0
-                tone = .76+.31*height+gleam
-                art.putpixel((x,y),tuple(min(255,round(c*tone)) for c in rgb))
+    silhouette = silhouette.resize((round(silhouette.width*1.64),round(silhouette.height*1.64)),Image.Resampling.LANCZOS)
+    art = Image.new("RGBA",silhouette.size)
+    for y in range(art.height):
+        for x in range(art.width):
+            level = y / max(1,art.height-1)
+            specular = .16 if abs(y - .51*x - 8) < 3 else 0
+            tone = .70 + .27*math.cos(level*3.7)**2 + specular
+            art.putpixel((x,y),tuple(min(255,round(c*tone+23)) for c in rgb))
     art.putalpha(silhouette)
-    im.alpha_composite(art,((64-art.width)//2,(62-art.height)//2))
+    im.alpha_composite(art,((128-art.width)//2,(122-art.height)//2))
     tier = {"SILVER":1,"GOLD":2,"PRISMATIC":3,"GUI":0}[rarity]
-    for i in range(tier):
-        x = 32 + (2*i-tier+1)*4
-        draw.polygon([(x,52),(x+2,55),(x,58),(x-2,55)],fill=rim)
+    for index in range(tier):
+        x = 64 + (2*index-tier+1)*9
+        draw.polygon([(x,103),(x+4,108),(x,113),(x-4,108)],fill=edge)
     path.parent.mkdir(parents=True,exist_ok=True)
     im.save(path,optimize=True)
 
@@ -221,6 +242,7 @@ def bake(rarities, motifs, sources):
         write_json(ASSETS / f"models/item/{key}.json",
                    {"parent":"minecraft:item/generated","textures":{"layer0":f"augmentwild:item/{key}"}})
         item(key,f"item/{key}")
+    ARCANE["bake"](ROOT,ASSETS)
     for key in rarities:
         motif = motifs[key]
         model = json.loads((ASSETS / f"models/fx/{f'sig_{key}' if key in SIGNATURES['ACTIVE'] else motif}.json").read_text())
@@ -244,6 +266,7 @@ def verify(rarities, motifs, sources):
     keys |= {f"fx/{key}" for key in PALETTE} | {f"proc/{key}" for key in rarities}
     keys |= {f"gui/gauge_{filled}" for filled in range(5)} | {f"gui/{key}" for key in MENU_MARKS["marks"]()}
     keys |= {f"gui/tier_{tier}" for tier in RARITY_MARKS}
+    keys |= {f"gui/{key}" for key in ARCANE["GUI"]} | {f"fx/{key}" for key in ARCANE["components"](ROOT)}
     models = {p.relative_to(ASSETS / "items").with_suffix("").as_posix() for p in (ASSETS / "items").rglob("*.json")}
     assert models == keys, models ^ keys
     for key in keys:
@@ -264,7 +287,8 @@ def verify(rarities, motifs, sources):
             assert 1 <= len(model["elements"]) <= 32
             for part in model["elements"]:
                 assert all(0 <= a < b <= 16 for a,b in zip(part["from"],part["to"])), (key,part)
-                assert set(part["faces"]) == {"north","south","east","west","up","down"}
+                assert set(part["faces"]) in ({"north","south","east","west","up","down"},
+                                              {"north","south"},{"east","west"},{"up","down"})
                 assert all(face["texture"][1:] in model["textures"] for face in part["faces"].values())
                 if turn := part.get("rotation"):
                     assert turn["axis"] in ("x","y","z") and turn["angle"] in (-45,-22.5,22.5,45)
@@ -278,7 +302,9 @@ def verify(rarities, motifs, sources):
                     overlap = all(min(a["to"][i],b["to"][i]) > max(a["from"][i],b["from"][i])
                                   for i in range(3) if i != axis)
                     if overlap:
-                        assert all(a[side][axis] != b[side][axis] for side in ("from","to")), (key,a,b)
+                        orientations = (("west","east"),("down","up"),("north","south"))[axis]
+                        assert all(a[bound][axis] != b[bound][axis] or face not in a["faces"] or face not in b["faces"]
+                                   for bound,face in zip(("from","to"),orientations)), (key,a,b)
             assert len({tuple(part["from"] + part["to"]) for part in model["elements"]}) == len(model["elements"])
     tracks = {}
     for row in (ROOT/"src/main/resources/art-signatures.tsv").read_text().splitlines():
@@ -349,6 +375,7 @@ def main():
     font = ASSETS / "font/skills.json"
     if args.bake:
         write_json(font, skill_font())
+        skill_marks(ASSETS / "textures/gui/skill_state.png")
     assert json.loads(font.read_text()) == skill_font()
     verify(*data)
     package(args.output)
