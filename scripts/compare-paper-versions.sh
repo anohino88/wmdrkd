@@ -24,6 +24,12 @@ import sys
 from pathlib import Path
 
 root = Path(sys.argv[1])
+# Match the API dependency to the server binary in both disposable builds.
+gradle = root / "build.gradle.kts"
+text = gradle.read_text()
+assert "paper-api:26.3.build.+" in text
+gradle.write_text(text.replace("paper-api:26.3.build.+","paper-api:26.3.build.257-stable"))
+
 probe = root / "src/paperProbe/java/io/github/augmentwild/probe/SyntheticCombatLoad.java"
 text = probe.read_text()
 for original, replacement in (
