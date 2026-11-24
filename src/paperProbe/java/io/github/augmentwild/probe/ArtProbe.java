@@ -52,6 +52,7 @@ final class ArtProbe {
                 case "getUniqueId" -> pig.getUniqueId();
                 case "getWorld" -> pig.getWorld();
                 case "getLocation" -> pig.getLocation();
+                case "sendMessage" -> null;
                 case "getEyeLocation" -> pig.getEyeLocation();
                 case "hasLineOfSight" -> true;
                 case "getPersistentDataContainer" -> pig.getPersistentDataContainer();
@@ -126,15 +127,34 @@ final class ArtProbe {
                     require(quality.equals("LOW") ? visible == 0 : visible >= 1 && visible <= 3);
                     shownCount += visible;
                     peak = Math.max(peak,visible);
-                    for (int step = 0; step < 24; step++) tick.invoke(art);
+                    for (int step = 0; step < 80; step++) tick.invoke(art);
                     require(observed.stream().noneMatch(ItemDisplay::isValid));
                     cycles++;
                 }
                 Bukkit.getLogger().info("AW_ART_QUALITY quality=" + quality + " displays_created=" + shownCount
-                        + " peak_private_displays=" + peak + " adapter_ticks=2016 remaining=0");
+                        + " peak_private_displays=" + peak + " adapter_ticks=6720 remaining=0");
             }
             storage.set(qualityKey,org.bukkit.persistence.PersistentDataType.STRING,"STANDARD");
+            Class<?> trackClass = Class.forName("io.github.augmentwild.paper.ArtSignature",true,art.getClass().getClassLoader());
+            var parse = trackClass.getDeclaredMethod("parseFrames",String.class);
+            parse.setAccessible(true);
+            String pose = ",0,0,0,0,0,0,1,1,1";
+            require(((java.util.List<?>)parse.invoke(null,"0"+pose+";120"+pose)).size() == 2);
+            try {
+                parse.invoke(null,"0"+pose+";121"+pose);
+                throw new AssertionError("Timeline exceeded the authoring cap");
+            } catch (java.lang.reflect.InvocationTargetException failure) {
+                require(failure.getCause() instanceof java.io.IOException);
+            }
             var signatures = java.util.List.of("shadow_dash","earthquake_mage","time_rewind","void_lord","bomb_alchemy","duel_contract","calamity_giant");
+            var readTrack = trackClass.getDeclaredMethod("load",java.io.InputStream.class);
+            var visible = trackClass.getDeclaredMethod("visibleTicks");
+            readTrack.setAccessible(true);
+            visible.setAccessible(true);
+            try (var stream = host.getResource("art-signatures.tsv")) {
+                var tracks = (java.util.Map<?,?>) readTrack.invoke(null,stream);
+                for (String key : signatures) require((Integer) visible.invoke(tracks.get(key)) >= 12);
+            }
             var signatureDurations = new java.util.HashSet<Integer>();
             for (String key : signatures) {
                 preview.invoke(art,p,"augment/" + key,false);
@@ -143,7 +163,7 @@ final class ArtProbe {
                 var start = display.getTransformation().getTranslation();
                 int ticks = 0, transforms = 0;
                 var previous = display.getTransformation().getTranslation();
-                while (display.isValid() && ticks < 25) {
+                while (display.isValid() && ticks < 80) {
                     tick.invoke(art);
                     ticks++;
                     var next = display.getTransformation().getTranslation();
@@ -151,6 +171,17 @@ final class ArtProbe {
                     previous = next;
                 }
                 require(!display.isValid() && !start.equals(previous) && transforms >= 3);
+                int expected = switch (key) {
+                    case "shadow_dash" -> 28;
+                    case "earthquake_mage" -> 52;
+                    case "time_rewind", "calamity_giant" -> 56;
+                    case "void_lord" -> 50;
+                    case "bomb_alchemy" -> 30;
+                    case "duel_contract" -> 48;
+                    default -> throw new AssertionError(key);
+                };
+                require(ticks == expected + 2);
+                Bukkit.getLogger().info("AW_ART_PACING key=" + key + " interpolated_ticks=" + expected + " removed_at=" + ticks);
                 signatureDurations.add(ticks);
             }
             require(signatureDurations.size() >= 6);
@@ -165,7 +196,9 @@ final class ArtProbe {
             observed.clear();
             require(Boolean.FALSE.equals(cinema.invoke(art,p,"shadow_dash",denied,3,3,false)));
             require(Boolean.TRUE.equals(cinema.invoke(art,p,"shadow_dash",permitted,3,3,false)));
-            for (int i = 0; i < 38; i++) tick.invoke(art);
+            for (int i = 0; i < 50; i++) tick.invoke(art);
+            require(observed.size() == 1 && !observed.getFirst().isValid());
+            tick.invoke(art);
             require(observed.size() == 2 && !observed.getFirst().isValid() && observed.getLast().isValid());
             stopPreview.invoke(art,p);
             for (int i = 0; i < 36; i++) tick.invoke(art);
@@ -183,7 +216,7 @@ final class ArtProbe {
             for (int i = 0; i < 6; i++) tick.invoke(art);
             require(part.isValid() && !old.getLeftRotation().equals(part.getTransformation().getLeftRotation())
                     && !body.getTransformation().getLeftRotation().equals(part.getTransformation().getLeftRotation()));
-            for (int i = 0; i < 25; i++) tick.invoke(art);
+            for (int i = 0; i < 52; i++) tick.invoke(art);
             require(observed.stream().noneMatch(ItemDisplay::isValid));
             storage.set(qualityKey,org.bukkit.persistence.PersistentDataType.STRING,"STANDARD");
             Bukkit.getLogger().info("AW_ART_RIG_PASS private=true independent_rotation=true cleanup=true");
@@ -266,7 +299,7 @@ final class ArtProbe {
             inspect.setAccessible(true);
             var fixture = java.nio.file.Path.of(System.getProperty("augmentwild.pack.fixture"));
             var archive = inspect.invoke(null,fixture);
-            require(archive.toString().startsWith("Archive[release=8.0,"));
+            require(archive.toString().startsWith("Archive[release=8.1,"));
             var invalid = java.nio.file.Files.createTempFile("aw-invalid-pack-", ".zip");
             try {
                 java.nio.file.Files.writeString(invalid,"not a resource pack");

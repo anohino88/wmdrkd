@@ -29,11 +29,14 @@ final class ArtGallery implements PaperMenu {
     private int page;
     private Mode mode = Mode.PREVIEW;
     private enum Mode { PREVIEW, GRANT, REMOVE, CAST }
-    private static final int PAGE_SIZE = 42;
+    private static final int PAGE_SIZE = 41;
     private static final int[] DISTANCES = {3,8,16,24};
     private boolean simple;
     private int distanceIndex;
     private boolean repeat;
+    private static final List<ArtPacing> FILM_SPEEDS = List.of(
+            ArtPacing.BALANCED,ArtPacing.CINEMATIC,ArtPacing.SHOWCASE,ArtPacing.LEGACY);
+    private int speed;
     private boolean liveGuide;
 
     private ArtGallery(Player p, PaperArt art, PaperArt.Screen screen, String title, int rows,
@@ -131,6 +134,8 @@ final class ArtGallery implements PaperMenu {
             put(p,i,Material.AMETHYST_SHARD,model,art.label(key),key,key.startsWith("augment/") ? "현재 동작 · " + mode : "클릭 · " + key);
         }
         art.inlay(p,inventory,"bezel",45,53);
+        put(p,41,Material.CLOCK,"gui/gauge","촬영 속도 · " + FILM_SPEEDS.get(speed).label,
+                "정상 → 0.75× → 0.5× → 8.0 원본", "시그니처와 파트에 적용 · 공개 예고는 고정");
         put(p,42,Material.SPYGLASS,"gui/showcase","촬영 거리 · " + DISTANCES[distanceIndex] + "블록",
                 "시선 앞에 연출 배치 · 클릭하여 3 / 8 / 16 / 24블록 전환");
         put(p,43,Material.REPEATER,"gui/reroll","반복 · " + (repeat ? "3회" : "1회"),
@@ -161,7 +166,8 @@ final class ArtGallery implements PaperMenu {
             return;
         }
         if (!allowed.getAsBoolean()) return;
-        if (slot == 42) distanceIndex = (distanceIndex + 1) % DISTANCES.length;
+        if (slot == 41) speed = (speed + 1) % FILM_SPEEDS.size();
+        else if (slot == 42) distanceIndex = (distanceIndex + 1) % DISTANCES.length;
         else if (slot == 43) repeat = !repeat;
         else if (slot == 44) mode = Mode.values()[(mode.ordinal()+1) % Mode.values().length];
         else if (slot == 49) simple = !simple;
@@ -178,7 +184,7 @@ final class ArtGallery implements PaperMenu {
             var parts = key.split("/",2);
             if (parts[0].equals("cinema")) {
                 p.closeInventory();
-                if (!art.cinema(p,parts[1],allowed,DISTANCES[distanceIndex],repeat ? 3 : 1,simple))
+                if (!art.cinema(p,parts[1],allowed,DISTANCES[distanceIndex],repeat ? 3 : 1,simple,FILM_SPEEDS.get(speed)))
                     p.sendMessage("시야와 청크가 확보된 지점을 조준하세요.");
                 else p.sendMessage("피해나 보상이 없는 촬영 연출 · " + art.label(key));
                 p.sendMessage(Component.text("↩ 연출 실험실로 돌아가기").clickEvent(

@@ -25,17 +25,17 @@ import org.joml.Vector3f;
 final class CombatCinematics {
     enum Form {
         DANGER(0,"rune",Particle.FLAME,Sound.ENTITY_TNT_PRIMED,12),
-        GUARD(1,"fracture",Particle.CRIT,Sound.ITEM_SHIELD_BLOCK,8),
-        HIT(1,"impact",Particle.DAMAGE_INDICATOR,Sound.ENTITY_PLAYER_ATTACK_WEAK,6),
-        HEAVY(1,"impact",Particle.CRIT,Sound.ENTITY_PLAYER_ATTACK_STRONG,8),
-        CRITICAL(1,"fracture",Particle.CRIT,Sound.ENTITY_PLAYER_ATTACK_CRIT,9),
-        ARC(1,"crescent",Particle.SWEEP_ATTACK,Sound.ENTITY_PLAYER_ATTACK_SWEEP,8),
+        GUARD(1,"fracture",Particle.CRIT,Sound.ITEM_SHIELD_BLOCK,16),
+        HIT(1,"impact",Particle.DAMAGE_INDICATOR,Sound.ENTITY_PLAYER_ATTACK_WEAK,12),
+        HEAVY(1,"impact",Particle.CRIT,Sound.ENTITY_PLAYER_ATTACK_STRONG,18),
+        CRITICAL(1,"fracture",Particle.CRIT,Sound.ENTITY_PLAYER_ATTACK_CRIT,18),
+        ARC(1,"crescent",Particle.SWEEP_ATTACK,Sound.ENTITY_PLAYER_ATTACK_SWEEP,24),
         BOLT(1,"bolt",Particle.ELECTRIC_SPARK,Sound.BLOCK_AMETHYST_BLOCK_HIT,5),
         TRAIL(5,"bolt",Particle.END_ROD,null,4),
-        BLAST(1,"impact",Particle.CRIT,Sound.ENTITY_GENERIC_EXPLODE,10),
-        RETURN(2,"time",Particle.REVERSE_PORTAL,Sound.ENTITY_ENDERMAN_TELEPORT,9),
-        VOID(2,"helix",Particle.PORTAL,Sound.BLOCK_RESPAWN_ANCHOR_DEPLETE,10),
-        RESCUE(1,"fire",Particle.FLAME,Sound.ITEM_TOTEM_USE,12);
+        BLAST(1,"impact",Particle.CRIT,Sound.ENTITY_GENERIC_EXPLODE,32),
+        RETURN(2,"time",Particle.REVERSE_PORTAL,Sound.ENTITY_ENDERMAN_TELEPORT,28),
+        VOID(2,"helix",Particle.PORTAL,Sound.BLOCK_RESPAWN_ANCHOR_DEPLETE,28),
+        RESCUE(1,"fire",Particle.FLAME,Sound.ITEM_TOTEM_USE,32);
         final int priority, duration;
         final String model;
         final Particle particle;
@@ -47,9 +47,13 @@ final class CombatCinematics {
             this.sound = sound;
             this.duration = duration;
         }
+
+        boolean shortCue() { return this == DANGER || this == BOLT; }
+        int decayStart() { return duration * 3 / 5; }
     }
     private record Key(UUID source, UUID target, UUID origin, String effect, Form form, UUID world, int x, int y, int z) {}
-    private record Cue(Key key, Player source, Player target, Location point, Point coordinates, double radius, boolean particles, boolean sound) {}
+    private record Cue(Key key, Key visual, Player source, Player target, Location point, Point coordinates,
+                       double radius, boolean particles, boolean sound) {}
     private record View(Location feet, Location eye, Point coordinates) {
         View(Location feet, Location eye) { this(feet,eye,new Point(eye)); }
     }
@@ -73,6 +77,7 @@ final class CombatCinematics {
     private final Audience audience;
     private final Map<Key,Cue> pending = new LinkedHashMap<>();
     private final List<Display> active = new ArrayList<>();
+    private final java.util.Set<Key> lingeringModels = new java.util.HashSet<>();
     private record Audible(UUID listener, UUID source, Form form) {}
     private final Map<Audible,Long> recentSounds = new HashMap<>();
     private final Map<UUID,View> views = new HashMap<>();
@@ -80,6 +85,7 @@ final class CombatCinematics {
     private final Map<UUID,Integer> particleBudget = new HashMap<>();
     private final Map<UUID,Integer> ringBudget = new HashMap<>();
     private final Map<UUID,Integer> soundBudget = new HashMap<>();
+    private long plannedPublicTicks, playedPublicTicks, earlyPublicVisibility, earlyPublicBudget, earlyPublicCancel, mergedModels, budgetFallback;
     private long received, duplicate, dropped, fallback, sent, samples, sounds, updates, removed, hidden;
     private long tick, sightRays, ringRays, suppressedRingSamples;
 
@@ -125,7 +131,9 @@ final class CombatCinematics {
             recordDrop(lowest);
             pending.remove(lowest);
         }
-        pending.put(key,new Cue(key,source,target,point.clone(),new Point(point),radius,particles,sound));
+        Key visual = form.shortCue() || form == Form.TRAIL ? null
+                : new Key(key.source,key.target,null,key.effect,key.form,key.world,key.x,key.y,key.z);
+        pending.put(key,new Cue(key,visual,source,target,point.clone(),new Point(point),radius,particles,sound));
     }
 
     private boolean eligible(Player viewer) {
@@ -201,9 +209,9 @@ final class CombatCinematics {
             Display display = iterator.next();
             Cue cue = display.cue;
             long age = tick - display.started;
-            if (age >= cue.key.form.duration || !display.model.isValid() || !eligible(cue.source)
+            if (age >= cue.key.form.duration || !cue.point.isChunkLoaded() || !display.model.isValid() || !eligible(cue.source)
                     || !cue.point.getWorld().equals(cue.source.getWorld())) {
-                remove(display);
+                remove(display,age < cue.key.form.duration ? "visibility" : "complete");
                 iterator.remove();
                 continue;
             }
@@ -213,13 +221,13 @@ final class CombatCinematics {
                 hidden++;
                 return true;
             });
-            if (display.viewers.isEmpty()) { remove(display); iterator.remove(); continue; }
-            if (age == 1 || age == cue.key.form.duration / 2) {
-                display.model.setInterpolationDelay(0);
-                display.model.setInterpolationDuration(cue.key.form.duration / 2);
-                display.model.setTransformation(pose(cue,age == 1 ? 1 : 2));
-                updates++;
-            }
+            if (display.viewers.isEmpty()) { remove(display,"visibility"); iterator.remove(); continue; }
+            var form = cue.key.form;
+            int decay = form.shortCue() ? form.duration / 2 : form.decayStart();
+            if (age == 1) transform(display,1,form.shortCue() ? decay : 2);
+            else if (age == decay) transform(display,3,form.duration-decay-1);
+            else if (age == 3 && !form.shortCue()) transform(display,2,decay-3);
+
         }
         if (!pending.isEmpty()) {
             var batch = new ArrayList<>(pending.values());
@@ -229,10 +237,19 @@ final class CombatCinematics {
         }
     }
 
+    private void transform(Display display,int stage,int duration) {
+        display.model.setInterpolationDelay(0);
+        display.model.setInterpolationDuration(duration);
+        display.model.setTransformation(pose(display.cue,stage));
+        updates++;
+    }
+
     private void deliver(Cue cue) {
         if (!eligible(cue.source) || !cue.source.getWorld().equals(cue.point.getWorld()) || !cue.point.isChunkLoaded()) return;
         List<Player> viewers = new ArrayList<>();
-        Boolean needsModel = null;
+        boolean lingering = cue.visual != null && lingeringModels.contains(cue.visual);
+        Boolean needsModel = lingering ? false : null;
+        if (lingering) mergedModels++;
         boolean targetSaw = false;
         for (Player viewer : audience.nearby(cue.point)) {
             double distance = distanceSquared(viewer,cue);
@@ -240,7 +257,10 @@ final class CombatCinematics {
             if (viewer.getUniqueId().equals(cue.key.target)) targetSaw = true;
             boolean modelShown = false;
             if (cue.particles && cue.key.form != Form.TRAIL && modelFor(viewer,distance)) {
-                if (needsModel == null) needsModel = reserve(cue);
+                if (needsModel == null) {
+                    needsModel = reserve(cue);
+                    if (!needsModel) budgetFallback++;
+                }
                 if (needsModel) {
                     viewers.add(viewer);
                     modelShown = true;
@@ -267,15 +287,20 @@ final class CombatCinematics {
         if (viewers.isEmpty()) return;
         ItemDisplay model = spawn.model(cue.point,cue.key.form.model,pose(cue,0));
         active.add(new Display(cue,model,viewers,tick));
+        if (cue.visual != null) lingeringModels.add(cue.visual);
+        plannedPublicTicks += cue.key.form.duration;
         for (var viewer : viewers) viewer.showEntity(plugin,model);
     }
 
     private boolean reserve(Cue cue) {
         if (room.getAsBoolean()) return true;
-        var lower = active.stream().filter(display -> display.cue.key.form.priority > cue.key.form.priority)
+        var lower = active.stream().filter(display -> display.cue.key.form != Form.DANGER && tick - display.started >= 4
+                && (display.cue.key.form.priority > cue.key.form.priority
+                || display.cue.key.form.priority == cue.key.form.priority
+                   && tick - display.started >= display.cue.key.form.decayStart()))
                 .max(Comparator.comparingInt(display -> display.cue.key.form.priority));
         if (lower.isEmpty()) return false;
-        remove(lower.get());
+        remove(lower.get(),"budget");
         active.remove(lower.get());
         return true;
     }
@@ -283,9 +308,9 @@ final class CombatCinematics {
     private static Transformation pose(Cue cue,int stage) {
         var form = cue.key.form;
         float yaw = (float)Math.toRadians(-cue.point.getYaw());
-        float t = stage / 2f;
+        float t = switch (stage) { case 1 -> .5f; case 2 -> .67f; case 3 -> 1f; default -> 0f; };
         boolean contact = stage == 1;
-        float scale = stage == 0 ? .18f : contact ? 1f : .07f;
+        float scale = switch (stage) { case 1 -> 1f; case 2 -> .77f; case 3 -> .035f; default -> .32f; };
         var offset = new Vector3f();
         var rotation = new Quaternionf().rotateY(yaw);
         var shape = new Vector3f(scale);
@@ -305,9 +330,9 @@ final class CombatCinematics {
                 offset.y = contact ? .17f : .08f;
                 rotation.rotateY(.44f*t);
                 // Final shockwave stays wide while its height collapses, then the display expires.
-                shape.set(stage == 0 ? .25f : contact ? 1.75f : 2.25f,
-                        stage == 0 ? .14f : contact ? .64f : .035f,
-                        stage == 0 ? .25f : contact ? 1.75f : 2.25f);
+                shape.set(stage == 0 ? .45f : contact ? 1.75f : stage == 2 ? 2.24f : .16f,
+                        stage == 0 ? .18f : contact ? .64f : stage == 2 ? .28f : .03f,
+                        stage == 0 ? .45f : contact ? 1.75f : stage == 2 ? 2.24f : .16f);
             }
             case DANGER -> {
                 offset.y = .06f;
@@ -394,7 +419,17 @@ final class CombatCinematics {
         sounds++;
     }
 
-    private void remove(Display display) {
+    private void remove(Display display,String reason) {
+        long age = Math.min(display.cue.key.form.duration,tick-display.started);
+        playedPublicTicks += age;
+        if (age < display.cue.key.form.duration) {
+            switch (reason) {
+                case "budget" -> earlyPublicBudget++;
+                case "visibility" -> earlyPublicVisibility++;
+                default -> earlyPublicCancel++;
+            }
+        }
+        if (display.cue.visual != null) lingeringModels.remove(display.cue.visual);
         display.model.remove();
         removed++;
     }
@@ -405,7 +440,7 @@ final class CombatCinematics {
         pending.keySet().removeIf(matches);
         active.removeIf(display -> {
             if (!matches.test(display.cue.key)) return false;
-            remove(display);
+            remove(display,"cancelled");
             return true;
         });
     }
@@ -415,7 +450,7 @@ final class CombatCinematics {
         active.removeIf(display -> {
             var key = display.cue.key;
             if (!key.source.equals(player) || !key.effect.equals("lab")) return false;
-            remove(display);
+            remove(display,"cancelled");
             return true;
         });
     }
@@ -425,7 +460,7 @@ final class CombatCinematics {
         pending.keySet().removeIf(key -> key.source.equals(player) || player.equals(key.target));
         active.removeIf(display -> {
             if (display.cue.key.source.equals(player) || player.equals(display.cue.key.target)) {
-                remove(display);
+                remove(display,"cancelled");
                 return true;
             }
             display.viewers.removeIf(viewer -> {
@@ -434,7 +469,7 @@ final class CombatCinematics {
                 return true;
             });
             if (!display.viewers.isEmpty()) return false;
-            remove(display);
+            remove(display,"cancelled");
             return true;
         });
     }
@@ -442,7 +477,7 @@ final class CombatCinematics {
     void clear() {
         recentSounds.clear();
         pending.clear();
-        active.forEach(this::remove);
+        active.forEach(display -> remove(display,"cancelled"));
         active.clear();
         soundBudget.clear();
         ringBudget.clear();
@@ -452,6 +487,7 @@ final class CombatCinematics {
 
     void resetMetrics() {
         droppedByRole.clear();
+        plannedPublicTicks = playedPublicTicks = earlyPublicVisibility = earlyPublicBudget = earlyPublicCancel = mergedModels = budgetFallback = 0;
         sightRays = ringRays = suppressedRingSamples = 0;
         received = duplicate = dropped = fallback = sent = samples = sounds = updates = removed = hidden = 0;
     }
@@ -460,6 +496,10 @@ final class CombatCinematics {
         return "public_requests=" + received + " duplicate=" + duplicate + " queue_drops=" + dropped
                 + " fallback=" + fallback + " particle_calls=" + sent + " particle_count=" + samples
                 + " sound_calls=" + sounds + " public_updates=" + updates + " public_removed=" + removed + " visibility_revoked=" + hidden
+                + " public_plan=" + plannedPublicTicks + " public_played=" + playedPublicTicks
+                + " public_early_visibility=" + earlyPublicVisibility + " public_early_budget=" + earlyPublicBudget
+                + " public_early_cancel=" + earlyPublicCancel + " public_merged=" + mergedModels
+                + " public_budget_fallback=" + budgetFallback
                 + " sight_rays=" + sightRays + " ring_ray_candidates=" + ringRays + " ring_samples_over_send_cap=" + suppressedRingSamples
                 + " dropped_warning=" + droppedByRole.getOrDefault("warning",0L)
                 + " dropped_impact=" + droppedByRole.getOrDefault("impact",0L)

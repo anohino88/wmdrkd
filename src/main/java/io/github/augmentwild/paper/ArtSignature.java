@@ -17,6 +17,8 @@ import org.joml.Vector3f;
 record ArtSignature(String id, String shape, String sound, List<Frame> frames) {
     record Frame(int tick, float right, float up, float forward, float yaw, float pitch, float roll,
                  float width, float height, float depth) {
+        Frame at(int at) { return new Frame(at,right,up,forward,yaw,pitch,roll,width,height,depth); }
+
         Transformation pose(Location at) {
             float bearing = (float) Math.toRadians(-at.getYaw());
             Vector3f offset = offset(bearing);
@@ -41,6 +43,27 @@ record ArtSignature(String id, String shape, String sound, List<Frame> frames) {
         return new ArtSignature(id,shape,sound,frames.stream().map(frame -> new Frame(frame.tick(),frame.right(),
                 frame.up(),frame.forward(),frame.yaw(),frame.pitch(),frame.roll(),frame.width(),
                 frame.height()*factor,frame.depth())).toList());
+    }
+
+    ArtSignature paced(ArtPacing pacing,boolean rehearsal) {
+        var result = pacing.frames(frames,rehearsal);
+        return result == frames ? this : new ArtSignature(id,shape,sound,result);
+    }
+
+    // Conservative span at or above 70% of peak two-axis envelope at both ends.
+    int visibleTicks() {
+        double cutoff = frames.stream().mapToDouble(ArtSignature::envelope).max().orElse(0) * .70;
+        int ticks = 0;
+        for (int i = 1; i < frames.size(); i++) {
+            var a = frames.get(i-1);
+            var b = frames.get(i);
+            if (envelope(a) >= cutoff && envelope(b) >= cutoff) ticks += b.tick()-a.tick();
+        }
+        return ticks;
+    }
+
+    private static double envelope(Frame frame) {
+        return Math.max(frame.width()*frame.height(),Math.max(frame.depth()*frame.width(),frame.depth()*frame.height()));
     }
 
     int duration() { return frames.getLast().tick(); }
@@ -71,7 +94,7 @@ record ArtSignature(String id, String shape, String sound, List<Frame> frames) {
                 pose[i] = Float.parseFloat(number[i+1]);
                 if (!Float.isFinite(pose[i])) throw new java.io.IOException("Invalid art keyframe " + key);
             }
-            if ((frames.isEmpty() && tick != 0) || tick <= prior || tick > 30
+            if ((frames.isEmpty() && tick != 0) || tick <= prior || tick > ArtPacing.MAX_AUTHORED_TICKS
                     || pose[6] <= 0 || pose[7] <= 0 || pose[8] <= 0) {
                 throw new java.io.IOException("Invalid art keyframe " + key);
             }

@@ -59,6 +59,8 @@ public final class PaperArt implements Listener {
     private final Properties motifs = new Properties();
     private final Map<String,ArtSignature> signatures;
     private final Map<String,List<ArtRig.Part>> rigs;
+    private final Map<String,ArtSignature> legacySignatures;
+    private final Map<String,List<ArtRig.Part>> legacyRigs;
     private final boolean matchingPack;
     private final ResourcePackInfo pack;
     private final String settingsIssue;
@@ -69,9 +71,26 @@ public final class PaperArt implements Listener {
     private long tick;
     private boolean displaysAvailable = true;
 
+    private long plannedTicks, playedTicks, plannedHoldTicks, completedRoots, earlyRoots;
+    private final Map<String,Long> earlyReasons = new HashMap<>();
+    private long missingParts;
+
+    private void removeAnimation(Animation animation,String reason) {
+        int duration = animation.duration();
+        long age = Math.min(duration,tick-animation.began());
+        playedTicks += age;
+        if (age >= duration) completedRoots++;
+        else {
+            earlyRoots++;
+            earlyReasons.merge(reason,1L,Long::sum);
+        }
+        animation.remove();
+    }
+
     private record Layer(ItemDisplay display, ArtRig.Part part) {}
     private record Animation(Player viewer, ItemDisplay entity, Location at, long began, Motion motion,
                              List<Layer> ornaments, ArtSignature signature) {
+        int duration() { return signature == null ? motion.attack() + motion.release() : signature.duration(); }
         void remove() {
             entity.remove();
             ornaments.forEach(layer -> layer.display().remove());
@@ -190,7 +209,7 @@ public final class PaperArt implements Listener {
 
     String packStatus(Player p) {
         if (pack == null) return settingsIssue + " · 기본 표시";
-        if (!matchingPack) return "팩 SHA-1이 8.0 배포본과 다릅니다 · 기본 표시";
+        if (!matchingPack) return "팩 SHA-1이 8.1 배포본과 다릅니다 · 기본 표시";
         String mode = safe(p) ? " · 안전 모드" : "";
         if (loaded.contains(p.getUniqueId())) return "클라이언트 로드 응답 · " + pack.hash().substring(0,8) + mode;
         var status = reports.get(p.getUniqueId());
@@ -217,6 +236,8 @@ public final class PaperArt implements Listener {
             matchingPack = pack != null && pack.hash().equals(shipped);
             signatures = ArtSignature.load(plugin.getResource("art-signatures.tsv"));
             rigs = ArtRig.load(plugin.getResource("arcane-parts.tsv"),signatures);
+            legacySignatures = ArtSignature.load(plugin.getResource("art-signatures-80.tsv"));
+            legacyRigs = ArtRig.load(plugin.getResource("arcane-parts-80.tsv"),legacySignatures);
         } catch (IOException failure) {
             throw new IllegalStateException("Could not read AugmentWild artwork settings",failure);
         }
@@ -823,6 +844,21 @@ public final class PaperArt implements Listener {
         signatureAt(player,"stacking",near(player),false,signature.height(.65f + .16f * Math.clamp(members,1,5)));
     }
 
+    void repeatGrowth(Player player,String id) {
+        if (!noVisual.contains(id) && custom(player) && PlayerUi.quality(player) != PlayerUi.Quality.LOW
+                && !PlayerUi.reducedFlash(player)) {
+            String motif = SIGNATURES.getOrDefault(id,"growth");
+            render(player,near(player),motif,MOTIONS.getOrDefault(motif,PULSE));
+        }
+    }
+
+    void endSignature(UUID owner,String id) {
+        var signature = signatures.get(id);
+        if (signature == null) return;
+        var animation = cues.remove(new PrivateCue(owner,"sig_" + signature.shape()));
+        if (animation != null) removeAnimation(animation,"effect_end");
+    }
+
     void growth(Player player, String id, boolean visible) {
         if (!visible) return;
         if (signatures.containsKey(id)) {
@@ -934,10 +970,14 @@ public final class PaperArt implements Listener {
             return true;
         }
         var iterator = cues.values().iterator();
-        if (!iterator.hasNext()) return false;
-        iterator.next().remove();
-        iterator.remove();
-        return true;
+        while (iterator.hasNext()) {
+            var animation = iterator.next();
+            if (animation.signature() != null && tick - animation.began() < 10) continue;
+            removeAnimation(animation,"budget");
+            iterator.remove();
+            return true;
+        }
+        return false;
     }
 
     private void render(Player viewer, Location at, String motif, Motion motion) {
@@ -945,17 +985,18 @@ public final class PaperArt implements Listener {
     }
 
     private void render(Player viewer, Location at, String motif, Motion motion, ArtSignature signature) {
-        render(viewer,at,motif,motion,signature,false);
+        render(viewer,at,motif,motion,signature,false,signature == null ? ArtPacing.BALANCED : PlayerUi.pacing(viewer));
     }
 
-    private void render(Player viewer, Location at, String motif, Motion motion, ArtSignature signature, boolean preview) {
+    private void render(Player viewer, Location at, String motif, Motion motion, ArtSignature source, boolean preview, ArtPacing pacing) {
         UUID id = viewer.getUniqueId();
         if (pack == null || !custom(viewer) || !displaysAvailable || !playable.test(viewer)
                 || !PlayerUi.enabled(viewer,PlayerUi.Option.PARTICLES)
                 || !at.getWorld().equals(viewer.getWorld()) || !at.isChunkLoaded()) return;
+        var signature = source == null ? null : source.paced(pacing,preview);
         var key = new PrivateCue(id,preview ? "cinema/" + motif : motif);
         var previous = cues.remove(key);
-        if (previous != null) previous.remove();
+        if (previous != null) removeAnimation(previous,"replaced");
         if (displayCount() >= MAX_DISPLAYS) return;
         ItemDisplay display = null;
         List<Layer> ornaments = new ArrayList<>();
@@ -965,16 +1006,22 @@ public final class PaperArt implements Listener {
             int layers = quality == PlayerUi.Quality.ULTRA ? 2 : quality == PlayerUi.Quality.HIGH ? 1 : 0;
             if (layers > 0 && signature != null && !PlayerUi.reducedFlash(viewer) && Bukkit.getAverageTickTime() < 45
                     && viewer.getLocation().distanceSquared(at) <= 16 * 16) {
-                var parts = rigs.getOrDefault(signature.id(),List.of());
+                var parts = (pacing == ArtPacing.LEGACY ? legacyRigs : rigs)
+                        .getOrDefault(signature.id(),List.of());
                 int count = Math.min(Math.min(layers,parts.size()),MAX_DISPLAYS - 1 - displayCount());
+                missingParts += Math.min(layers,parts.size()) - count;
                 for (int index = 0; index < count; index++) {
-                    var part = parts.get(index);
+                    var original = parts.get(index);
+                    var part = new ArtRig.Part(original.model(),pacing.frames(original.frames(),preview));
                     var satellite = spawn(at,part.model(),part.pose(signature,at,part.frames().getFirst()));
                     ornaments.add(new Layer(satellite,part));
                     viewer.showEntity(plugin,satellite);
                 }
             }
-            cues.put(key,new Animation(viewer,display,at,tick,motion,ornaments,signature));
+            var animation = new Animation(viewer,display,at,tick,motion,ornaments,signature);
+            cues.put(key,animation);
+            plannedTicks += animation.duration();
+            if (signature != null) plannedHoldTicks += signature.visibleTicks();
             if (motif.startsWith("proc/")) nextCue.put(key,tick + 20);
             viewer.showEntity(plugin,display);
             peakDisplays = Math.max(peakDisplays,displayCount());
@@ -1018,6 +1065,14 @@ public final class PaperArt implements Listener {
     String metrics() {
         return "display_spawns=" + displaySpawns + " display_transforms=" + displayUpdates
                 + " peak_displays=" + peakDisplays + " active_displays=" + displayCount()
+                + " planned_root_ticks=" + plannedTicks + " played_root_ticks=" + playedTicks
+                + " planned_visible_ticks=" + plannedHoldTicks + " completed_roots=" + completedRoots
+                + " early_roots=" + earlyRoots + " early_budget=" + earlyReasons.getOrDefault("budget",0L)
+                + " early_replaced=" + earlyReasons.getOrDefault("replaced",0L)
+                + " early_cancelled=" + earlyReasons.getOrDefault("cancelled",0L)
+                + " early_effect_end=" + earlyReasons.getOrDefault("effect_end",0L)
+                + " early_visibility_or_lifecycle=" + earlyReasons.getOrDefault("visibility_or_lifecycle",0L)
+                + " missing_parts=" + missingParts
                 + " private_particle_sends=" + privateParticles + " " + combat.metrics();
     }
 
@@ -1041,16 +1096,16 @@ public final class PaperArt implements Listener {
                 var entity = animation.entity();
                 Player player = animation.viewer();
                 var signature = animation.signature();
-                int duration = signature == null ? animation.motion().attack() + animation.motion().release() : signature.duration();
-                if (age >= duration + 1 || !animation.at().isChunkLoaded() || !entity.isValid() || !player.isOnline() || !playable.test(player) || !custom(player)
+                int duration = animation.duration();
+                if (age >= duration + 2 || !animation.at().isChunkLoaded() || !entity.isValid() || !player.isOnline() || !playable.test(player) || !custom(player)
                         || !player.getWorld().equals(animation.at().getWorld())
                         || !PlayerUi.enabled(player,PlayerUi.Option.PARTICLES)) {
-                    animation.remove();
+                    removeAnimation(animation,"visibility_or_lifecycle");
                     return true;
                 }
                 for (var iterator = animation.ornaments().iterator(); iterator.hasNext();) {
                     var layer = iterator.next();
-                    if (!layer.display().isValid() || age > layer.part().frames().getLast().tick()
+                    if (!layer.display().isValid() || age > layer.part().frames().getLast().tick() + 1
                             || player.getLocation().distanceSquared(animation.at()) > 16 * 16
                             || PlayerUi.reducedFlash(player) || PlayerUi.quality(player).ordinal() < PlayerUi.Quality.HIGH.ordinal()) {
                         layer.display().remove();
@@ -1106,16 +1161,21 @@ public final class PaperArt implements Listener {
     }
 
     private record Preview(Player player, String demo, java.util.function.BooleanSupplier allowed,
-                           Location at, long began, int repeats, boolean simple) {}
+                           Location at, long began, int repeats, boolean simple, ArtPacing pacing, int duration) {}
     private final Map<UUID,Preview> previews = new HashMap<>();
 
     void demo(Player player,String demo,java.util.function.BooleanSupplier allowed) {
         var location = near(player);
-        previews.put(player.getUniqueId(),new Preview(player,demo,allowed,location,tick,1,false));
+        previews.put(player.getUniqueId(),new Preview(player,demo,allowed,location,tick,1,false,ArtPacing.BALANCED,36));
     }
 
     boolean cinema(Player player, String id, java.util.function.BooleanSupplier allowed,
                    int distance, int repeats, boolean simple) {
+        return cinema(player,id,allowed,distance,repeats,simple,ArtPacing.BALANCED);
+    }
+
+    boolean cinema(Player player, String id, java.util.function.BooleanSupplier allowed,
+                   int distance, int repeats, boolean simple, ArtPacing pacing) {
         if (!allowed.getAsBoolean()) return false;
         Location eye = player.getEyeLocation();
         var ahead = eye.getDirection();
@@ -1126,7 +1186,11 @@ public final class PaperArt implements Listener {
         Location point = eye.clone().add(ahead.multiply(range - .01));
         if (!CombatCinematics.loadedCorridor(eye,point) || !player.hasLineOfSight(point)) return false;
         removeCinema(player.getUniqueId());
-        previews.put(player.getUniqueId(),new Preview(player,"cinema/" + id,allowed,point,tick,repeats,simple));
+        var signature = (pacing == ArtPacing.LEGACY ? legacySignatures : signatures).get(id);
+        int duration = signature == null ? CombatCinematics.Form.valueOf(id.toUpperCase(Locale.ROOT)).duration
+                : signature.paced(pacing,true).duration();
+        previews.put(player.getUniqueId(),new Preview(player,"cinema/" + id,allowed,point,tick,repeats,simple,pacing,duration));
+        player.sendMessage("촬영 길이 " + duration + "틱 · " + pacing.label + " · 형성 → 동작 → 유지 → 감쇠 → 종료");
         return true;
     }
 
@@ -1138,18 +1202,19 @@ public final class PaperArt implements Listener {
         }
         long age = tick - preview.began;
         if (preview.demo.startsWith("cinema/")) {
-            if (age >= 36L * preview.repeats || !preview.at.isChunkLoaded()) {
+            int interval = preview.duration + 22;
+            if (age >= (long)interval * preview.repeats || !preview.at.isChunkLoaded()) {
                 removeCinema(p.getUniqueId());
                 return false;
             }
-            if (age % 36 != 1) return true;
+            if (age % interval != 1) return true;
             if (!CombatCinematics.loadedCorridor(p.getEyeLocation(),preview.at) || !p.hasLineOfSight(preview.at)) return false;
             String id = preview.demo.substring("cinema/".length());
-            var signature = signatures.get(id);
+            var signature = (preview.pacing == ArtPacing.LEGACY ? legacySignatures : signatures).get(id);
             if (signature != null) {
                 if (preview.simple || !custom(p) || PlayerUi.quality(p) == PlayerUi.Quality.LOW || PlayerUi.reducedFlash(p))
                     spark(p,preview.at,signatureParticle(signature.shape()));
-                else render(p,preview.at,"sig_" + signature.shape(),PULSE,signature,true);
+                else render(p,preview.at,"sig_" + signature.shape(),PULSE,signature,true,preview.pacing);
                 if (!preview.simple) locationSound(p,preview.at,signature.sound(),cueFallback(signature.sound()));
             } else {
                 var form = CombatCinematics.Form.valueOf(id.toUpperCase(Locale.ROOT));
@@ -1202,7 +1267,7 @@ public final class PaperArt implements Listener {
     private void removeCue(UUID id, boolean cinemaOnly) {
         cues.entrySet().removeIf(entry -> {
             if (!entry.getKey().owner.equals(id) || cinemaOnly && !entry.getKey().model.startsWith("cinema/")) return false;
-            entry.getValue().remove();
+            removeAnimation(entry.getValue(),"cancelled");
             return true;
         });
     }
@@ -1237,5 +1302,7 @@ public final class PaperArt implements Listener {
         supply.clear();
         displaySpawns = displayUpdates = privateParticles = 0;
         peakDisplays = 0;
+        plannedTicks = playedTicks = plannedHoldTicks = completedRoots = earlyRoots = missingParts = 0;
+        earlyReasons.clear();
     }
 }

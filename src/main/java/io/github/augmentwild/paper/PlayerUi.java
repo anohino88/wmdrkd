@@ -61,11 +61,24 @@ public final class PlayerUi implements Listener {
         try { return Quality.valueOf(value); }
         catch (IllegalArgumentException ignored) { return Quality.STANDARD; }
     }
+    private static final List<ArtPacing> LIVE_PACING = List.of(ArtPacing.FAST,ArtPacing.BALANCED,ArtPacing.CINEMATIC);
+    private static final NamespacedKey PACING = new NamespacedKey("augmentwild","art_pacing");
+    static ArtPacing pacing(Player player) {
+        String saved = player.getPersistentDataContainer().getOrDefault(PACING,PersistentDataType.STRING,"BALANCED");
+        return switch (saved) {
+            case "FAST" -> ArtPacing.FAST;
+            case "CINEMATIC" -> ArtPacing.CINEMATIC;
+            default -> ArtPacing.BALANCED;
+        };
+    }
+
     private static void qualityButton(Player p, Menu menu) {
         menu.inventory.setItem(19,PaperIntel.item(PaperIntel.card(Material.ENDER_EYE,"지속 오라 · " + (auras(p) ? "ON" : "OFF"))));
         menu.inventory.setItem(21,PaperIntel.item(PaperIntel.card(Material.GLOWSTONE_DUST,"발광 최소화 · " + (reducedFlash(p) ? "ON" : "OFF"))));
         if (menu.art != null) menu.inventory.setItem(23,PaperIntel.item(PaperIntel.card(Material.SHIELD,
                 "그래픽 안전 모드 · " + (PaperArt.safe(p) ? "켜짐" : "꺼짐"),"기본 글꼴·아이템·전투 연출")));
+        menu.inventory.setItem(25,PaperIntel.item(PaperIntel.card(Material.CLOCK,"연출 속도 · " + pacing(p),
+                "본인 장식과 잔여 연출 · " + pacing(p).label, "공개 타격·위험 예고는 서버 공통")));
         menu.inventory.setItem(24,PaperIntel.item(PaperIntel.card(Material.AMETHYST_SHARD,
                 "연출 품질 · " + quality(p), "클릭 · 다음 단계")));
     }
@@ -194,6 +207,12 @@ public final class PlayerUi implements Listener {
             var levels = Quality.values();
             var next = levels[(quality(p).ordinal() + 1) % levels.length];
             p.getPersistentDataContainer().set(QUALITY,PersistentDataType.STRING,next.name());
+            qualityButton(p,menu);
+            return;
+        }
+        if (slot == 25) {
+            var next = LIVE_PACING.get((LIVE_PACING.indexOf(pacing(p)) + 1) % LIVE_PACING.size());
+            p.getPersistentDataContainer().set(PACING,PersistentDataType.STRING,next.name());
             qualityButton(p,menu);
             return;
         }

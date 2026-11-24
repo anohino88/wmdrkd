@@ -211,6 +211,59 @@ if arcane:
             name,_,_,_,track = line.split("|")
             parts.setdefault(name[4:-2],[]).append((name,[tuple(map(float,p.split(","))) for p in track.split(";")]))
 active = list(keys)[:7]
+if "--pacing" in args[3:]:
+    # Run the same authored frames as Paper and keep a neutral 1.8-block target in the scene.
+    fixture = fight_stage()
+    camera.ortho_scale = 53
+    overview = Vector((18,-25,23))
+    scene.render.resolution_x = scene.render.resolution_y = 240
+    scene.cycles.samples = 6
+    near_views = (3,8,16,24)
+    linked = active + ["bomb_impact","steel_heart","steel_king","calamity_train","thousand_swords"]
+    if "--only" in args[3:]:
+        linked = [args[args.index("--only") + 1]]
+    old_keys = {}
+    old_parts = {}
+    for path, target in (("art-signatures-80.tsv",old_keys),("arcane-parts-80.tsv",old_parts)):
+        for line in (project/"src/main/resources"/path).read_text().splitlines():
+            if line and not line.startswith("#"):
+                fields = line.split("|")
+                frames = [tuple(map(float,f.split(","))) for f in fields[-1].split(";")]
+                if target is old_keys:
+                    target[fields[0]] = (fields[1],frames)
+                else:
+                    target.setdefault(fields[0][4:-2],[]).append((fields[0],frames))
+    for label,tracks,rig in (("80",old_keys,old_parts),("81",keys,parts)):
+        for key in linked:
+            shape, track = tracks[key]
+            def group(name, data, anchor=None):
+                collection, handle = create(current,label+" · "+name,model(current,"fx/"+name))
+                animate(handle,data,anchor)
+                return collection
+            groups = [group("sig_"+shape,track)]
+            groups += [group(name,data,track) for name,data in rig.get(key,[])]
+            eye.location = overview
+            eye.rotation_euler = (Vector((0,0,7))-overview).to_track_quat("-Z","Y").to_euler()
+            end = int(track[-1][0])
+            for tick in sorted(set(range(0,end+1,2))|{end}):
+                scene.frame_set(tick+1)
+                render(f"pacing-{label}-{key}-{tick:03}")
+            if label == "81":
+                scene.frame_set(int(track[-3][0])+1)
+                camera.type = "PERSP"
+                camera.angle = math.radians(70)
+                for distance in near_views:
+                    eye.location = (0,-distance*16,26)
+                    eye.rotation_euler = (Vector((0,0,10))-eye.location).to_track_quat("-Z","Y").to_euler()
+                    render(f"distance-{key}-{distance}")
+                camera.type = "ORTHO"
+            for collection in groups:
+                collection.hide_render = True
+    eye.location = overview
+    eye.rotation_euler = (Vector((0,0,7))-overview).to_track_quat("-Z","Y").to_euler()
+    render("pacing-idle")
+    sys.exit(0)
+
 growth = [key for key in keys if key not in active and key not in ("bomb_impact","void_collapse")]
 for key in active + (growth if ascension else []) + (["crescent","impact","fracture"] if reforge else ["crescent"]):
     shape = keys[key][0] if key in keys else key

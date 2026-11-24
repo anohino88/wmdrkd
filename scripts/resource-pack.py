@@ -38,7 +38,7 @@ SOURCE_SOUNDS = {"cast", "evolve", "supply"}
 SOUNDS = SOURCE_SOUNDS | SYNTH["CUES"].keys()
 RARITY_MARKS = dict(silver="#b7cbe0", gold="#ffd077", prismatic="#eab8ff")
 PACK_DIGEST = ROOT / "src/main/resources/art-pack.sha1"
-RELEASE_METADATA = {"release":"8.0","minecraft":"26.3","inventory_title":"native"}
+RELEASE_METADATA = {"release":"8.1","minecraft":"26.3","inventory_title":"native"}
 PACK_METADATA = {"pack": {"description": "AugmentWild • combat art for Java 26.3",
                           "min_format": [97, 1], "max_format": [97, 1]}}
 
@@ -314,7 +314,7 @@ def verify(rarities, motifs, sources):
         offsets = [tuple(map(float,frame.split(","))) for frame in frames.split(";")]
         assert key not in tracks and f"fx/sig_{shape}" in keys and sound in SOUNDS
         assert len(offsets) >= 4 and all(len(frame) == 10 for frame in offsets)
-        assert offsets[0][0] == 0 and offsets[-1][0] <= 30
+        assert offsets[0][0] == 0 and offsets[-1][0] <= 120
         assert all(a[0] < b[0] for a,b in itertools.pairwise(offsets))
         tracks[key] = offsets
     active = [tracks[key] for key in SIGNATURES["ACTIVE"]]

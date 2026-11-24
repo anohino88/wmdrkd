@@ -1753,6 +1753,7 @@ final class PaperOfficialCombat implements Listener {
             } else if (zone.augment().equals("earthquake_mage")) {
                 chain.root(() -> eruptPath(player, state, zone));
             } else {
+                art.cancelWarning(player.getUniqueId(),zone.augment(),null);
                 chain.root(() -> area(player, zone.start(), catalog.setting("judgment-radius"), zone.augment(),
                         zone.damage(), target -> { }));
                 particle(player, state, Particle.EXPLOSION, zone.start().clone().add(0, 1, 0));
@@ -1821,6 +1822,7 @@ final class PaperOfficialCombat implements Listener {
 
     private void removeBomb(Fighter state) {
         if (state.bomb == null) return;
+        art.endSignature(state.owner,"bomb_alchemy");
         state.bomb.remove();
         state.bomb = null;
     }
@@ -2413,17 +2415,18 @@ final class PaperOfficialCombat implements Listener {
             case "center_of_universe", "infernal_conductor" -> state.hellLord ? "hell_lord" : null;
             default -> AugmentCombinations.UNIQUE.containsKey(id) ? id : null;
         };
-        if (synergy != null) synergyVisual(player, state, synergy);
+        if (synergy != null) synergyVisual(player,state,synergy,false);
     }
 
-    private void synergyVisual(Player player, Fighter state, String synergy) {
+    private void synergyVisual(Player player, Fighter state, String synergy,boolean first) {
         long time = millis();
         if (time - state.lastVisual.getOrDefault(synergy, -1000L) < 1000) return;
         state.lastVisual.put(synergy, time);
         int color = catalog.synergies.getInt(synergy + ".color");
         Location center = player.getLocation().add(0, 1, 0);
         if (catalog.synergies.getBoolean(synergy + ".particles")) {
-            art.growth(player,synergy,true);
+            if (first) art.growth(player,synergy,true);
+            else art.repeatGrowth(player,synergy);
             var dust = new Particle.DustOptions(org.bukkit.Color.fromRGB(color), 1);
             for (int i = 0; i < 8 && particleAvailable(state); i++) {
                 double angle = i * Math.PI / 4;
@@ -2442,7 +2445,7 @@ final class PaperOfficialCombat implements Listener {
         if (player == null) return;
         var state = fighter(id);
         if (!state.growthNotices.add(synergy) || !PlayerUi.enabled(player,PlayerUi.Option.GROWTH)) return;
-        synergyVisual(player, state, synergy);
+        synergyVisual(player,state,synergy,true);
         String message = "시너지 활성화 · " + catalog.synergies.getString(synergy + ".name", synergy);
         if (state.completingMember != null && AugmentCombinations.UNIQUE.get(synergy).contains(state.completingMember))
             player.sendMessage(message + " · 마지막 구성원 " + rule(state.completingMember).definition().name());
