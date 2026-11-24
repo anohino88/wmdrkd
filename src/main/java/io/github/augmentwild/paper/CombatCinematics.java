@@ -59,7 +59,7 @@ final class CombatCinematics {
         Iterable<? extends Player> nearby(Location location);
     }
 
-    private static final int RANGE = 24, MAX_QUEUED = 36, MAX_SOUNDS = 2;
+    private static final int RANGE = 24, MAX_QUEUED = 36, MAX_SOUNDS = 2, MAX_COSMETIC_PARTICLES = 16;
     private final JavaPlugin plugin;
     private final Predicate<Player> playable, packed;
     private final BooleanSupplier running, room;
@@ -76,7 +76,7 @@ final class CombatCinematics {
     private final Map<UUID,Integer> ringBudget = new HashMap<>();
     private final Map<UUID,Integer> soundBudget = new HashMap<>();
     private long received, duplicate, dropped, fallback, sent, samples, sounds, updates, removed, hidden;
-    private long tick;
+    private long tick, sightRays, ringRays, suppressedRingSamples;
 
     CombatCinematics(JavaPlugin plugin, Predicate<Player> playable, Predicate<Player> packed,
                       BooleanSupplier running, BooleanSupplier room, Spawn spawn, Audience audience) {
@@ -127,8 +127,9 @@ final class CombatCinematics {
         return viewer.isOnline() && viewer.getGameMode() != GameMode.SPECTATOR && playable.test(viewer);
     }
 
-    private static boolean sees(Location eye, Location at) {
+    static boolean loadedCorridor(Location eye, Location at) {
         var world = eye.getWorld();
+        if (!world.equals(at.getWorld())) return false;
         int minX = Math.min(eye.getBlockX(),at.getBlockX()) >> 4;
         int maxX = Math.max(eye.getBlockX(),at.getBlockX()) >> 4;
         int minZ = Math.min(eye.getBlockZ(),at.getBlockZ()) >> 4;
@@ -137,9 +138,16 @@ final class CombatCinematics {
         for (int x = minX; x <= maxX; x++)
             for (int z = minZ; z <= maxZ; z++)
                 if (!world.isChunkLoaded(x,z)) return false;
+        return true;
+    }
+
+    private boolean sees(Location eye, Location at) {
+        if (!loadedCorridor(eye,at)) return false;
         var delta = at.toVector().subtract(eye.toVector());
         double length = delta.length();
-        return length < .05 || world.rayTraceBlocks(eye,delta.multiply(1 / length),
+        if (length < .05) return true;
+        sightRays++;
+        return eye.getWorld().rayTraceBlocks(eye,delta.multiply(1 / length),
                 length - .04,FluidCollisionMode.NEVER,true) == null;
     }
 
@@ -147,19 +155,23 @@ final class CombatCinematics {
         return cueSight.computeIfAbsent(new SightRay(eye,point),ray -> sees(ray.from(),ray.to()));
     }
 
+    private double distanceSquared(Player viewer, Cue cue) {
+        if (!eligible(viewer) || !viewer.getWorld().equals(cue.point.getWorld())) return Double.POSITIVE_INFINITY;
+        return viewer.getLocation().distanceSquared(cue.point);
+    }
+
     private boolean visible(Player viewer, Cue cue) {
-        if (!eligible(viewer) || !viewer.getWorld().equals(cue.point.getWorld())
-                || viewer.getLocation().distanceSquared(cue.point) > RANGE * RANGE) return false;
         if (cue.target != null && !viewer.getUniqueId().equals(cue.key.target)
                 && (!viewer.canSee(cue.target) || cue.target.isInvisible()
                     || !cue.target.getWorld().equals(cue.point.getWorld()))) return false;
         if (viewer.getUniqueId().equals(cue.key.source)) return seesCue(viewer.getEyeLocation(),cue.point);
         if (!viewer.canSee(cue.source) || cue.source.isInvisible()) return false;
         var eye = viewer.getEyeLocation();
-        Location source = cue.source.getEyeLocation();
         var pair = new Pair(viewer.getUniqueId(),cue.key.source);
-        return sourceSight.computeIfAbsent(pair,k -> eye.distanceSquared(source) <= RANGE * RANGE && sees(eye,source))
-                && seesCue(eye,cue.point);
+        return sourceSight.computeIfAbsent(pair,k -> {
+            Location source = cue.source.getEyeLocation();
+            return eye.distanceSquared(source) <= RANGE * RANGE && sees(eye,source);
+        }) && seesCue(eye,cue.point);
     }
 
     int size() { return active.size(); }
@@ -184,7 +196,7 @@ final class CombatCinematics {
                 continue;
             }
             display.viewers.removeIf(viewer -> {
-                if (visible(viewer,cue) && modelFor(viewer,cue)) return false;
+                if (modelFor(viewer,distanceSquared(viewer,cue)) && visible(viewer,cue)) return false;
                 viewer.hideEntity(plugin,display.model);
                 hidden++;
                 return true;
@@ -211,10 +223,11 @@ final class CombatCinematics {
         Boolean needsModel = null;
         boolean targetSaw = false;
         for (Player viewer : audience.nearby(cue.point)) {
-            if (!visible(viewer,cue)) continue;
+            double distance = distanceSquared(viewer,cue);
+            if (distance > RANGE * RANGE || !visible(viewer,cue)) continue;
             if (viewer.getUniqueId().equals(cue.key.target)) targetSaw = true;
             boolean modelShown = false;
-            if (cue.particles && cue.key.form != Form.TRAIL && modelFor(viewer,cue)) {
+            if (cue.particles && cue.key.form != Form.TRAIL && modelFor(viewer,distance)) {
                 if (needsModel == null) needsModel = reserve(cue);
                 if (needsModel) {
                     viewers.add(viewer);
@@ -318,11 +331,12 @@ final class CombatCinematics {
         return new Transformation(offset,rotation,shape,new Quaternionf());
     }
 
-    private boolean modelFor(Player viewer,Cue cue) {
+    private boolean modelFor(Player viewer,double distance) {
+        if (distance > RANGE * RANGE) return false;
         var quality = PlayerUi.quality(viewer);
         int range = quality == PlayerUi.Quality.STANDARD ? 17 : RANGE;
-        return packed.test(viewer) && !PlayerUi.reducedFlash(viewer) && PlayerUi.enabled(viewer,PlayerUi.Option.PARTICLES)
-                && quality != PlayerUi.Quality.LOW && viewer.getLocation().distanceSquared(cue.point) <= range * range;
+        return distance <= range * range && quality != PlayerUi.Quality.LOW && packed.test(viewer)
+                && !PlayerUi.reducedFlash(viewer) && PlayerUi.enabled(viewer,PlayerUi.Option.PARTICLES);
     }
 
     private void ring(Player viewer,Cue cue) {
@@ -332,18 +346,26 @@ final class CombatCinematics {
         if (count <= 0) return;
         ringBudget.merge(id,count,Integer::sum);
         var eye = viewer.getEyeLocation();
+        boolean bypassesSendCap = cue.key.form.particle == Form.DANGER.particle;
         for (int index = 0; index < count; index++) {
+            // Reserve the same samples as before, but do not ray trace particles that the send cap rejects.
+            if (!bypassesSendCap && particleBudget.getOrDefault(id,0) >= MAX_COSMETIC_PARTICLES) {
+                suppressedRingSamples += count - index;
+                break;
+            }
             double angle = Math.TAU * index / count;
             var at = cue.point.clone().add(cue.radius*Math.cos(angle),.15,cue.radius*Math.sin(angle));
-            if (at.isChunkLoaded() && eye.distanceSquared(at) <= RANGE*RANGE && sees(eye,at))
-                particle(viewer,cue.key.form.particle,at,1);
+            if (at.isChunkLoaded() && eye.distanceSquared(at) <= RANGE * RANGE) {
+                ringRays++;
+                if (sees(eye,at)) particle(viewer,cue.key.form.particle,at,1);
+            }
         }
     }
 
     private void particle(Player viewer,Particle particle,Location at,int count) {
         // An explicit ring is a warning channel. Cosmetic hits and trails share a separate cap.
         var id = viewer.getUniqueId();
-        if (particle != Form.DANGER.particle && particleBudget.getOrDefault(id,0) >= 16) return;
+        if (particle != Form.DANGER.particle && particleBudget.getOrDefault(id,0) >= MAX_COSMETIC_PARTICLES) return;
         particleBudget.merge(id,1,Integer::sum);
         viewer.spawnParticle(particle,at,count,0,0,0,0);
         sent++;
@@ -371,6 +393,16 @@ final class CombatCinematics {
         pending.keySet().removeIf(matches);
         active.removeIf(display -> {
             if (!matches.test(display.cue.key)) return false;
+            remove(display);
+            return true;
+        });
+    }
+
+    void cancelPreview(UUID player) {
+        pending.keySet().removeIf(key -> key.source.equals(player) && key.effect.equals("lab"));
+        active.removeIf(display -> {
+            var key = display.cue.key;
+            if (!key.source.equals(player) || !key.effect.equals("lab")) return false;
             remove(display);
             return true;
         });
@@ -409,6 +441,7 @@ final class CombatCinematics {
 
     void resetMetrics() {
         droppedByRole.clear();
+        sightRays = ringRays = suppressedRingSamples = 0;
         received = duplicate = dropped = fallback = sent = samples = sounds = updates = removed = hidden = 0;
     }
 
@@ -416,6 +449,7 @@ final class CombatCinematics {
         return "public_requests=" + received + " duplicate=" + duplicate + " queue_drops=" + dropped
                 + " fallback=" + fallback + " particle_calls=" + sent + " particle_count=" + samples
                 + " sound_calls=" + sounds + " public_updates=" + updates + " public_removed=" + removed + " visibility_revoked=" + hidden
+                + " sight_rays=" + sightRays + " ring_ray_candidates=" + ringRays + " ring_samples_over_send_cap=" + suppressedRingSamples
                 + " dropped_warning=" + droppedByRole.getOrDefault("warning",0L)
                 + " dropped_impact=" + droppedByRole.getOrDefault("impact",0L)
                 + " dropped_active=" + droppedByRole.getOrDefault("active",0L)

@@ -24,13 +24,16 @@ final class ArtGallery implements PaperMenu {
     private final BooleanSupplier allowed;
     private final List<String> entries;
     private static final java.util.Map<Integer,String> SECTIONS = java.util.Map.of(
-            46,"augment/",47,"model/",48,"growth/",50,"rarity/",51,"sound/",52,"screen/");
+            46,"augment/",47,"model/",48,"cinema/",50,"rarity/",51,"sound/",52,"screen/");
     private Runnable back;
     private int page;
     private Mode mode = Mode.PREVIEW;
     private enum Mode { PREVIEW, GRANT, REMOVE, CAST }
-    private static final int PAGE_SIZE = 44;
+    private static final int PAGE_SIZE = 42;
+    private static final int[] DISTANCES = {3,8,16,24};
     private boolean simple;
+    private int distanceIndex;
+    private boolean repeat;
     private boolean liveGuide;
 
     private ArtGallery(Player p, PaperArt art, PaperArt.Screen screen, String title, int rows,
@@ -117,6 +120,7 @@ final class ArtGallery implements PaperMenu {
             String key = entries.get(page * PAGE_SIZE + i);
             String model = switch (key.split("/")[0]) {
                 case "augment" -> key;
+                case "cinema" -> "gui/showcase";
                 case "model" -> key.replace("model/","fx/");
                 case "growth" -> "gui/result";
                 case "screen" -> "gui/menu";
@@ -124,13 +128,17 @@ final class ArtGallery implements PaperMenu {
             };
             put(p,i,Material.AMETHYST_SHARD,model,art.label(key),key,key.startsWith("augment/") ? "현재 동작 · " + mode : "클릭 · " + key);
         }
+        put(p,42,Material.SPYGLASS,"gui/showcase","촬영 거리 · " + DISTANCES[distanceIndex] + "블록",
+                "시선 앞에 연출 배치 · 클릭하여 3 / 8 / 16 / 24블록 전환");
+        put(p,43,Material.REPEATER,"gui/reroll","반복 · " + (repeat ? "3회" : "1회"),
+                "클릭 · 촬영 연출의 반복 횟수 전환");
         put(p,44,Material.LEVER,"gui/settings","증강 클릭 동작 · " + mode,
                 "클릭 · 미리보기 / 실제 지급 / 제거 / 보유 스킬 발동");
         SECTIONS.forEach((slot,type) -> put(p,slot,Material.BOOK,"gui/codex",
-                switch (type) { case "augment/" -> "증강"; case "model/" -> "모델"; case "growth/" -> "성장";
+                switch (type) { case "augment/" -> "증강"; case "model/" -> "모델"; case "cinema/" -> "촬영 연출";
                     case "rarity/" -> "선택 등급"; case "sound/" -> "효과음"; default -> "화면"; }));
         if (page > 0) put(p,45,Material.ARROW,"gui/previous","이전 페이지");
-        put(p,49,Material.COMPARATOR,"gui/settings",simple ? "간소 연출" : "리소스팩 연출",art.packStatus(p),"클릭 · 품질 전환");
+        put(p,49,Material.COMPARATOR,"gui/settings",simple ? "간소 연출" : "리소스팩 연출",art.packStatus(p),"클릭 · 간소 표현 비교", "LOW~ULTRA · /aw ui 에서 지정");
         if ((page + 1) * PAGE_SIZE < entries.size()) put(p,53,Material.ARROW,"gui/next","다음 페이지");
     }
 
@@ -150,7 +158,9 @@ final class ArtGallery implements PaperMenu {
             return;
         }
         if (!allowed.getAsBoolean()) return;
-        if (slot == 44) mode = Mode.values()[(mode.ordinal()+1) % Mode.values().length];
+        if (slot == 42) distanceIndex = (distanceIndex + 1) % DISTANCES.length;
+        else if (slot == 43) repeat = !repeat;
+        else if (slot == 44) mode = Mode.values()[(mode.ordinal()+1) % Mode.values().length];
         else if (slot == 49) simple = !simple;
         else if (SECTIONS.containsKey(slot)) {
             String type = SECTIONS.get(slot);
@@ -163,6 +173,15 @@ final class ArtGallery implements PaperMenu {
         else if (slot < PAGE_SIZE && page * PAGE_SIZE + slot < entries.size()) {
             String key = entries.get(page * PAGE_SIZE + slot);
             var parts = key.split("/",2);
+            if (parts[0].equals("cinema")) {
+                p.closeInventory();
+                if (!art.cinema(p,parts[1],allowed,DISTANCES[distanceIndex],repeat ? 3 : 1,simple))
+                    p.sendMessage("시야와 청크가 확보된 지점을 조준하세요.");
+                else p.sendMessage("피해나 보상이 없는 촬영 연출 · " + art.label(key));
+                p.sendMessage(Component.text("↩ 연출 실험실로 돌아가기").clickEvent(
+                        net.kyori.adventure.text.event.ClickEvent.runCommand("/aw admin test preview")));
+                return;
+            }
             if (parts[0].equals("demo")) {
                 if (parts[1].equals("metrics")) p.sendMessage(art.metrics());
                 else {

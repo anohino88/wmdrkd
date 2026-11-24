@@ -514,6 +514,7 @@ final class PaperAugments implements Listener {
         for (int i = 0; i < choice.offers().size(); i++) {
             var augment = registry.get(choice.offers().get(i).id());
             menu.inventory.setItem(SLOTS[i], augmentItem(player, profile, augment));
+            paintTier(player,menu,i,augment.rarity(),false);
         }
         var odds = AugmentRarity.odds(profile.level);
         menu.inventory.setItem(0, item(Material.EXPERIENCE_BOTTLE, Component.text("추첨 레벨 " + profile.level),
@@ -601,10 +602,14 @@ final class PaperAugments implements Listener {
         }
         if (definitions.isEmpty()) menu.inventory.setItem(22,PaperIntel.item(PaperIntel.card(Material.PAPER,"이 필터에 해당하는 증강 없음")));
         if (menu.page > firstPage) menu.inventory.setItem(45, item(Material.ARROW, Component.text("이전 페이지"), List.of()));
-        menu.inventory.setItem(49,item(Material.COMPASS,Component.text("필터 · " + menu.filter.label),
+        var filter = item(Material.COMPASS,Component.text("필터 · " + menu.filter.label,
+                        menu.filter == Filter.ALL ? NamedTextColor.GRAY : NamedTextColor.GOLD),
                 List.of(Component.text(menu.page == 0 ? "조합 · 진화 · 공명 요약" : menu.page + "/" + last + "쪽"),
                         Component.text("조건 일치 " + definitions.size() + "종 · 전체 보유 " + profile.owned.size() + "종"),
-                        Component.text("클릭하여 분류 선택"))));
+                        Component.text("클릭하여 분류 선택")));
+        if (menu.filter != Filter.ALL && !PlayerUi.reducedFlash(player))
+            filter.editMeta(meta -> meta.setEnchantmentGlintOverride(true));
+        menu.inventory.setItem(49,filter);
         if (menu.page < last) menu.inventory.setItem(53, item(Material.ARROW, Component.text("다음 페이지"), List.of()));
         art.button(player,menu.inventory,45,"previous");
         art.button(player,menu.inventory,49,"codex");
@@ -725,15 +730,25 @@ final class PaperAugments implements Listener {
             if (age < 2 + 2*i || (menu.revealMask & bit) != 0) continue;
             menu.revealMask |= bit;
             var tier = registry.get(menu.offers.get(i).id()).rarity();
-            var material = switch (tier) {
-                case SILVER -> Material.IRON_NUGGET;
-                case GOLD -> Material.GOLD_NUGGET;
-                case PRISMATIC -> Material.AMETHYST_SHARD;
-            };
-            var badge = item(material,Component.text(tier.name()),List.of());
-            if (tier == AugmentRarity.PRISMATIC) badge.editMeta(meta -> meta.setEnchantmentGlintOverride(true));
-            menu.inventory.setItem(SLOTS[i]-9,badge);
+            if (tier == AugmentRarity.PRISMATIC) paintTier(player,menu,i,tier,true);
         }
+    }
+
+    private void paintTier(Player player, Menu menu, int index, AugmentRarity tier, boolean glow) {
+        var material = switch (tier) {
+            case SILVER -> Material.IRON_NUGGET;
+            case GOLD -> Material.GOLD_NUGGET;
+            case PRISMATIC -> Material.AMETHYST_SHARD;
+        };
+        var tierName = switch (tier) {
+            case SILVER -> "실버";
+            case GOLD -> "골드";
+            case PRISMATIC -> "프리즘";
+        };
+        var badge = item(material,Component.text((index + 1) + "번 후보 · " + tierName),
+                List.of(Component.text("아래 카드에서 효과를 읽고 선택하세요.")));
+        if (glow) badge.editMeta(meta -> meta.setEnchantmentGlintOverride(true));
+        menu.inventory.setItem(SLOTS[index]-9,art.icon(player,badge,"gui/tier_" + tier.name().toLowerCase(Locale.ROOT)));
     }
 
     private void setCountdown(Menu menu, long seconds) {

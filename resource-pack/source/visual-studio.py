@@ -9,7 +9,8 @@ from mathutils import Vector, Quaternion
 
 args = sys.argv[sys.argv.index("--")+1:]
 project, baseline, output = (Path(arg).resolve() for arg in args[:3])
-ascension = "--ascension" in args[3:]
+fight = "--fight" in args[3:]
+ascension = fight or "--ascension" in args[3:]
 reforge = ascension or "--reforge" in args[3:]
 current = project / "resource-pack/pack/assets/augmentwild"
 previous = baseline / "resource-pack/pack/assets/augmentwild"
@@ -113,6 +114,34 @@ def model(root,key):
     return json.loads((root/"models"/(key+".json")).read_text())
 
 
+def fight_stage():
+    """Use one block = 16 model units, with a 1.8-block neutral target."""
+    fixture = bpy.data.collections.new("Paper coordinates · one block = 16 units")
+    scene.collection.children.link(fixture)
+    palette = {}
+    for name, color in {"stone":(.078,.10,.16,1),"seam":(.10,.13,.17,1),"target":(.21,.28,.32,1)}.items():
+        mat = bpy.data.materials.new(name)
+        mat.diffuse_color = color
+        palette[name] = mat
+
+    def box(center, size, tone):
+        bpy.ops.mesh.primitive_cube_add(size=1,location=center)
+        obj = bpy.context.object
+        obj.dimensions = size
+        for collection in list(obj.users_collection):
+            collection.objects.unlink(obj)
+        fixture.objects.link(obj)
+        obj.data.materials.append(palette[tone])
+
+    for x in (-16,0,16):
+        for y in (-16,0,16):
+            box((x,y,-1),(15.86,15.86,2),"seam" if (x+y)%32 else "stone")
+    box((-12,-4,3.5),(6,3.5,7),"target")
+    box((-12,-4,14),(8,4,14),"target")
+    box((-12,-4,25),(7,7,7),"target")
+    return fixture
+
+
 def animate(pivot,frames):
     pivot.rotation_mode = "QUATERNION"
     for tick,right,up,forward,yaw,pitch,roll,width,height,depth in frames:
@@ -150,6 +179,9 @@ for key in active + (growth if ascension else []) + (["crescent","impact","fract
             gallery.append((group,pivot))
         else:
             group.hide_viewport = True
+fixture = fight_stage() if fight else None
+studio_eye = eye.location.copy()
+simulated_views = ((3,"near"),(8,"mid"),(16,"far"),(24,"edge"))
 for key,(shape,frames) in keys.items():
     root_name = "sig_"+shape
     pair = next(((group,pivot) for group,pivot in gallery if group.name == f"after · {key}"),None)
@@ -162,9 +194,27 @@ for key,(shape,frames) in keys.items():
             scene.frame_set(int(frame[0])+1)
             render(f"motion-{key}-{i}")
     if reforge and key in active:
+        if fixture:
+            fixture.hide_render = False
+            camera.ortho_scale = 53
+            eye.location = studio_eye + Vector((0,0,4))
+            eye.rotation_euler = (Vector((0,0,7))-eye.location).to_track_quat("-Z","Y").to_euler()
         for tick in range(int(frames[-1][0]) + 1):
             scene.frame_set(tick+1)
             render(f"clip-{key}-{tick:02}")
+        if fixture:
+            # Horizontal distance uses game blocks. 70 degrees is a reproducible camera setting.
+            scene.frame_set(int(frames[len(frames)//2][0])+1)
+            camera.type = "PERSP"
+            camera.angle = math.radians(70)
+            for distance,label in simulated_views:
+                eye.location = (0,-distance*16,26)
+                eye.rotation_euler = (Vector((0,0,10))-eye.location).to_track_quat("-Z","Y").to_euler()
+                render(f"view-{key}-{label}")
+            camera.type = "ORTHO"
+            eye.location = studio_eye
+            eye.rotation_euler = (-eye.location).to_track_quat("-Z","Y").to_euler()
+            fixture.hide_render = True
     scene.frame_set(1)
     group.hide_render = True
     if pair is None:
@@ -176,4 +226,4 @@ for index,(group,pivot) in enumerate(gallery):
 scene.frame_start,scene.frame_end = 1,24
 scene.frame_set(7)
 bpy.ops.file.pack_all()
-bpy.ops.wm.save_as_mainfile(filepath=str(output/("visual-ascension.blend" if ascension else "visual-reforge.blend" if reforge else "visual-revolution.blend")),compress=True)
+bpy.ops.wm.save_as_mainfile(filepath=str(output/("visual-fight.blend" if fight else "visual-ascension.blend" if ascension else "visual-reforge.blend" if reforge else "visual-revolution.blend")),compress=True)

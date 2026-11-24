@@ -29,11 +29,16 @@ record ArtSignature(String shape, String sound, List<Frame> frames) {
 
     ArtSignature along(float distance, float climb) {
         return new ArtSignature(shape,sound,frames.stream().map(frame -> {
-            float t = Math.clamp((frame.forward() + .23f) / .68f,0,1);
-            if (frame.tick() >= 8) t = 1;
+            float t = Math.clamp(frame.forward(),0,1);
             return new Frame(frame.tick(),frame.right(),frame.up()+climb*t,distance*t,
                     frame.yaw(),frame.pitch(),frame.roll(),frame.width(),frame.height(),frame.depth());
         }).toList());
+    }
+
+    ArtSignature height(float factor) {
+        return new ArtSignature(shape,sound,frames.stream().map(frame -> new Frame(frame.tick(),frame.right(),
+                frame.up(),frame.forward(),frame.yaw(),frame.pitch(),frame.roll(),frame.width(),
+                frame.height()*factor,frame.depth())).toList());
     }
 
     int duration() { return frames.getLast().tick(); }

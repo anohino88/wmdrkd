@@ -37,7 +37,7 @@ final class PublicArtProbe {
                     case "getGameMode" -> GameMode.SURVIVAL;
                     case "getPersistentDataContainer" -> pigment.getPersistentDataContainer();
                     case "getOpenInventory" -> null;
-                case "isOnline" -> online;
+                    case "isOnline" -> online;
                     case "isInvisible" -> invisible;
                     case "canSee" -> true;
                     case "playSound" -> null;
@@ -121,7 +121,24 @@ final class PublicArtProbe {
             tick.invoke(art);
             require(source.shown.stream().filter(d -> d.getItemStack().getItemMeta().getItemModel().getKey().startsWith("fx/"))
                     .noneMatch(ItemDisplay::isValid),"pause clears public effects");
-            plugin.getLogger().info("AW_PUBLIC_ART_PASS shared=2 mixed_pack=true wall=true concealed=true private_concurrent=2");
+            var metrics = PaperArt.class.getDeclaredMethod("metrics");
+            metrics.setAccessible(true);
+            running.set(true);
+            Object danger = Enum.valueOf(formClass,"DANGER");
+            for (int i = 0; i < 18; i++)
+                combat.invoke(art,source.player,null,UUID.randomUUID(),"filled",hit,impact,0d);
+            combat.invoke(art,source.player,null,UUID.randomUUID(),"ring",guard,impact,1d);
+            tick.invoke(art);
+            String pressure = (String) metrics.invoke(art);
+            require(!pressure.contains("ring_samples_over_send_cap=0 "), "full cosmetic budget skips redundant rays");
+            unmodded.particles.clear();
+            combat.invoke(art,source.player,null,UUID.randomUUID(),"warning",danger,site,2d);
+            for (int i = 0; i < 22; i++)
+                combat.invoke(art,source.player,null,UUID.randomUUID(),"filled",hit,impact,0d);
+            tick.invoke(art);
+            require(unmodded.particles.stream().anyMatch(point -> point.distanceSquared(site) > 3.9),
+                    "warning ring remains available under pressure");
+            plugin.getLogger().info("AW_PUBLIC_ART_PASS shared=2 mixed_pack=true wall=true concealed=true private_concurrent=2 " + pressure);
         } finally {
             site.getBlock().setBlockData(original,false);
             clear.invoke(art);

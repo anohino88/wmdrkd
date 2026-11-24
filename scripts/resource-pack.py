@@ -34,8 +34,9 @@ MENU_MARKS = runpy.run_path(str(SOURCE / "menu-marks.py"))
 SYNTH = runpy.run_path(str(SOURCE / "sound-design.py"))
 SOURCE_SOUNDS = {"cast", "evolve", "supply"}
 SOUNDS = SOURCE_SOUNDS | SYNTH["CUES"].keys()
+RARITY_MARKS = dict(silver="#b7cbe0", gold="#ffd077", prismatic="#eab8ff")
 PACK_DIGEST = ROOT / "src/main/resources/art-pack.sha1"
-RELEASE_METADATA = {"release":"7.8","minecraft":"26.3","inventory_title":"native"}
+RELEASE_METADATA = {"release":"7.9","minecraft":"26.3","inventory_title":"native"}
 PACK_METADATA = {"pack": {"description": "AugmentWild • combat art for Java 26.3",
                           "min_format": [97, 1], "max_format": [97, 1]}}
 
@@ -191,6 +192,24 @@ def bake(rarities, motifs, sources):
                     im.putpixel((x,y),tuple(min(255,round(p*tone)) for p in rgb))
             im.save(path,optimize=True)
     from PIL import ImageDraw
+    for count, (tier,color) in enumerate(RARITY_MARKS.items(),1):
+        key = f"gui/tier_{tier}"
+        tile = Image.new("RGBA",(64,64))
+        draw = ImageDraw.Draw(tile)
+        frame = {
+            "silver": [(14,9),(50,9),(57,16),(57,48),(50,55),(14,55),(7,48),(7,16)],
+            "gold": [(11,7),(53,7),(57,16),(54,45),(32,60),(10,45),(7,16)],
+            "prismatic": [(32,3),(55,15),(61,31),(52,48),(32,61),(12,48),(3,31),(9,15)],
+        }[tier]
+        draw.polygon(frame,fill="#182433",outline=color,width=3)
+        for index in range(count):
+            x = 32 + (2 * index - count + 1) * 8
+            draw.polygon([(x,19),(x+6,31),(x,43),(x-6,31)],fill=color)
+            draw.line((x,20,x-5,31,x,35),fill="#edf4ff",width=2)
+        tile.save(ASSETS / f"textures/item/{key}.png",optimize=True)
+        write_json(ASSETS / f"models/item/{key}.json",
+                   {"parent":"minecraft:item/generated","textures":{"layer0":f"augmentwild:item/{key}"}})
+        item(key,f"item/{key}")
     for filled in range(5):
         key = f"gui/gauge_{filled}"
         tile = Image.open(ASSETS / "textures/item/gui/gauge.png").convert("RGBA")
@@ -224,6 +243,7 @@ def verify(rarities, motifs, sources):
     keys = {f"augment/{key}" if key in rarities else key for key in motifs}
     keys |= {f"fx/{key}" for key in PALETTE} | {f"proc/{key}" for key in rarities}
     keys |= {f"gui/gauge_{filled}" for filled in range(5)} | {f"gui/{key}" for key in MENU_MARKS["marks"]()}
+    keys |= {f"gui/tier_{tier}" for tier in RARITY_MARKS}
     models = {p.relative_to(ASSETS / "items").with_suffix("").as_posix() for p in (ASSETS / "items").rglob("*.json")}
     assert models == keys, models ^ keys
     for key in keys:

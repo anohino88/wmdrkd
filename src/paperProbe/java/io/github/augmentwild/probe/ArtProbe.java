@@ -52,6 +52,8 @@ final class ArtProbe {
                 case "getUniqueId" -> pig.getUniqueId();
                 case "getWorld" -> pig.getWorld();
                 case "getLocation" -> pig.getLocation();
+                case "getEyeLocation" -> pig.getEyeLocation();
+                case "hasLineOfSight" -> true;
                 case "getPersistentDataContainer" -> pig.getPersistentDataContainer();
                 case "getOpenInventory" -> null;
                 case "isOnline" -> true;
@@ -153,6 +155,22 @@ final class ArtProbe {
             }
             require(signatureDurations.size() >= 6);
             Bukkit.getLogger().info("AW_ART_SIGNATURE_PASS active=7 multiple_transforms=true owner_only=true remaining=0");
+            var cinema = PaperArt.class.getDeclaredMethod("cinema",Player.class,String.class,java.util.function.BooleanSupplier.class,
+                    int.class,int.class,boolean.class);
+            cinema.setAccessible(true);
+            var stopPreview = PaperArt.class.getDeclaredMethod("stopPreview",Player.class);
+            stopPreview.setAccessible(true);
+            java.util.function.BooleanSupplier permitted = () -> true;
+            java.util.function.BooleanSupplier denied = () -> false;
+            observed.clear();
+            require(Boolean.FALSE.equals(cinema.invoke(art,p,"shadow_dash",denied,3,3,false)));
+            require(Boolean.TRUE.equals(cinema.invoke(art,p,"shadow_dash",permitted,3,3,false)));
+            for (int i = 0; i < 38; i++) tick.invoke(art);
+            require(observed.size() == 2 && !observed.getFirst().isValid() && observed.getLast().isValid());
+            stopPreview.invoke(art,p);
+            for (int i = 0; i < 36; i++) tick.invoke(art);
+            require(observed.size() == 2 && observed.stream().noneMatch(ItemDisplay::isValid));
+            Bukkit.getLogger().info("AW_ART_CINEMA_PASS permission=true repeat=true cleanup=true");
             var sustain = PaperArt.class.getDeclaredMethod("sustain",Player.class,String.class,org.bukkit.Location.class,boolean.class);
             sustain.setAccessible(true);
             observed.clear();
@@ -232,7 +250,7 @@ final class ArtProbe {
             inspect.setAccessible(true);
             var fixture = java.nio.file.Path.of(System.getProperty("augmentwild.pack.fixture"));
             var archive = inspect.invoke(null,fixture);
-            require(archive.toString().startsWith("Archive[release=7.8,"));
+            require(archive.toString().startsWith("Archive[release=7.9,"));
             var invalid = java.nio.file.Files.createTempFile("aw-invalid-pack-", ".zip");
             try {
                 java.nio.file.Files.writeString(invalid,"not a resource pack");

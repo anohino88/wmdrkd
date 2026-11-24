@@ -54,3 +54,18 @@ for id, label in names.items():
         frames.append(board)
     frames[0].save(args.output/f"{id}.gif",save_all=True,append_images=frames[1:],
                    duration=[250]+[50]*(len(frames)-2)+[350],loop=0,optimize=True)
+
+
+view_files = list(args.renders.glob("view-*.png"))
+if view_files:
+    board,draw = page("전투 시점 거리 비교","오프라인 Blender · 1블록 = 16 모델 단위 · 1.8블록 표적 · 70° 시야",1320,1780)
+    for row,(key,name) in enumerate(list(names.items())[:7]):
+        y = 110 + row * 236
+        draw.text((24,y),name,font=font(18,True),fill="#dfe9ef")
+        for col,(distance,view) in enumerate(zip((3,8,16,24),("near","mid","far","edge"))):
+            x=24 + col * 324
+            art=Image.open(args.renders/f"view-{key}-{view}.png").convert("RGBA")
+            draw.rounded_rectangle((x,y+26,x+309,y+221),radius=8,fill="#202c3a")
+            paint(board,art,(x+67,y+27),172)
+            draw.text((x+155,y+217),f"{distance}블록",font=font(14),fill="#dfe9ef",anchor="ms")
+    board.save(args.output/"distances.png",optimize=True)

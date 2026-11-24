@@ -20,7 +20,7 @@ PHASE 7.6에서 84개 아이콘 프레임과 명암 재질을 갱신했다. 액�
 | `blood_trace` | 공격한 대상을 발광시킨 뒤 다음 타격 피해 증가 | `PaperOfficialCombat.applyHitEffects` | `blood` | 형성·잔류 5+10틱 · 발동 모션 후 제거 | 아이콘·재질 | HAPPY_VILLAGER | 개인 발동 | PASS | NOT_RUN |
 | `bomb_alchemy` | 전용 눈덩이 폭탄과 착탄 지점의 3초 불 지대 | `PaperOfficialCombat.cast` | `sig_bomb_alchemy` | 5키 · 11틱 · ignite · 투사체 비행·명중·폭발 반경과 제거 | 아이콘·재질·액티브 | FLAME | 전투 사건에서 공개 | PASS | NOT_RUN |
 | `bounty_hunter` | 적을 지정하여 피해 증가와 처치 시 회복·신속 | `PaperOfficialCombat.applyHitEffects` | `bolt` | 검격·이동 3+5틱 · 발동 모션 후 제거 | 아이콘·재질 | ELECTRIC_SPARK | 개인 발동 | PASS | NOT_RUN |
-| `calamity_giant` | 크기·최대 체력·사거리 증가, 질주 밀치기 및 지면 강타 | `PaperOfficialCombat.cast` | `sig_calamity_giant` | 5키 · 14틱 · stone_break · 실제 지면 충격 반경과 달리기 발자국 | 아이콘·재질·액티브 | CRIT | 전투 사건에서 공개 | PASS | NOT_RUN |
+| `calamity_giant` | 크기·최대 체력·사거리 증가, 질주 밀치기 및 지면 강타 | `PaperOfficialCombat.cast` | `sig_calamity_giant` | 7키 · 14틱 · stone_break · 실제 지면 충격 반경과 달리기 발자국 | 아이콘·재질·액티브 | CRIT | 전투 사건에서 공개 | PASS | NOT_RUN |
 | `center_of_universe` | 주변을 도는 오브가 가까운 적에게 자동 공격 | `PaperOfficialCombat.orbit → syntheticHit → announceProc` | `void` | 확산·수렴 4+7틱 · 발동 모션 후 제거 | 아이콘·재질 | PORTAL | 확정 연쇄 피해 | PASS | NOT_RUN |
 | `chain_impact` | 근접 누적 타격으로 주변 적에게 감속 충격파 | `PaperOfficialCombat.meleeEffects → area → syntheticHit → announceProc` | `bolt` | 검격·이동 3+5틱 · 발동 모션 후 제거 | 아이콘·재질 | ELECTRIC_SPARK | 확정 연쇄 피해 | PASS | NOT_RUN |
 | `clone_hand` | 근접 타격 누적으로 원래 공격의 복제 피해 | `PaperOfficialCombat.applyHitEffects → syntheticHit → announceProc` | `rune` | 확산·수렴 4+7틱 · 발동 모션 후 제거 | 아이콘·재질 | ELECTRIC_SPARK | 확정 연쇄 피해 | PASS | NOT_RUN |
@@ -29,8 +29,8 @@ PHASE 7.6에서 84개 아이콘 프레임과 명암 재질을 갱신했다. 액�
 | `delayed_blast` | 직접 피해 누적 시 마지막 적중 위치에 폭발 예고 | `PaperOfficialCombat.attackReactions → visual` | `fire` | 확산·수렴 4+7틱 · 발동 모션 후 제거 | 아이콘·재질 | FLAME | 전투 사건에서 공개 | PASS | NOT_RUN |
 | `draw_the_sword` | 근접 검기 적중마다 영구 검기 피해 성장과 방패 사용 제한 | `PaperOfficialCombat.drawSword → grant` | `blade` | 검격·이동 3+5틱 · 발동 모션 후 제거 | 아이콘·재질 | CRIT | 개인 발동 | PASS | NOT_RUN |
 | `dual_wielder` | 보조 손 무기로 추가 공격하고 방패 사용 제한 | `PaperOfficialCombat.offhand → syntheticHit → announceProc` | `blade` | 검격·이동 3+5틱 · 발동 모션 후 제거 | 아이콘·재질 | CRIT | 확정 연쇄 피해 | PASS | NOT_RUN |
-| `duel_contract` | 지정 적과 결투하여 공격 피해와 받는 피해를 증가 | `PaperOfficialCombat.cast` | `sig_duel_contract` | 5키 · 20틱 · seal · 상호 시야의 계약 연결과 상태 오라 | 아이콘·재질·액티브 | ELECTRIC_SPARK | 개인 발동 | PASS | NOT_RUN |
-| `earthquake_mage` | 돌진한 경로를 1초 뒤 폭발 | `PaperOfficialCombat.cast` | `sig_earthquake_mage` | 5키 · 17틱 · stone_break · 실제 출발점과 지연된 경로 타격 | 아이콘·재질·액티브 | CRIT | 전투 사건에서 공개 | PASS | NOT_RUN |
+| `duel_contract` | 지정 적과 결투하여 공격 피해와 받는 피해를 증가 | `PaperOfficialCombat.cast` | `sig_duel_contract` | 6키 · 20틱 · seal · 상호 시야의 계약 연결과 상태 오라 | 아이콘·재질·액티브 | ELECTRIC_SPARK | 개인 발동 | PASS | NOT_RUN |
+| `earthquake_mage` | 돌진한 경로를 1초 뒤 폭발 | `PaperOfficialCombat.cast` | `sig_earthquake_mage` | 6키 · 17틱 · stone_break · 실제 출발점과 지연된 경로 타격 | 아이콘·재질·액티브 | CRIT | 전투 사건에서 공개 | PASS | NOT_RUN |
 | `endless_evolution` | 적대 몹·플레이어 처치로 최대 체력과 피해 성장 | `PaperOfficialCombat.mobDeath → grant` | `growth` | 확산·수렴 4+7틱 · 발동 모션 후 제거 | 아이콘·재질 | HAPPY_VILLAGER | 개인 발동 | PASS | NOT_RUN |
 | `eureka` | XP 레벨 5당 증강 재사용 대기시간 감소 | `PaperOfficialCombat.cooldown → PaperOfficialCombat.ready` | `rune` | 확산·수렴 4+7틱 · 발동 모션 후 제거 | 아이콘·재질 | ELECTRIC_SPARK | 개인 발동 | PASS | NOT_RUN |
 | `explosive_arrow` | 화살 적중 누적으로 주변 적에게 폭발 피해 | `PaperOfficialCombat.applyHitEffects → area → syntheticHit → announceProc` | `fire` | 확산·수렴 4+7틱 · 발동 모션 후 제거 | 아이콘·재질 | FLAME | 확정 연쇄 피해 | PASS | NOT_RUN |
@@ -82,13 +82,13 @@ PHASE 7.6에서 84개 아이콘 프레임과 명암 재질을 갱신했다. 액�
 | `survival_instinct` | 저체력에서 체력 회복과 신속 II | `PaperOfficialCombat.reactAtLowHealth → gainHealth` | `ward` | 형성·잔류 5+10틱 · 발동 모션 후 제거 | 아이콘·재질 | ELECTRIC_SPARK | 개인 발동 | PASS | NOT_RUN |
 | `sword_wind` | 근접 타격 누적으로 벽을 관통하지 않는 전방 검기 | `PaperOfficialCombat.sword → syntheticHit → announceProc` | `sig_sword_wind` | 5키 · 17틱 · evolution · 발동 모션 후 제거 | 아이콘·재질·진화 | CRIT | 확정 연쇄 피해 | PASS | NOT_RUN |
 | `tank_engine` | 수평 이동 거리마다 크기와 최대 체력 성장 | `PaperOfficialCombat.move → grant` | `sig_tank_engine` | 5키 · 20틱 · evolution · 발동 모션 후 제거 | 아이콘·재질·진화 | CRIT | 개인 발동 | PASS | NOT_RUN |
-| `time_rewind` | 4초 전 안전 위치로 복귀하고 당시 체력까지 제한 회복 | `PaperOfficialCombat.cast` | `sig_time_rewind` | 5키 · 17틱 · rewind · 복귀한 위치와 저장된 경로 표본 | 아이콘·재질·액티브 | SNOWFLAKE | 전투 사건에서 공개 | PASS | NOT_RUN |
+| `time_rewind` | 4초 전 안전 위치로 복귀하고 당시 체력까지 제한 회복 | `PaperOfficialCombat.cast` | `sig_time_rewind` | 6키 · 17틱 · rewind · 복귀한 위치와 저장된 경로 표본 | 아이콘·재질·액티브 | SNOWFLAKE | 전투 사건에서 공개 | PASS | NOT_RUN |
 | `time_thief` | 타격한 적의 이로운 효과를 줄이고 감속과 신속을 부여 | `PaperOfficialCombat.stealTime` | `time` | 형성·잔류 5+10틱 · 발동 모션 후 제거 | 아이콘·재질 | SNOWFLAKE | 개인 발동 | PASS | NOT_RUN |
 | `triad_reactor` | 근접·원거리·증강 또는 방어 반응 후 다음 공격이 폭발 | `PaperOfficialCombat.triad → charge → visual` | `rune` | 확산·수렴 4+7틱 · 발동 모션 후 제거 | 아이콘·재질 | ELECTRIC_SPARK | 개인 발동 | PASS | NOT_RUN |
 | `ultimate_hydra` | 근접 피해를 주변 적에게 전파하고 네 번째 타격마다 넓은 충격파 | `PaperOfficialCombat.hydra → syntheticHit → announceProc` | `blade` | 검격·이동 3+5틱 · 발동 모션 후 제거 | 아이콘·재질 | CRIT | 확정 연쇄 피해 | PASS | NOT_RUN |
 | `vein_overload` | 자연 광석 채굴로 이동 속도 성장, PvP 시작 시 흡수 체력 | `PaperOfficialCombat.sync` | `rune` | 확산·수렴 4+7틱 · 발동 모션 후 제거 | 아이콘·재질 | ELECTRIC_SPARK | 개인 발동 | PASS | NOT_RUN |
 | `venom_swarm` | 근접 중독과 중독시킨 적 처치 시 주변 맹독 | `PaperOfficialCombat.applyVenom` | `frost` | 형성·잔류 5+10틱 · 발동 모션 후 제거 | 아이콘·재질 | SNOWFLAKE | 개인 발동 | PASS | NOT_RUN |
-| `void_lord` | 주변을 당기고 2초간 공허 피해 | `PaperOfficialCombat.cast` | `sig_void_lord` | 5키 · 21틱 · focus · 실제 장판의 범위·맥동·종료 수축 | 아이콘·재질·액티브 | PORTAL | 전투 사건에서 공개 | PASS | NOT_RUN |
+| `void_lord` | 주변을 당기고 2초간 공허 피해 | `PaperOfficialCombat.cast` | `sig_void_lord` | 6키 · 21틱 · focus · 실제 장판의 범위·맥동·종료 수축 | 아이콘·재질·액티브 | PORTAL | 전투 사건에서 공개 | PASS | NOT_RUN |
 | `world_erosion` | 주변 적의 최대 체력을 낮추고 일부를 흡수 체력으로 획득 | `PaperOfficialCombat.worldErosion` | `impact` | 검격·이동 3+5틱 · 발동 모션 후 제거 | 아이콘·재질 | CRIT | 개인 발동 | PASS | NOT_RUN |
 | `wound_record` | 받은 피해 누적으로 체력 성장 및 저체력 진입 시 저항 | `PaperOfficialCombat.damageTaken → grant` | `blood` | 형성·잔류 5+10틱 · 발동 모션 후 제거 | 아이콘·재질 | HAPPY_VILLAGER | 개인 발동 | PASS | NOT_RUN |
 | `xp_gold` | 양의 경험치 이벤트 | `AugmentCatalog.load → PaperAugments.experience` | `rune` | 확산·수렴 4+7틱 · 발동 모션 후 제거 | 아이콘·재질 | ELECTRIC_SPARK | 개인 발동 | PASS | NOT_RUN |

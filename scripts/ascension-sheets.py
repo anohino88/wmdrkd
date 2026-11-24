@@ -10,6 +10,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("baseline",type=Path)
 parser.add_argument("renders",type=Path)
 parser.add_argument("output",type=Path)
+parser.add_argument("--versions", nargs=2, default=("7.7","7.8"))
 args = parser.parse_args()
 args.output.mkdir(parents=True,exist_ok=True)
 root = Path(__file__).resolve().parents[1]
@@ -27,15 +28,35 @@ for key,(title,entries) in groups.items():
     for i,(model,name) in enumerate(entries.items()):
         x,y=22+(i%3)*376,106+(i//3)*247
         draw.text((x+180,y+3),name,font=font(18,True),fill="#f5c785",anchor="mt")
-        for j,(release,tag) in enumerate(zip(("7.7","7.8"),("before","after"))):
+        for j,(release,tag) in enumerate(zip(args.versions,("before","after"))):
             with Image.open(args.renders/f"{tag}-{model}.png") as src:
                 pic=src.convert("RGBA")
             tile(image,draw,pic,x+j*178,y+30,174,207,release)
     image.save(args.output/f"{key}.png",optimize=True)
 
-image,draw=page("메인 메뉴 · 증강 선택 · 도감","오프라인 배치 · 배포 슬롯과 아이콘 텍스처",1146,1130)
-for j,(release,project) in enumerate(zip(("7.7","7.8"),(args.baseline,root))):
-    for i,(screen,name,rows) in enumerate((("menu","빠른 메뉴",3),("choice","증강 선택",3),("codex","도감 목록",6))):
-        y=(106,336,566)[i]
+image,draw=page("메인 메뉴 · 증강 선택 · 도감 · 스킬","오프라인 배치 · 배포 슬롯과 아이콘 텍스처",1146,1230)
+for j,(release,project) in enumerate(zip(args.versions,(args.baseline,root))):
+    for i,(screen,name,rows) in enumerate((("menu","빠른 메뉴",3),("choice","증강 선택",3),("codex","도감 목록",6),("slots","스킬 설정",3))):
+        y=(106,336,566,996)[i]
         tile(image,draw,inventory(project,screen,name,rows),26+j*552,y,542,222 if rows==3 else 426,release+" · "+name)
 image.save(args.output/"menus.png",optimize=True)
+
+if args.versions == ["7.8","7.9"]:
+    image,draw = page("3슬롯 스킬 HUD","오프라인 예시 · 배포 팩의 슬롯 아이콘과 런타임 상태 문구",1146,340)
+    for col,(release,project,statuses) in enumerate(zip(args.versions,(args.baseline,root),(("–","6초","잠김"),("비어 있음","잠김","잠김")))):
+        x=27 + col*552
+        draw.rounded_rectangle((x,104,x+530,310),radius=8,fill="#202c3a")
+        draw.text((x+18,119),release,font=font(18,True),fill="#dfe9ef")
+        for index,(skill,status) in enumerate(zip((None,"time_rewind","calamity_giant"),statuses)):
+            left=x+18+index*168
+            active=index==2
+            color="#ecc68a" if active else "#9fb5cc"
+            draw.rounded_rectangle((left,168,left+158,230),radius=6,fill="#131e2a",outline=color,width=1)
+            draw.text((left+7,186),str(index+1),font=font(17,active),fill=color)
+            if skill:
+                icon=m["art"](project,"augment/"+skill).resize((32,32),Image.Resampling.LANCZOS)
+                image.paste(icon,(left+31,178),icon)
+            draw.text((left+70,187),status,font=font(16),fill=color)
+        draw.text((x+18,254),"재앙의 거인 · 부활 보호 중",
+                  font=font(17),fill="#dfe9ef")
+    image.save(args.output/"hud.png",optimize=True)

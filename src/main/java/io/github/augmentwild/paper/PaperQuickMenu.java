@@ -108,15 +108,15 @@ public final class PaperQuickMenu implements Listener {
         if (!player.hasPermission("augmentwild.play")) return "플레이어 권한이 없습니다.";
         if (matches.picking(player)) return matches.openAugments(player);
         Menu menu = new Menu(matches.art(),player, matches.menuSession(), false, List.of());
-        item(menu, 4, Material.NETHER_STAR, "AugmentWild · 빠른 메뉴", matches.isLobby() ? "경기 대기실" : "경기 진행 중",
-                "다이아 우클릭 = 가까운 적 추적", "나침반 우클릭(공중) = 보급 안내",
-                "스킬 사용 = 웅크리기 + F");
+        item(menu,4,Material.NETHER_STAR,matches.isLobby() ? "경기 대기실" : "진행 중인 경기",
+                matches.inMatch(player) ? "참가 상태 · 참가 중" : "참가 상태 · 미참가",
+                "웅크리기 + 빈손 우클릭 · 이 화면 열기");
         item(menu, 10, matches.inMatch(player) ? Material.RED_DYE : Material.LIME_DYE,
                 matches.inMatch(player) ? "경기 나가기 · 확인 필요" : "경기 참가",
                 matches.inMatch(player) ? "실수 방지를 위해 종료 여부를 다시 확인합니다" : "자동 참가보다 우선 배정됩니다");
         item(menu, 11, Material.CLOCK, "경기 현황", matches.status(player).split(" [|] "));
-        item(menu,12,Material.ENCHANTED_BOOK,"증강 선택",
-                matches.inMatch(player) ? "현재 선택 또는 교환 주문 확인" : "경기에 참가하면 회차별 선택 가능");
+        item(menu,12,matches.inMatch(player) ? Material.ENCHANTED_BOOK : Material.BARRIER,"증강 선택",
+                matches.inMatch(player) ? "현재 선택 또는 교환 주문 확인" : "선택 불가 · 경기 참가 필요");
         item(menu,18,Material.BOOK,"증강 도감 · 84종","희귀도·능력·보유 상태별 필터");
         item(menu, 13, Material.COMPARATOR, "화면 설정 · 프리셋 지원", "전체 표시 / 전투 집중 / 최소 표시");
         item(menu, 14, Material.NETHER_STAR, "증강 스킬 / 퀵슬롯", "1~3번 슬롯을 클릭으로 선택하고 지정합니다");
@@ -125,7 +125,7 @@ public final class PaperQuickMenu implements Listener {
         item(menu, 21, Material.WRITABLE_BOOK, "전투 기록");
         item(menu, 22, Material.PAPER, "최근 경기 결과");
         PaperArt art = matches.art();
-        for (var control : java.util.Map.of(4,"menu",12,"choice",13,"settings",16,"supply",18,"codex",21,"report",22,"result").entrySet()) {
+        for (var control : java.util.Map.of(4,"menu",12,matches.inMatch(player) ? "choice" : "disabled",13,"settings",16,"supply",18,"codex",21,"report",22,"result").entrySet()) {
             int slot = control.getKey();
             menu.inventory.setItem(slot,art.icon(player,menu.inventory.getItem(slot),"gui/" + control.getValue()));
         }
@@ -155,8 +155,8 @@ public final class PaperQuickMenu implements Listener {
         var controls = menu.inventory.getContents();
         for (int slot = 9; slot < menu.inventory.getSize(); slot++)
             menu.inventory.setItem(slot,MAIN_ACTIONS.containsKey(slot) ? controls[MAIN_ACTIONS.get(slot)] : null);
-        item(menu,1,Material.COMPASS,"경기 운영","참가 상태, 보급, 적 추적");
-        item(menu,7,Material.ENCHANTED_BOOK,"증강과 화면","선택, 도감, 스킬, 개인 설정");
+        item(menu,1,Material.COMPASS,"경기 정보","참가 · 경기 현황 · 보급");
+        item(menu,7,Material.ENCHANTED_BOOK,"증강 관리","선택 · 도감 · 스킬");
         art.button(player,menu.inventory,1,"status");
         art.button(player,menu.inventory,7,"codex");
         player.openInventory(menu.inventory);

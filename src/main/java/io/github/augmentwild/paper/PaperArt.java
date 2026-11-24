@@ -171,7 +171,7 @@ public final class PaperArt implements Listener {
 
     String packStatus(Player p) {
         if (pack == null) return settingsIssue + " · 기본 표시";
-        if (!matchingPack) return "팩 SHA-1이 7.8 배포본과 다릅니다 · 기본 표시";
+        if (!matchingPack) return "팩 SHA-1이 7.9 배포본과 다릅니다 · 기본 표시";
         String mode = safe(p) ? " · 안전 모드" : "";
         if (loaded.contains(p.getUniqueId())) return "클라이언트 로드 응답 · " + pack.hash().substring(0,8) + mode;
         var status = reports.get(p.getUniqueId());
@@ -496,7 +496,8 @@ public final class PaperArt implements Listener {
         }
         nextCue.put(new PrivateCue(player.getUniqueId(),"proc/" + id),tick + 20);
         var at = switch (id) {
-            case "earthquake_mage", "void_lord" -> origin.clone().add(0,.32,0);
+            case "earthquake_mage" -> origin.clone().add(0,.08,0);
+            case "void_lord" -> origin.clone().add(0,.32,0);
             case "shadow_dash","time_rewind" -> destination.clone().add(0,.5,0);
             case "duel_contract" -> destination.clone().add(0,.34,0);
             default -> near(player);
@@ -591,7 +592,7 @@ public final class PaperArt implements Listener {
             if (previous == null || !previous.model.isValid() || !previous.source.getWorld().equals(at.getWorld())) {
                 endField(key);
                 if (displayCount() >= MAX_DISPLAYS) return;
-                var model = spawn(at,"proc/" + effect,fieldPose(moving));
+                var model = spawn(at,"sig_" + effect,fieldPose(moving,source.getYaw()));
                 fields.put(key,new Field(model,at,tick));
                 viewer.showEntity(plugin,model);
                 peakDisplays = Math.max(peakDisplays,displayCount());
@@ -610,7 +611,7 @@ public final class PaperArt implements Listener {
             if (tick % 4 == 0) {
                 model.setInterpolationDelay(0);
                 model.setInterpolationDuration(4);
-                model.setTransformation(fieldPose(moving));
+                model.setTransformation(fieldPose(moving,source.getYaw()));
                 displayUpdates++;
             }
             fields.put(key,new Field(model,anchor,tick));
@@ -619,10 +620,11 @@ public final class PaperArt implements Listener {
         }
     }
 
-    private Transformation fieldPose(boolean moving) {
+    private Transformation fieldPose(boolean moving, float yaw) {
         float angle = (float)(tick % 160) * (float)Math.PI / 80;
         float size = moving ? .55f : .95f + .16f * (float)Math.sin(3 * angle);
-        return new Transformation(new Vector3f(),new Quaternionf().rotateY(angle).rotateZ(moving ? angle : .22f),
+        return new Transformation(new Vector3f(),new Quaternionf().rotateY(moving ? (float)Math.toRadians(-yaw) : angle)
+                        .rotateX(moving ? angle * 2 : .22f).rotateZ(moving ? angle : 0f),
                 new Vector3f(size),new Quaternionf());
     }
 
@@ -688,6 +690,34 @@ public final class PaperArt implements Listener {
         }
     }
 
+    void quakeContact(Player viewer, Location start, Location end, double radius) {
+        var delta = end.toVector().subtract(start.toVector());
+        var cross = new org.bukkit.util.Vector(-delta.getZ(),0,delta.getX());
+        if (cross.lengthSquared() < .01) return;
+        cross.normalize();
+        for (int i = 1; i <= 5; i++) {
+            var center = start.clone().add(delta.clone().multiply(i / 5d));
+            groundDust(viewer,center,Particle.CRIT);
+            var branch = cross.clone().multiply((i % 2 == 0 ? 1 : -1) * radius * i / 5d);
+            groundDust(viewer,center.add(branch),Particle.CLOUD);
+        }
+        combat(viewer,null,null,"earthquake_mage",CombatCinematics.Form.BLAST,end.clone().add(0,.12,0),0);
+    }
+
+    private void groundDust(Player viewer, Location point, Particle particle) {
+        if (!point.isChunkLoaded() || point.getBlockY() < point.getWorld().getMinHeight() + 2
+                || point.getBlockY() >= point.getWorld().getMaxHeight() - 2) return;
+        // Search only near the known path altitude and never generate chunks for decoration.
+        for (int dy : new int[]{0,-1,1,-2,2}) {
+            var surface = point.clone().add(0,dy,0);
+            if (!surface.getBlock().isPassable() || surface.getBlock().isLiquid()
+                    || !surface.clone().subtract(0,1,0).getBlock().getType().isSolid()) continue;
+            surface.setY(surface.getBlockY() + .12);
+            spark(viewer,surface,particle);
+            return;
+        }
+    }
+
     void impact(Player viewer, String id, Location at) {
         String motif = motifs.getProperty(id,id);
         Particle particle = switch (motif) {
@@ -728,6 +758,8 @@ public final class PaperArt implements Listener {
         new TreeSet<>(MOTIONS.keySet()).forEach(id -> entries.add("model/" + id));
         entries.addAll(List.of("model/supply","model/premium","model/helix","model/fracture","model/crescent"));
         new TreeSet<>(signatures.values().stream().map(s -> "sig_" + s.shape()).toList()).forEach(id -> entries.add("model/" + id));
+        new TreeSet<>(signatures.keySet()).forEach(id -> entries.add("cinema/" + id));
+        entries.addAll(List.of("cinema/arc","cinema/blast","cinema/guard","cinema/danger"));
         new TreeSet<>(GROWTH.keySet()).forEach(id -> entries.add("growth/" + id));
         entries.addAll(List.of("rarity/silver","rarity/gold","rarity/prismatic","sound/cast","sound/evolve","sound/supply","sound/focus","sound/stone_break","sound/rewind",
                 "sound/ignite","sound/detonate","sound/rift","sound/seal","sound/sweep","sound/shield_form",
@@ -757,6 +789,11 @@ public final class PaperArt implements Listener {
             }
             case "sound" -> sound(p,id,cueFallback(id));
         }
+    }
+
+    void stacking(Player player, int members) {
+        var signature = signatures.get("stacking");
+        signatureAt(player,"stacking",near(player),false,signature.height(.65f + .16f * Math.clamp(members,1,5)));
     }
 
     void growth(Player player, String id, boolean visible) {
@@ -881,11 +918,15 @@ public final class PaperArt implements Listener {
     }
 
     private void render(Player viewer, Location at, String motif, Motion motion, ArtSignature signature) {
+        render(viewer,at,motif,motion,signature,false);
+    }
+
+    private void render(Player viewer, Location at, String motif, Motion motion, ArtSignature signature, boolean preview) {
         UUID id = viewer.getUniqueId();
         if (pack == null || !custom(viewer) || !displaysAvailable || !playable.test(viewer)
                 || !PlayerUi.enabled(viewer,PlayerUi.Option.PARTICLES)
                 || !at.getWorld().equals(viewer.getWorld()) || !at.isChunkLoaded()) return;
-        var key = new PrivateCue(id,motif);
+        var key = new PrivateCue(id,preview ? "cinema/" + motif : motif);
         var previous = cues.remove(key);
         if (previous != null) previous.remove();
         if (displayCount() >= MAX_DISPLAYS) return;
@@ -990,7 +1031,7 @@ public final class PaperArt implements Listener {
                 Player player = animation.viewer();
                 var signature = animation.signature();
                 int duration = signature == null ? animation.motion().attack() + animation.motion().release() : signature.duration();
-                if (age >= duration + 1 || !entity.isValid() || !player.isOnline() || !playable.test(player) || !custom(player)
+                if (age >= duration + 1 || !animation.at().isChunkLoaded() || !entity.isValid() || !player.isOnline() || !playable.test(player) || !custom(player)
                         || !player.getWorld().equals(animation.at().getWorld())
                         || !PlayerUi.enabled(player,PlayerUi.Option.PARTICLES)) {
                     animation.remove();
@@ -1047,18 +1088,59 @@ public final class PaperArt implements Listener {
         plugin.getLogger().log(java.util.logging.Level.WARNING,"AugmentWild artwork displays disabled",failure);
     }
 
-    private record Preview(Player player, String demo, java.util.function.BooleanSupplier allowed, Location at, long began) {}
+    private record Preview(Player player, String demo, java.util.function.BooleanSupplier allowed,
+                           Location at, long began, int repeats, boolean simple) {}
     private final Map<UUID,Preview> previews = new HashMap<>();
 
     void demo(Player player,String demo,java.util.function.BooleanSupplier allowed) {
         var location = near(player);
-        previews.put(player.getUniqueId(),new Preview(player,demo,allowed,location,tick));
+        previews.put(player.getUniqueId(),new Preview(player,demo,allowed,location,tick,1,false));
+    }
+
+    boolean cinema(Player player, String id, java.util.function.BooleanSupplier allowed,
+                   int distance, int repeats, boolean simple) {
+        if (!allowed.getAsBoolean()) return false;
+        Location eye = player.getEyeLocation();
+        var ahead = eye.getDirection();
+        // The combat audience measures from the player's feet. Intersect that range with the eye ray.
+        var height = eye.toVector().subtract(player.getLocation().toVector());
+        double projection = height.dot(ahead);
+        double range = Math.sqrt(distance * distance - height.lengthSquared() + projection * projection) - projection;
+        Location point = eye.clone().add(ahead.multiply(range - .01));
+        if (!CombatCinematics.loadedCorridor(eye,point) || !player.hasLineOfSight(point)) return false;
+        removeCinema(player.getUniqueId());
+        previews.put(player.getUniqueId(),new Preview(player,"cinema/" + id,allowed,point,tick,repeats,simple));
+        return true;
     }
 
     private boolean advancePreview(Preview preview) {
         Player p = preview.player;
-        if (!preview.allowed.getAsBoolean() || !p.isOnline() || !p.getWorld().equals(preview.at.getWorld())) return false;
+        if (!preview.allowed.getAsBoolean() || !p.isOnline() || !p.getWorld().equals(preview.at.getWorld())) {
+            if (preview.demo.startsWith("cinema/")) removeCinema(p.getUniqueId());
+            return false;
+        }
         long age = tick - preview.began;
+        if (preview.demo.startsWith("cinema/")) {
+            if (age >= 36L * preview.repeats || !preview.at.isChunkLoaded()) {
+                removeCinema(p.getUniqueId());
+                return false;
+            }
+            if (age % 36 != 1) return true;
+            if (!CombatCinematics.loadedCorridor(p.getEyeLocation(),preview.at) || !p.hasLineOfSight(preview.at)) return false;
+            String id = preview.demo.substring("cinema/".length());
+            var signature = signatures.get(id);
+            if (signature != null) {
+                if (preview.simple || !custom(p) || PlayerUi.quality(p) == PlayerUi.Quality.LOW || PlayerUi.reducedFlash(p))
+                    spark(p,preview.at,signatureParticle(signature.shape()));
+                else render(p,preview.at,"sig_" + signature.shape(),PULSE,signature,true);
+                if (!preview.simple) locationSound(p,preview.at,signature.sound(),cueFallback(signature.sound()));
+            } else {
+                var form = CombatCinematics.Form.valueOf(id.toUpperCase(Locale.ROOT));
+                if (preview.simple) spark(p,preview.at,form.particle);
+                else combat(p,null,null,"lab",form,preview.at,form == CombatCinematics.Form.DANGER ? 2 : 0);
+            }
+            return true;
+        }
         switch (preview.demo) {
             case "compare" -> {
                 if (age == 1) render(p,preview.at,"proc/sword_wind",MOTIONS.get("blade"));
@@ -1089,13 +1171,20 @@ public final class PaperArt implements Listener {
 
     void stopPreview(Player player) {
         previews.remove(player.getUniqueId());
-        cancelWarning(player.getUniqueId(),"lab",null);
+        combat.cancelPreview(player.getUniqueId());
         removeCue(player.getUniqueId());
     }
 
-    private void removeCue(UUID id) {
+    private void removeCinema(UUID id) {
+        combat.cancelPreview(id);
+        removeCue(id,true);
+    }
+
+    private void removeCue(UUID id) { removeCue(id,false); }
+
+    private void removeCue(UUID id, boolean cinemaOnly) {
         cues.entrySet().removeIf(entry -> {
-            if (!entry.getKey().owner.equals(id)) return false;
+            if (!entry.getKey().owner.equals(id) || cinemaOnly && !entry.getKey().model.startsWith("cinema/")) return false;
             entry.getValue().remove();
             return true;
         });

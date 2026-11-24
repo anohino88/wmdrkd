@@ -449,7 +449,8 @@ final class PaperOfficialCombat implements Listener {
             announce(id, resonance.families().stacking().name() + " · 영구 중첩 획득량 +"
                     + percent(state.resonance.familyMultiplier() - AugmentResonance.BASE), resonance.sound());
             Player player = plugin.getServer().getPlayer(id);
-            if (player != null && PlayerUi.enabled(player,PlayerUi.Option.GROWTH)) art.growth(player,"stacking",resonance.particles());
+            if (player != null && resonance.particles() && PlayerUi.enabled(player,PlayerUi.Option.GROWTH))
+                art.stacking(player,state.resonance.stackingCount());
         }
         double previousShield = previous == null ? 0 : previous.shieldPoints();
         if (resonance.announce() && state.resonance.shieldPoints() > previousShield) {
@@ -1555,12 +1556,12 @@ final class PaperOfficialCombat implements Listener {
                 String id = state.slots.at(slot);
                 boolean selected = slot == state.slots.selected();
                 long remaining = id == null ? 0 : state.progress.cooldownRemaining(id,now());
+                boolean locked = clock.get().isPaused() || protectedPlayer.test(player) || !available;
                 var color = selected ? net.kyori.adventure.text.format.NamedTextColor.GOLD
                         : id == null ? net.kyori.adventure.text.format.NamedTextColor.DARK_GRAY
-                        : remaining > 0 ? net.kyori.adventure.text.format.NamedTextColor.GRAY
+                        : remaining > 0 || locked ? net.kyori.adventure.text.format.NamedTextColor.GRAY
                         : net.kyori.adventure.text.format.NamedTextColor.AQUA;
-                String status = id == null ? "–" : remaining > 0 ? remaining + "초"
-                        : clock.get().isPaused() || protectedPlayer.test(player) || !available ? "잠김" : "✓";
+                String status = id == null ? "비어 있음" : locked ? "잠김" : remaining > 0 ? remaining + "초" : "✓";
                 message.append(net.kyori.adventure.text.Component.text(selected ? "[" + slot : Integer.toString(slot),color));
                 if (id != null) message.append(art.slotIcon(player,id).color(color));
                 message.append(net.kyori.adventure.text.Component.text(" " + status + (selected ? "]" : ""),color));
@@ -1668,8 +1669,11 @@ final class PaperOfficialCombat implements Listener {
                 var glow = new PotionEffect(PotionEffectType.GLOWING, rule(id).duration() * 20, 0);
                 player.addPotionEffect(glow);
                 rival.addPotionEffect(glow);
-                if (opponent.canSee(player) && opponent.hasLineOfSight(player))
-                    art.signatureAt(opponent,id,opponent.getLocation().add(0,.3,0),true);
+                if (opponent.canSee(player) && opponent.hasLineOfSight(player)) {
+                    Location seal = opponent.getLocation().add(0,.18,0);
+                    seal.setYaw(seal.getYaw() + 180);
+                    art.signatureAt(opponent,id,seal,true);
+                }
                 yield true;
             }
             case "bomb_alchemy" -> {
@@ -1787,16 +1791,7 @@ final class PaperOfficialCombat implements Listener {
         }
         var edge = zone.end().clone().setDirection(delta);
         art.signatureAt(player,zone.augment(),edge.add(0,.32,0),true);
-        art.link(player,zone.start(),zone.end(),Particle.CRIT);
-        var lateral = delta.clone().setY(0);
-        if (lateral.lengthSquared() > 0) {
-            lateral.normalize();
-            var edgeOffset = new org.bukkit.util.Vector(-lateral.getZ(),0,lateral.getX()).multiply(width);
-            for (int side : new int[]{-1,1}) {
-                var shift = edgeOffset.clone().multiply(side).setY(.16);
-                art.link(player,zone.start().clone().add(shift),zone.end().clone().add(shift),Particle.CLOUD);
-            }
-        }
+        art.quakeContact(player,zone.start(),zone.end(),width);
         particle(player, state, Particle.EXPLOSION, zone.end());
     }
 
