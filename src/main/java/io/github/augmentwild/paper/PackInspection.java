@@ -156,7 +156,8 @@ final class PackInspection {
         }
         if (augments != 84) throw new IOException("84개 증강 아이템 정의가 필요합니다.");
         var font = JsonParser.parseString(smallText(zip,ASSETS + "font/skills.json")).getAsJsonObject().getAsJsonArray("providers");
-        if (font.size() != 7) throw new IOException("7개 스킬 글리프가 필요합니다.");
+        if (font.size() < 7 || font.size() > 8) throw new IOException("스킬 글리프와 상태 표식 정의 수 오류");
+        var glyphs = new java.util.HashSet<Integer>();
         for (var entry : font) {
             var provider = entry.getAsJsonObject();
             int height = provider.get("height").getAsInt();
@@ -164,7 +165,17 @@ final class PackInspection {
             if (!provider.get("type").getAsString().equals("bitmap") || height < 1 || height > 8 || ascent < 0 || ascent > height
                     || !names.contains(reference(provider.get("file").getAsString(),"textures/","")))
                 throw new IOException("스킬 글리프 크기 또는 텍스처 참조 오류");
+            String file = provider.get("file").getAsString();
+            boolean status = file.equals("augmentwild:gui/skill_state.png");
+            var rows = provider.getAsJsonArray("chars");
+            if (rows.size() != 1 || rows.get(0).getAsString().length() != (status ? 4 : 1))
+                throw new IOException("스킬 글리프 행 크기 오류");
+            for (int code : rows.get(0).getAsString().chars().toArray()) {
+                if ((status ? code < 0xe110 || code > 0xe113 : code < 0xe100 || code > 0xe106) || !glyphs.add(code))
+                    throw new IOException("스킬 글리프 누락 또는 중복");
+            }
         }
+        if (glyphs.size() != (font.size() == 8 ? 11 : 7)) throw new IOException("스킬 글리프 집합 불일치");
         var sounds = JsonParser.parseString(smallText(zip,ASSETS + "sounds.json")).getAsJsonObject();
         if (!sounds.keySet().containsAll(Set.of("cast","evolve","supply"))) throw new IOException("기본 효과음 정의 누락");
         for (String effect : sounds.keySet()) {
