@@ -1097,7 +1097,7 @@ public final class PaperArt implements Listener {
                 Player player = animation.viewer();
                 var signature = animation.signature();
                 int duration = animation.duration();
-                if (age >= duration + 2 || !animation.at().isChunkLoaded() || !entity.isValid() || !player.isOnline() || !playable.test(player) || !custom(player)
+                if (age >= duration + (signature == null ? 1 : 2) || !animation.at().isChunkLoaded() || !entity.isValid() || !player.isOnline() || !playable.test(player) || !custom(player)
                         || !player.getWorld().equals(animation.at().getWorld())
                         || !PlayerUi.enabled(player,PlayerUi.Option.PARTICLES)) {
                     removeAnimation(animation,"visibility_or_lifecycle");
