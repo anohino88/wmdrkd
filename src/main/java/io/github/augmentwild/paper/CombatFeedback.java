@@ -132,7 +132,11 @@ final class CombatFeedback implements Listener {
         }
         if (health > 0 && s.victim instanceof Player) received.merge(id,health,Double::sum);
         if (s.owner == null) return;
-        if (health > 0) dealt.merge(s.owner.getUniqueId(),health,Double::sum);
+        if (health > 0) {
+            dealt.merge(s.owner.getUniqueId(),health,Double::sum);
+            var trace = augments.trace(s.event);
+            augments.confirmedHealthDamage(s.owner.getUniqueId(),trace.synthetic() ? trace.augment() : "unclassified",health);
+        }
         if (s.victim instanceof Player victim && !augments.trace(s.event).synthetic()) {
             var form = s.blocked || s.shield > 0 ? CombatCinematics.Form.GUARD
                     : s.critical ? CombatCinematics.Form.CRITICAL

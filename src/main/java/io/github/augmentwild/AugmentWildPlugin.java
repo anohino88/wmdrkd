@@ -94,6 +94,13 @@ public final class AugmentWildPlugin extends JavaPlugin {
             }
             return true;
         }
+        if (args.length >= 2 && args[0].equalsIgnoreCase("admin")) {
+            String operation = args[1].toLowerCase(Locale.ROOT);
+            if (java.util.Set.of("dashboard","config","stats").contains(operation)) {
+                sender.sendMessage(matches.operations(sender,operation,java.util.Arrays.copyOfRange(args,2,args.length)));
+                return true;
+            }
+        }
         if (args.length == 2 && args[0].equalsIgnoreCase("admin")) {
             if (!sender.hasPermission("augmentwild.admin")) {
                 sender.sendMessage("관리자 권한이 없습니다.");
@@ -111,6 +118,10 @@ public final class AugmentWildPlugin extends JavaPlugin {
         }
         if (!sender.hasPermission("augmentwild.play")) {
             sender.sendMessage("권한이 없습니다.");
+            return true;
+        }
+        if (args.length == 1 && args[0].equalsIgnoreCase("guide")) {
+            sender.sendMessage(sender instanceof Player player ? matches.newcomerGuide(player) : "플레이어 전용 명령입니다.");
             return true;
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("skill") && args[1].equalsIgnoreCase("menu")

@@ -57,6 +57,7 @@ public final class PaperArt implements Listener {
     private final Map<String,String> labels = new HashMap<>();
     private final Properties screens = new Properties();
     private final Properties motifs = new Properties();
+    private final Properties families = new Properties();
     private final Map<String,ArtSignature> signatures;
     private final Map<String,List<ArtRig.Part>> rigs;
     private final Map<String,ArtSignature> legacySignatures;
@@ -209,7 +210,7 @@ public final class PaperArt implements Listener {
 
     String packStatus(Player p) {
         if (pack == null) return settingsIssue + " · 기본 표시";
-        if (!matchingPack) return "팩 SHA-1이 8.1 배포본과 다릅니다 · 기본 표시";
+        if (!matchingPack) return "팩 SHA-1이 8.2 배포본과 다릅니다 · 기본 표시";
         String mode = safe(p) ? " · 안전 모드" : "";
         if (loaded.contains(p.getUniqueId())) return "클라이언트 로드 응답 · " + pack.hash().substring(0,8) + mode;
         var status = reports.get(p.getUniqueId());
@@ -246,6 +247,9 @@ public final class PaperArt implements Listener {
                 this::roomForCombat,this::spawn,audience);
         try (var input = plugin.getResource("art-motifs.properties")) {
             if (input != null) motifs.load(input);
+            try (var styles = plugin.getResource("art-families.properties")) {
+                if (styles != null) families.load(new java.io.InputStreamReader(styles,StandardCharsets.UTF_8));
+            }
             try (var layouts = plugin.getResource("art-screen-samples.properties")) {
                 if (layouts != null) screens.load(layouts);
             }
@@ -455,6 +459,8 @@ public final class PaperArt implements Listener {
         return byRarity.getOrDefault(tier.toUpperCase(Locale.ROOT),List.of()).stream()
                 .sorted().limit(3).map(id -> "augment/" + id).toArray(String[]::new);
     }
+
+    String family(String id) { return families.getProperty(id,"미분류"); }
 
     String label(String key) {
         String id = key.substring(key.indexOf('/') + 1);
@@ -804,7 +810,7 @@ public final class PaperArt implements Listener {
         var entries = new ArrayList<String>();
         motifs.stringPropertyNames().stream().sorted().map(id -> "augment/" + id).forEach(entries::add);
         new TreeSet<>(MOTIONS.keySet()).forEach(id -> entries.add("model/" + id));
-        entries.addAll(List.of("model/supply","model/premium","model/helix","model/fracture","model/crescent"));
+        entries.addAll(List.of("model/supply","model/premium","model/tier_growth_1","model/tier_growth_2","model/tier_growth_3","model/helix","model/fracture","model/crescent"));
         new TreeSet<>(signatures.values().stream().map(s -> "sig_" + s.shape()).toList()).forEach(id -> entries.add("model/" + id));
         new TreeSet<>(signatures.keySet()).forEach(id -> entries.add("cinema/" + id));
         entries.addAll(List.of("cinema/arc","cinema/blast","cinema/guard","cinema/danger"));
@@ -857,6 +863,15 @@ public final class PaperArt implements Listener {
         if (signature == null) return;
         var animation = cues.remove(new PrivateCue(owner,"sig_" + signature.shape()));
         if (animation != null) removeAnimation(animation,"effect_end");
+    }
+
+    void growthStage(Player player,String id,int stage) {
+        if (!playable.test(player) || PlayerUi.quality(player) == PlayerUi.Quality.LOW || PlayerUi.reducedFlash(player)) return;
+        if (!custom(player)) {
+            spark(player,near(player),Particle.END_ROD);
+            return;
+        }
+        render(player,near(player),"tier_growth_" + stage,GROWTH.getOrDefault(id,PULSE));
     }
 
     void growth(Player player, String id, boolean visible) {

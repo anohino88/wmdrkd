@@ -30,7 +30,7 @@ public final class PaperQuickMenu implements Listener {
 
     // Map physical inventory positions to the existing actions. Headers have no action.
     private static final java.util.Map<Integer,Integer> MAIN_ACTIONS = java.util.Map.ofEntries(
-            java.util.Map.entry(9,10), java.util.Map.entry(10,11), java.util.Map.entry(11,16),
+            java.util.Map.entry(3,27), java.util.Map.entry(9,10), java.util.Map.entry(10,11), java.util.Map.entry(11,16),
             java.util.Map.entry(12,15), java.util.Map.entry(14,12), java.util.Map.entry(15,18),
             java.util.Map.entry(16,14), java.util.Map.entry(17,13), java.util.Map.entry(18,21),
             java.util.Map.entry(19,22), java.util.Map.entry(20,19), java.util.Map.entry(21,17),
@@ -160,7 +160,9 @@ public final class PaperQuickMenu implements Listener {
         art.button(player,menu.inventory,1,"status");
         art.button(player,menu.inventory,7,"codex");
         art.button(player,menu.inventory,4,"atlas");
-        art.inlay(player,menu.inventory,"rail_left",0,2,3);
+        item(menu,3,Material.WRITABLE_BOOK,"처음 하는 경기","참가 · 스킬 조작 · 부활 및 전투 규칙");
+        art.button(player,menu.inventory,3,"journal");
+        art.inlay(player,menu.inventory,"rail_left",0,2);
         art.inlay(player,menu.inventory,"rail_right",5,6,8);
         art.inlay(player,menu.inventory,"bezel",13);
         player.openInventory(menu.inventory);
@@ -321,6 +323,7 @@ public final class PaperQuickMenu implements Listener {
             case 25 -> player.hasPermission("augmentwild.admin")
                     ? confirmDecision(player, ConfirmKind.START) : "관리자 권한이 없습니다.";
             case 26 -> open(player);
+            case 27 -> matches.newcomerGuide(player);
             default -> "";
         };
     }

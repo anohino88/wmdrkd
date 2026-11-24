@@ -142,6 +142,8 @@ with log.open("wb") as output:
                 wait_for("AW_ART_PROBE_PASS", 15)
                 if os.environ.get("AW_SIGNATURE_PROBE") == "1":
                     wait_for("AW_ART_SIGNATURE_PASS",15)
+                    wait_for("AW_CONFIG_MIGRATION_PASS",15)
+                    wait_for("AW_HUD_CHANNELS_PASS",15)
                     wait_for("AW_ART_CINEMA_PASS",15)
                     wait_for("AW_ART_RIG_PASS",15)
                 wait_for("AW_PUBLIC_ART_PASS", 15)

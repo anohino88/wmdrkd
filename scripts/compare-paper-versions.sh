@@ -7,10 +7,10 @@ out="$root/build/version-comparison"
 mkdir -p "$out"
 trap 'rm -rf "$fixture"' EXIT
 
-for version in 8.0 8.1; do
+for version in 8.1 8.2; do
     case "$version" in
-        8.0) commit=70434e6995f55033220c6fa0ef1f8749ff54075d ;;
-        8.1) commit=$(git -C "$root" rev-parse HEAD) ;;
+        8.1) commit=099a6d668fcbca9f357a49953c2fc49738160b31 ;;
+        8.2) commit=$(git -C "$root" rev-parse HEAD) ;;
     esac
     if ! git -C "$root" cat-file -e "$commit^{commit}"; then
         git -C "$root" fetch --no-tags --depth=1 origin "$commit"

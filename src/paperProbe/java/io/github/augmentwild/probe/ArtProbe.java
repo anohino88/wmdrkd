@@ -27,6 +27,11 @@ final class ArtProbe {
 
     static void run(Pig pig) {
         var host = (JavaPlugin) Bukkit.getPluginManager().getPlugin("AugmentWild");
+        try {
+            verifyConfigMigration(host);
+        } catch (ReflectiveOperationException | java.io.IOException failure) {
+            throw new AssertionError("Config migration fixture",failure);
+        }
         var hash = ArtProbe.packHash(host);
         var id = UUID.nameUUIDFromBytes(("augmentwild-art:"+hash).getBytes(StandardCharsets.UTF_8));
         var config = host.getConfig();
@@ -46,6 +51,8 @@ final class ArtProbe {
         }
         ItemDisplay[] shown = new ItemDisplay[1];
         int[] particles = {0};
+        int[] hudBars = {0,0};
+        var hudAlerts = new java.util.ArrayList<net.kyori.adventure.text.Component>();
         var observed = new java.util.ArrayList<ItemDisplay>();
         var p = (Player) Proxy.newProxyInstance(Player.class.getClassLoader(),new Class<?>[]{Player.class},(proxy,method,args) -> {
             return switch (method.getName()) {
@@ -53,6 +60,9 @@ final class ArtProbe {
                 case "getWorld" -> pig.getWorld();
                 case "getLocation" -> pig.getLocation();
                 case "sendMessage" -> null;
+                case "showBossBar" -> { hudBars[0]++; yield null; }
+                case "hideBossBar" -> { hudBars[1]++; yield null; }
+                case "sendActionBar" -> { hudAlerts.add((net.kyori.adventure.text.Component)args[0]); yield null; }
                 case "getEyeLocation" -> pig.getEyeLocation();
                 case "hasLineOfSight" -> true;
                 case "getPersistentDataContainer" -> pig.getPersistentDataContainer();
@@ -64,6 +74,11 @@ final class ArtProbe {
                 default -> throw new AssertionError("Unexpected artwork probe operation: " + method);
             };
         });
+        try {
+            verifyHudChannels(host,p,hudBars,hudAlerts);
+        } catch (ReflectiveOperationException failure) {
+            throw new AssertionError("Persistent skill HUD",failure);
+        }
         String model = "augment/steel_heart";
         require(art.icon(p,new ItemStack(Material.GOLD_INGOT),model).getItemMeta().getItemModel() == null);
         art.status(new PlayerResourcePackStatusEvent(p,UUID.randomUUID(),Status.SUCCESSFULLY_LOADED));
@@ -299,7 +314,7 @@ final class ArtProbe {
             inspect.setAccessible(true);
             var fixture = java.nio.file.Path.of(System.getProperty("augmentwild.pack.fixture"));
             var archive = inspect.invoke(null,fixture);
-            require(archive.toString().startsWith("Archive[release=8.1,"));
+            require(archive.toString().startsWith("Archive[release=8.2,"));
             var invalid = java.nio.file.Files.createTempFile("aw-invalid-pack-", ".zip");
             try {
                 java.nio.file.Files.writeString(invalid,"not a resource pack");
@@ -316,6 +331,56 @@ final class ArtProbe {
         } catch (ReflectiveOperationException | java.io.IOException failure) {
             throw new AssertionError("Pack fallback fixture",failure);
         }
+    }
+
+    private static void verifyHudChannels(JavaPlugin host,Player player,int[] bars,
+                                          java.util.List<net.kyori.adventure.text.Component> alerts)
+            throws ReflectiveOperationException {
+        var loader = host.getClass().getClassLoader();
+        var type = Class.forName("io.github.augmentwild.paper.PaperHud",true,loader);
+        var constructor = type.getDeclaredConstructor();
+        constructor.setAccessible(true);
+        var hud = constructor.newInstance();
+        var layer = Class.forName("io.github.augmentwild.domain.HudMessages$Layer",true,loader);
+        Object skill = java.util.Arrays.stream(layer.getEnumConstants()).filter(x -> x.toString().equals("SKILL")).findFirst().orElseThrow();
+        var set = type.getDeclaredMethod("set",UUID.class,layer,net.kyori.adventure.text.Component.class);
+        var damage = type.getDeclaredMethod("damage",Player.class,String.class);
+        var render = type.getDeclaredMethod("render",Player.class,long.class);
+        var clear = type.getDeclaredMethod("clear",UUID.class,Player.class);
+        for (var method : java.util.List.of(set,damage,render,clear)) method.setAccessible(true);
+        set.invoke(hud,player.getUniqueId(),skill,net.kyori.adventure.text.Component.text("세 슬롯"));
+        damage.invoke(hud,player,"적중");
+        render.invoke(hud,player,System.nanoTime());
+        require(bars[0] == 1 && bars[1] == 0 && alerts.getLast().equals(net.kyori.adventure.text.Component.text("적중")));
+        render.invoke(hud,player,System.nanoTime()+2_000_000_000L);
+        require(bars[0] == 1 && alerts.getLast().equals(net.kyori.adventure.text.Component.empty()));
+        clear.invoke(hud,player.getUniqueId(),player);
+        require(bars[1] == 1);
+        Bukkit.getLogger().info("AW_HUD_CHANNELS_PASS skill=true combat=true cleanup=true");
+    }
+
+    private static void verifyConfigMigration(org.bukkit.plugin.java.JavaPlugin host)
+            throws ReflectiveOperationException, java.io.IOException {
+        var type = Class.forName("io.github.augmentwild.paper.ConfigMigration",true,host.getClass().getClassLoader());
+        var run = type.getDeclaredMethod("run",java.nio.file.Path.class,String[].class);
+        run.setAccessible(true);
+        var path = java.nio.file.Files.createTempDirectory(host.getDataFolder().toPath(),"migration-fixture-");
+        var config = path.resolve("config.yml");
+        String original = "# keep operator text\narena:\n  world: existing_world\nunknown: retained\n";
+        java.nio.file.Files.writeString(config,original);
+        String dry = (String) run.invoke(null,config,new String[]{"migrate","--dry-run"});
+        require(dry.contains("settings-version") && original.equals(java.nio.file.Files.readString(config)));
+        String applied = (String) run.invoke(null,config,new String[]{"migrate","--apply"});
+        require(applied.startsWith("적용") && java.nio.file.Files.readString(config).startsWith(original));
+        try (var backups = java.nio.file.Files.newDirectoryStream(path,"config-backup*.yml")) {
+            require(original.equals(java.nio.file.Files.readString(backups.iterator().next())));
+        }
+        require(((String)run.invoke(null,config,new String[]{"migrate","--apply"})).startsWith("PASS"));
+        String conflicting = original + "settings-version: invalid\n";
+        java.nio.file.Files.writeString(config,conflicting);
+        require(((String)run.invoke(null,config,new String[]{"migrate","--apply"})).startsWith("FAIL")
+                && conflicting.equals(java.nio.file.Files.readString(config)));
+        Bukkit.getLogger().info("AW_CONFIG_MIGRATION_PASS dry_run=true idempotent=true backup=true conflict=true");
     }
 
     private static void require(boolean condition) {

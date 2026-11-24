@@ -282,7 +282,7 @@ final class PaperSupply implements Listener {
             return;
         }
         delivery.claimed = true;
-        stats.supplyClaim(delivery.plan.id(), (elapsed - delivery.arrived) / 1_000_000L);
+        stats.supplyClaim(delivery.plan.id(), (elapsed - delivery.arrived) / 1_000_000L,player.getUniqueId());
         remove(delivery);
         notice.accept(player.getName() + " 님이 " + label(delivery) + "을 획득했습니다.");
         if (PlayerUi.enabled(player,PlayerUi.Option.SOUND)) player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1, 1.2f);
@@ -443,7 +443,9 @@ final class PaperSupply implements Listener {
                 continue;
             }
             Location point = delivery.position;
-            String status = delivery.attempted ? "개봉 가능" : "등장까지 " + Math.max(0,delivery.plan.second()-elapsed/1_000_000_000L) + "초";
+            var progress = opening.get(player.getUniqueId());
+            String status = progress != null && progress.delivery() == delivery ? "개봉 진행 중"
+                    : delivery.attempted ? "개봉 가능" : "등장까지 " + Math.max(0,delivery.plan.second()-elapsed/1_000_000_000L) + "초";
             if (details && point != null && player.getWorld().equals(point.getWorld())) {
                 Location from = player.getLocation();
                 status += String.format(java.util.Locale.ROOT," · %d %d %d · %s · %.0fm",point.getBlockX(),point.getBlockY(),

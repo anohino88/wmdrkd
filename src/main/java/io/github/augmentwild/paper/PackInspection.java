@@ -61,7 +61,7 @@ final class PackInspection {
         connection.setInstanceFollowRedirects(false);
         connection.setConnectTimeout(5000);
         connection.setReadTimeout(5000);
-        connection.setRequestProperty("User-Agent","AugmentWild/8.1 (resource pack validation)");
+        connection.setRequestProperty("User-Agent","AugmentWild/8.2 (resource pack validation)");
         Path archive = Files.createTempFile("augmentwild-pack-", ".zip");
         try {
             int status = connection.getResponseCode();

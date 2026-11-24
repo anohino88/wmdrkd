@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.bossbar.BossBar;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -17,6 +18,8 @@ final class PaperHud {
     private final Map<UUID, View> players = new HashMap<>();
 
     private final io.github.augmentwild.domain.CombatHistory history = new io.github.augmentwild.domain.CombatHistory();
+    private final Map<UUID,Double> healing = new HashMap<>();
+    double healed(UUID id) { return healing.getOrDefault(id,0d); }
     private final java.util.Set<UUID> low = new java.util.HashSet<>();
     private static final java.time.format.DateTimeFormatter UTC = java.time.format.DateTimeFormatter
             .ofPattern("HH:mm:ss").withZone(java.time.ZoneOffset.UTC);
@@ -58,6 +61,7 @@ final class PaperHud {
             remove(p.getUniqueId(),Layer.BORDER);
             return;
         }
+        players.computeIfAbsent(p.getUniqueId(),ignored -> new View()).outside = !inside;
         String arrow = io.github.augmentwild.domain.CombatNavigation.bearing(area.x()-x,area.z()-z,loc.getYaw());
         set(p.getUniqueId(),Layer.BORDER,Component.text((inside ? "경계 접근" : "위험 · 경계 밖")
                 + (shrinking ? " · 축소 중" : " · 고정") + " · " + Math.round(distance) + "블록 · 안쪽 " + arrow));
@@ -92,12 +96,19 @@ final class PaperHud {
 
     private static final class View {
         final HudMessages<Component> layers = new HudMessages<>();
-        Component sent;
+        Component sent, skills, skillSent;
+        BossBar skillBar;
+        String procName;
+        int procCount;
+        long procExpires;
+        boolean outside;
         long refresh;
     }
 
     void set(UUID id, Layer layer, Component message) {
-        players.computeIfAbsent(id, ignored -> new View()).layers.set(layer, message);
+        var view = players.computeIfAbsent(id, ignored -> new View());
+        if (layer == Layer.SKILL) view.skills = message;
+        else view.layers.set(layer, message);
     }
 
     void skillInput(Player p, String result) {
@@ -109,6 +120,7 @@ final class PaperHud {
     }
     void heal(Player player, double before, double after) {
         if (after <= before) return;
+        healing.merge(player.getUniqueId(),after-before,Double::sum);
         String message = String.format(java.util.Locale.ROOT,"회복 +%.1f HP",after-before);
         record(player,message);
         damage(player,message);
@@ -125,13 +137,27 @@ final class PaperHud {
     }
 
     void proc(Player player, String name) {
-        players.computeIfAbsent(player.getUniqueId(), ignored -> new View()).layers
-                .offerProc(Component.text("증강 발동 · " + name, NamedTextColor.LIGHT_PURPLE), System.nanoTime(), 2 * REFRESH_NANOS);
+        if (!PlayerUi.enabled(player,PlayerUi.Option.PROC)) return;
+        var view = players.computeIfAbsent(player.getUniqueId(),ignored -> new View());
+        long now = System.nanoTime();
+        boolean active = now < view.procExpires;
+        if (active && !name.equals(view.procName)) return;
+        if (!active) {
+            view.procName = name;
+            view.procCount = 0;
+            view.procExpires = now + 2 * REFRESH_NANOS;
+        }
+        int count = ++view.procCount;
+        view.layers.until(Layer.PROC,Component.text("증강 발동 · " + name + (count > 1 ? " ×" + count : ""),
+                NamedTextColor.LIGHT_PURPLE),view.procExpires);
+
     }
 
     void remove(UUID id, Layer layer) {
         View view = players.get(id);
-        if (view != null) view.layers.remove(layer);
+        if (view == null) return;
+        if (layer == Layer.SKILL) view.skills = null;
+        else view.layers.remove(layer);
     }
 
     void render(Player player, long now) {
@@ -142,23 +168,44 @@ final class PaperHud {
         if (!PlayerUi.enabled(player,PlayerUi.Option.SKILL)) { view.layers.remove(Layer.SKILL); view.layers.remove(Layer.SKILL_INPUT); }
         if (!PlayerUi.enabled(player,PlayerUi.Option.INCOMING)) view.layers.remove(Layer.INCOMING);
         if (!PlayerUi.enabled(player,PlayerUi.Option.AUTO)) view.layers.remove(Layer.AUTO);
-        Component next = view.layers.current(now);
+        renderSkills(player,view);
+        Component warning = view.outside ? view.layers.layer(Layer.BORDER,now) : null;
+        Component next = view.layers.layer(Layer.SELECTION,now);
+        if (next == null) next = warning == null ? view.layers.current(now) : warning;
         if (!Objects.equals(next, view.sent) || next != null && now - view.refresh >= REFRESH_NANOS) {
             player.sendActionBar(next == null ? Component.empty() : next);
             view.sent = next;
             view.refresh = now;
         }
-        if (next == null) players.remove(player.getUniqueId());
+        if (next == null && view.skills == null) players.remove(player.getUniqueId());
+    }
+
+    private void renderSkills(Player player, View view) {
+        var skills = PlayerUi.enabled(player,PlayerUi.Option.SKILL) ? view.skills : null;
+        if (skills == null) {
+            if (view.skillBar != null) player.hideBossBar(view.skillBar);
+            view.skillBar = null;
+            view.skillSent = null;
+        } else if (!skills.equals(view.skillSent)) {
+            if (view.skillBar == null) {
+                view.skillBar = BossBar.bossBar(skills,1,BossBar.Color.PURPLE,BossBar.Overlay.NOTCHED_6);
+                player.showBossBar(view.skillBar);
+            } else view.skillBar.name(skills);
+            view.skillSent = skills;
+        }
     }
 
     void clear(UUID id, Player player) {
         low.remove(id);
         View view = players.remove(id);
-        if (view != null && view.sent != null && player != null) player.sendActionBar(Component.empty());
+        if (view == null || player == null) return;
+        if (view.sent != null) player.sendActionBar(Component.empty());
+        if (view.skillBar != null) player.hideBossBar(view.skillBar);
     }
 
     void clear(JavaPlugin plugin) {
         history.clear();
+        healing.clear();
         low.clear();
         for (UUID id : java.util.List.copyOf(players.keySet())) clear(id, plugin.getServer().getPlayer(id));
     }

@@ -67,16 +67,35 @@ def form(kind):
             angle = .78 + i*.52
             bar(8+3.75*math.cos(angle),7.26+.21*i,8+3.75*math.sin(angle),.57,.27,.61,"metal")
         return
+    if kind.startswith("tier_growth_"):
+        stage = int(kind[-1])
+        bar(8,7,8,2.5,3.4,2.4,"light","z",45)
+        for level in range(stage):
+            size = 3.4 + level * 2.3
+            for arm in range(4):
+                angle = arm * math.tau / 4 + level * math.pi/4
+                bar(8+math.cos(angle)*size/2,5.2+level*.91,8+math.sin(angle)*size/2,
+                    2.6,.32,1.15,"accent" if level == stage-1 else "metal","y",45 if arm%2 else 0)
+        return
     if kind in ("supply", "premium"):
-        bar(8, 7, 8, 9, 4, 7, "dark")
-        bar(8, 9.6, 8, 9.5, 1.2, 7.5, "metal")
-        for x in (5, 11):
-            bar(x, 7, 8, .75, 4.2, 7.2, "metal")
-            bar(x, 10.3, 8, .75, .4, 7.65, "light")
-        bar(8, 8, 4.35, 2.0, 1.6, .35, "accent")
-        if kind == "premium":
-            for y, width in ((10.8, 3), (11.7, 2), (12.6, 1)):
-                bar(8, y, 8, width, .9, width, "accent")
+        premium = kind == "premium"
+        bar(8,6.7,8,9.5,4.5,7.25,"dark")
+        bar(8,9.35,8,9.8,1.04,7.68,"metal")
+        for x in (3.62,12.38):
+            for z in (4.83,11.17):
+                bar(x,6.72,z,1.12,4.70,1.17,"metal")
+                bar(x,9.78,z,1.35,.45,1.42,"light")
+        for x in (5.85,10.15):
+            bar(x,8.12,4.19,1.03,1.52,.27,"light","z",22.5)
+        bar(8,7.91,4.12,1.55,1.58,.52,"accent","z",45)
+        bar(8,5.23,4.19,7.1,.34,.17,"metal")
+        if premium:
+            bar(8,10.17,8,6.65,.8,5.19,"accent")
+            for x in (5.35,10.65):
+                bar(x,10.98,8,.77,2.22,.81,"light","z",22.5 if x<8 else -22.5)
+            bar(8,11.14,8,1.72,2.36,1.67,"light","z",45)
+        else:
+            bar(8,10.04,8,6.35,.52,3.28,"light")
         return
     if kind in ("rune", "time", "void"):
         ring(5, 7.8, "metal")
@@ -138,13 +157,7 @@ def export(kind):
     else:
         form(kind)
     # Silhouette details around the original body, in 0..16 item coordinates.
-    if kind in ("supply", "premium"):
-        for x in (4.4, 11.6):
-            bar(x, 9.15, 11.65, 1.3, .6, .7, "accent")
-        if kind == "premium":
-            for x in (3.9, 12.1):
-                bar(x, 10.9, 8, .45, 1.5, 3.5, "light")
-    elif kind == "time":
+    if kind == "time":
         for x, z in ((8,4.3),(8,11.7),(4.3,8),(11.7,8)):
             bar(x, 8.4, z, .55, .8, .55, "accent")
     elif kind == "impact_legacy":
@@ -181,7 +194,7 @@ def export(kind):
 
 
 for name in ("rune", "blade", "ward", "growth", "bolt", "impact", "fire", "frost",
-             "void", "blood", "time", "rush", "supply", "premium", "helix","fracture","crescent"):
+             "void", "blood", "time", "rush", "supply", "premium", "helix","fracture","crescent","tier_growth_1","tier_growth_2","tier_growth_3"):
     export(name)
 
 for name in SIGNATURES["PALETTES"]:

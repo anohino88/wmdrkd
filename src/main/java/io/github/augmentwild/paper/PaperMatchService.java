@@ -100,10 +100,13 @@ public final class PaperMatchService implements Listener {
     }
     private final PracticeTarget target = new PracticeTarget();
     private final MatchTelemetry telemetry = new MatchTelemetry();
+    private final AugmentHistory analytics;
 
     public PaperMatchService(JavaPlugin plugin, PaperMatchSettings settings, ArenaSearchService search) {
         this.plugin = plugin;
         this.settings = settings;
+        analytics = new AugmentHistory(plugin.getDataFolder().toPath().resolve("analytics"),plugin.getLogger(),
+                Math.clamp(plugin.getConfig().getInt("telemetry-retention-days",90),1,3650));
         overhead = new PaperOverheadHealth(plugin, this::augmentActive);
         this.search = search;
         snapshots = new PlayerSnapshots(plugin);
@@ -361,6 +364,59 @@ public final class PaperMatchService implements Listener {
 
     private boolean labParticipant(Player player) {
         return labWorld != null && contains(player.getUniqueId());
+    }
+
+    public String newcomerGuide(Player player) {
+        var rules = settings.rules();
+        var rows = List.of("참가 · /aw join · 메뉴에서 참가 상태 확인",
+                "파밍 " + rules.gatheringSeconds()/60 + "분 · 파밍 중 사망은 목숨 차감 없음",
+                "증강 선택 · " + rules.selectionInterval()/60 + "분 간격 · /aw augment",
+                "스킬 · " + PlayerUi.skillInput(player).label + " · /aw skill menu",
+                "진화·시너지 · /aw augments 도감에서 실제 조건 확인",
+                "보급 · /aw supply · 공개 뒤 방향과 거리 확인",
+                "적 탐지 · 다이아몬드 1개 · /aw track",
+                "자기장 · 목숨 제한 이후 경계 경고에 따라 안쪽으로 이동",
+                "리스폰 · " + rules.respawnSeconds() + "초와 보호 상태 확인",
+                "승리 · 마지막 생존자 · /aw result",
+                "연습 · 관리자에게 격리 실험실에서 시작을 요청하세요");
+        ArtGallery.read(player,art,PaperArt.Screen.JOURNAL,"처음 하는 경기",rows);
+        return "플레이어 가이드를 열었습니다.";
+    }
+
+    public String operations(CommandSender sender,String feature,String[] args) {
+        if (!sender.hasPermission("augmentwild.admin")) return "관리자 권한이 없습니다.";
+        return switch (feature) {
+            case "config" -> ConfigMigration.run(plugin.getDataFolder().toPath().resolve("config.yml"),args);
+            case "stats" -> {
+                if (args.length == 1 && args[0].equals("export")) yield analytics.export();
+                if ((args.length == 2 || args.length == 3) && args[0].equals("augment")
+                        && (augments.registeredIds().contains(args[1]) || java.util.Set.of("unclassified","life_echo").contains(args[1])
+                                || io.github.augmentwild.augment.AugmentCombinations.UNIQUE.containsKey(args[1]))) {
+                    var lines = analytics.report(args[1],args.length == 3 ? args[2] : "8.2");
+                    if (sender instanceof Player player) ArtGallery.read(player,art,PaperArt.Screen.JOURNAL,"증강 통계",lines);
+                    yield String.join("\n",lines);
+                }
+                yield analytics.summary();
+            }
+            case "dashboard" -> {
+                var online = roster(settings.autoJoin());
+                var world = plugin.getServer().getWorld(plugin.getConfig().getString("arena.world","world"));
+                var labLoaded = lab.ready() && plugin.getServer().getWorld(lab.world()) != null;
+                var rows = List.of("서버 · " + plugin.getServer().getVersion() + " · Java " + Runtime.version(),
+                        "플러그인 " + plugin.getPluginMeta().getVersion() + " · 경기 " + session.state(),
+                        "참가 가능 " + online.players().size() + "/" + settings.maximumPlayers(),
+                        (world == null ? "FAIL · 운영 월드 미로드" : "PASS · 운영 월드 로드 · 월드보더 " + Math.round(world.getWorldBorder().getSize())) + " · /aw admin arena check",
+                        (labLoaded ? "PASS · 격리 실험 월드 로드" : "WARN · 실험 월드 미설정 또는 미로드") + " · /aw admin test check",
+                        "리소스팩 · /aw admin art validate",art.diagnostics(false),
+                        "통계 저장 " + analytics.status() + " · /aw admin stats",
+                        "설정 검사 · /aw admin config check",
+                        "연출 · " + art.metrics(),
+                        "최근 평균 틱 " + String.format(java.util.Locale.ROOT,"%.2fms",org.bukkit.Bukkit.getAverageTickTime()));
+                if (sender instanceof Player player) ArtGallery.read(player,art,PaperArt.Screen.JOURNAL,"관리자 진단",rows);
+                yield String.join("\n",rows);
+            }
+            default -> "지원하지 않는 운영 명령입니다.";
+        };
     }
 
     public String labCommand(CommandSender sender, String[] args) {
@@ -643,7 +699,6 @@ public final class PaperMatchService implements Listener {
         augments.start(session.matchId(), clock, labWorld != null);
         entrants.clear();
         entrants.addAll(players);
-        results.clear();
         displayFailures.clear();
         telemetry.start(players);
         intel.start(session.matchId());
@@ -691,6 +746,7 @@ public final class PaperMatchService implements Listener {
     public void shutdown() {
         clearMatch();
         intel.shutdown();
+        analytics.close();
     }
 
     private void clearMatch() {
@@ -722,6 +778,8 @@ public final class PaperMatchService implements Listener {
             var result = session.cancel();
             if (session.state() == MatchState.ENDING) session.transition(MatchState.CLEANUP);
             if (played) {
+                if (!soloLab && labWorld == null && entrants.size() >= 2 && result.outcome() != GameSession.Outcome.CANCELLED)
+                    analytics.append(session.matchId(),entrants.size(),telemetry.augments().snapshot(result.winner()));
                 Player victor = result.winner() == null ? null : plugin.getServer().getPlayer(result.winner());
                 if (victor != null) killEffect(victor,"최종 우승",org.bukkit.Sound.UI_TOAST_CHALLENGE_COMPLETE,org.bukkit.Particle.END_ROD);
                 for (UUID id : entrants) {
@@ -734,7 +792,9 @@ public final class PaperMatchService implements Listener {
                         lines.add("순위 " + rank);
                     }
                     lines.addAll(departureStats.containsKey(id) ? departureStats.get(id) : resultLines(id));
+                    results.remove(id);
                     results.put(id,List.copyOf(lines));
+                    if (results.size() > 256) results.remove(results.keySet().iterator().next());
                 }
             }
             plugin.getLogger().info("Match " + session.matchId() + " ended with " + result.outcome()
@@ -829,6 +889,7 @@ public final class PaperMatchService implements Listener {
                 telemetry.death(id,killer);
                 fallen.add(id);
                 boolean eliminated = session.player(id).life().status() == LifeState.Status.ELIMINATED;
+                intel.finalizeDeath(id,eliminated);
                 if (eliminated) outAt.putIfAbsent(id,clock.elapsedNanos());
                 String message = io.github.augmentwild.domain.CombatView.feed(causes.get(id),eliminated);
                 if (killer != null && !killer.equals(id)) {
@@ -961,8 +1022,12 @@ public final class PaperMatchService implements Listener {
         var lines = new java.util.ArrayList<String>();
         lines.add("처치 " + telemetry.kills(id) + " · 사망 " + telemetry.deaths(id));
         lines.add(feedback.totals(id));
+        lines.add(String.format(java.util.Locale.ROOT,"확인된 체력 회복 %.1f HP",hud.healed(id)));
         lines.add("생존 시간 " + io.github.augmentwild.domain.CombatView.time(outAt.getOrDefault(id,clock.elapsedNanos()) / 1_000_000_000L));
-        lines.add("스킬 사용 " + augments.skillUses(id));
+        lines.add("스킬 사용 " + augments.skillUses(id) + " · 보급 획득 " + telemetry.supplyClaims(id));
+        Player online = plugin.getServer().getPlayer(id);
+        if (online != null) lines.add("최종 레벨 " + online.getLevel());
+        else lines.add("마지막 확인 레벨 " + augments.lastKnownLevel(id));
         lines.add("획득 증강 · " + String.join(", ",augments.ownedNames(id)));
         lines.addAll(telemetry.attained(id));
         return List.copyOf(lines);

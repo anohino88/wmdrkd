@@ -231,7 +231,7 @@ jobs:
           distribution: temurin
           java-version: '25'
       - uses: gradle/actions/setup-gradle@v4
-      - name: Compare 8.0 and 8.1 on pinned Paper, one host and seed
+      - name: Compare 8.1 and 8.2 on pinned Paper, one host and seed
         run: bash scripts/compare-paper-versions.sh
       - uses: actions/upload-artifact@v4
         if: always()

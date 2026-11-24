@@ -121,7 +121,9 @@ public final class PlayerUi implements Listener {
     static String open(Player p, PaperArt art) {
         var menu = new Menu(p, true,art);
         for (var option : Option.values()) paint(p, menu, option);
-        menu.inventory.setItem(18, PaperIntel.item(PaperIntel.card(Material.BEACON, "전체 UI 켜기", "모든 HUD와 알림 표시")));
+        menu.inventory.setItem(18, PaperIntel.item(PaperIntel.card(Material.BEACON, "기본 / 상세 프리셋",
+                "클릭으로 STANDARD와 DETAILED 전환", "최근 프리셋 · " +
+                p.getPersistentDataContainer().getOrDefault(HUD_PRESET,PersistentDataType.STRING,"STANDARD"))));
         menu.inventory.setItem(20, PaperIntel.item(PaperIntel.card(Material.IRON_SWORD, "전투 집중", "전투 HUD 중심 · 파티클 및 효과음 최소화")));
         menu.inventory.setItem(22, PaperIntel.item(PaperIntel.card(Material.GLASS_PANE, "최소 표시", "체력·피해·스킬·위험 경고만 표시")));
         if (art != null) menu.inventory.setItem(18,art.icon(p,menu.inventory.getItem(18),"gui/settings"));
@@ -137,7 +139,8 @@ public final class PlayerUi implements Listener {
     }
 
     /** Player-local, persistent presets. Neither inventory contents nor gameplay stats are changed. */
-    enum Preset { ALL, COMBAT, MINIMAL }
+    enum Preset { ALL, STANDARD, COMBAT, MINIMAL, DETAILED }
+    private static final NamespacedKey HUD_PRESET = new NamespacedKey("augmentwild","hud_preset");
     static void applyPreset(Player p, Preset preset) {
         var essentials = EnumSet.of(Option.HEALTH, Option.DAMAGE, Option.SKILL,
                 Option.INCOMING, Option.CRISIS, Option.BORDER);
@@ -147,7 +150,8 @@ public final class PlayerUi implements Listener {
         for (var option : Option.values()) {
             if (option == Option.HOTBAR || option == Option.AUTO_BIND) continue;
             boolean show = switch (preset) {
-                case ALL -> true;
+                case ALL, DETAILED -> true;
+                case STANDARD -> option != Option.AUTO;
                 case COMBAT -> combat.contains(option);
                 case MINIMAL -> essentials.contains(option);
             };
@@ -224,16 +228,21 @@ public final class PlayerUi implements Listener {
             return;
         }
         Preset preset = switch (slot) {
-            case 18 -> Preset.ALL;
+            case 18 -> p.getPersistentDataContainer().getOrDefault(HUD_PRESET,PersistentDataType.STRING,"STANDARD")
+                    .equals("DETAILED") ? Preset.STANDARD : Preset.DETAILED;
             case 20 -> Preset.COMBAT;
             case 22 -> Preset.MINIMAL;
             default -> null;
         };
         if (preset != null) {
             applyPreset(p, preset);
+            p.getPersistentDataContainer().set(HUD_PRESET,PersistentDataType.STRING,preset.name());
+            var tag = PaperIntel.item(PaperIntel.card(Material.BEACON,"기본 / 상세 프리셋","최근 프리셋 · " + preset));
+            menu.inventory.setItem(18,menu.art == null ? tag : menu.art.icon(p,tag,"gui/settings"));
             for (var option : Option.values()) paint(p, menu, option);
             p.sendMessage("화면 설정을 변경했습니다 · " + switch (preset) {
-                case ALL -> "전체 표시";
+                case ALL, DETAILED -> "상세 표시";
+                case STANDARD -> "기본 표시";
                 case COMBAT -> "전투 집중";
                 case MINIMAL -> "최소 표시";
             });

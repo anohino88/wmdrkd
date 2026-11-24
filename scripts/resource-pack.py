@@ -26,7 +26,8 @@ PALETTE = {
     "bolt": "#ebe2a3", "impact": "#f8b578", "fire": "#ff8768", "frost": "#acefff",
     "void": "#c69ef8", "blood": "#f4889f", "time": "#91dec6", "rush": "#bddcfb",
     "helix":"#b59eee", "fracture":"#91dbea", "crescent":"#e7b9fc",
-    "supply": "#82d7bc", "premium": "#ffe19c",
+    "supply": "#6fb5d9", "premium": "#ffc479",
+    "tier_growth_1": "#72c39d", "tier_growth_2": "#8ae0ba", "tier_growth_3": "#bcead5",
 }
 SIGNATURES = runpy.run_path(str(SOURCE / "signature-models.py"))
 FORMS = {"sig_" + key: color for key,color in SIGNATURES["PALETTES"].items()}
@@ -38,7 +39,7 @@ SOURCE_SOUNDS = {"cast", "evolve", "supply"}
 SOUNDS = SOURCE_SOUNDS | SYNTH["CUES"].keys()
 RARITY_MARKS = dict(silver="#b7cbe0", gold="#ffd077", prismatic="#eab8ff")
 PACK_DIGEST = ROOT / "src/main/resources/art-pack.sha1"
-RELEASE_METADATA = {"release":"8.1","minecraft":"26.3","inventory_title":"native"}
+RELEASE_METADATA = {"release":"8.2","minecraft":"26.3","inventory_title":"native"}
 PACK_METADATA = {"pack": {"description": "AugmentWild • combat art for Java 26.3",
                           "min_format": [97, 1], "max_format": [97, 1]}}
 
@@ -109,6 +110,30 @@ def item(key, model):
     write_json(ASSETS / f"items/{key}.json", {"model":{"type":"minecraft:model","model":f"augmentwild:{model}"}})
 
 
+# New solid silhouettes, kept wide enough for the 16-pixel item slot.
+COMPACT = {
+    "xp_silver": [[(3,5),(14,8),(14,25),(3,22)],[(17,8),(28,5),(28,22),(17,25)]],
+    "xp_gold": [[(2,17),(30,17),(26,24),(18,27),(14,27),(6,24)],
+                [(15,2),(18,9),(25,12),(18,15),(15,19),(13,15),(6,12),(13,9)]],
+    "xp_prism": [[(15,1),(29,24),(21,29),(9,29),(2,24)],
+                 [(15,10),(20,20),(10,20)]],
+    "ore_ward": [[(3,7),(15,3),(28,7),(25,22),(15,29),(6,22)],
+                 [(15,8),(22,16),(15,24),(9,16)]],
+    "last_bastion": [[(2,4),(8,4),(8,11),(13,11),(13,4),(18,4),(18,11),(23,11),(23,4),
+                      (29,4),(29,27),(2,27)],[(12,18),(18,18),(18,27),(12,27)]],
+    "kinetic_reversal": [[(2,12),(13,2),(13,8),(24,8),(29,13),(29,24),(22,29),(9,29),
+                          (9,23),(21,23),(23,21),(23,16),(20,14),(13,14),(13,19)]],
+}
+
+
+def compact_mask(key):
+    from PIL import Image, ImageDraw
+    mask = Image.new("L",(32,32))
+    draw = ImageDraw.Draw(mask)
+    for index,shape in enumerate(COMPACT[key]):
+        draw.polygon(shape,fill=0 if index == 1 and key in ("xp_prism","ore_ward","last_bastion") else 255)
+    return mask.resize((43,43),Image.Resampling.LANCZOS)
+
 def badge(path, original, rarity, motif, profile):
     from PIL import Image, ImageDraw, ImageChops, ImageColor
     # Render only the upstream mask. Input comes from the pinned, hashed source tree.
@@ -119,6 +144,8 @@ def badge(path, original, rarity, motif, profile):
     silhouette = ImageChops.multiply(art.convert("L"), art.getchannel("A"))
     silhouette = silhouette.crop(silhouette.getbbox())
     silhouette.thumbnail((43,43), Image.Resampling.LANCZOS)
+    if path.stem in COMPACT:
+        silhouette = compact_mask(path.stem)
     im = Image.new("RGBA",(128,128))
     draw = ImageDraw.Draw(im)
     border = {"SILVER":("#d9f2fa","#385262"),"GOLD":("#ffe1a0","#6b3227"),

@@ -273,6 +273,8 @@ final class PaperOfficialCombat implements Listener {
         return target instanceof Enemy && arena.test(target.getLocation());
     }
 
+    private static final org.bukkit.NamespacedKey FIRST_SKILL = new org.bukkit.NamespacedKey("augmentwild","first_skill_guide");
+
     private Fighter fighter(UUID id) { return fighters.computeIfAbsent(id, Fighter::new); }
 
     void acquired(UUID id, String augment) {
@@ -287,6 +289,19 @@ final class PaperOfficialCombat implements Listener {
                     owner.sendMessage(net.kyori.adventure.text.Component.text("스킬 슬롯이 가득 찼습니다 · [교체할 슬롯 선택]")
                             .clickEvent(net.kyori.adventure.text.event.ClickEvent.runCommand("/aw skill menu")));
                 state.hudSecond = -1;
+            }
+        }
+        if (ACTIVE_SKILLS.contains(augment)) {
+            Player owner = plugin.getServer().getPlayer(id);
+            if (owner != null && !owner.getPersistentDataContainer().has(FIRST_SKILL)) {
+                var definition = rule(augment).definition();
+                int slot = java.util.stream.IntStream.rangeClosed(1,3).filter(i -> augment.equals(state.slots.at(i)))
+                        .findFirst().orElse(0);
+                owner.sendMessage(definition.name() + " · " + definition.condition()
+                        + " · 기본 쿨다운 " + definition.cooldown() + "초 · "
+                        + (slot == 0 ? "미등록" : slot + "번 슬롯") + " · " + PlayerUi.skillInput(owner).label
+                        + " · /aw skill menu");
+                owner.getPersistentDataContainer().set(FIRST_SKILL,org.bukkit.persistence.PersistentDataType.BYTE,(byte)1);
             }
         }
         if (augment.equals("overgrowth")) {
@@ -767,6 +782,8 @@ final class PaperOfficialCombat implements Listener {
         player.setHealth(Math.min(maxHealth(player), previous + amount));
         hud.heal(player,previous,player.getHealth());
         audit.add(effect, Metric.HEALED, player.getHealth() - previous);
+        telemetry.augments().add(player.getUniqueId(),effect,
+                io.github.augmentwild.domain.AugmentTelemetry.Metric.HEALED,player.getHealth()-previous);
         if (player.getHealth() > previous) {
             art.cue(player,effect);
             art.ring(player,player.getLocation().add(0,.55,0),.44,Particle.HAPPY_VILLAGER,false);
@@ -1566,6 +1583,8 @@ final class PaperOfficialCombat implements Listener {
                 message.append(net.kyori.adventure.text.Component.text(selected ? "[" + slot : Integer.toString(slot),color));
                 if (id != null) message.append(art.slotIcon(player,id).color(color));
                 message.append(art.slotMark(player,mark));
+                if (id != null && !locked && activeSkillNow(state,id))
+                    message.append(net.kyori.adventure.text.Component.text(" 지속",color));
                 if (mark == PaperArt.SlotMark.COOLDOWN)
                     message.append(net.kyori.adventure.text.Component.text(" " + remaining + "초",color));
                 if (selected) message.append(net.kyori.adventure.text.Component.text("]",color));
@@ -1574,6 +1593,17 @@ final class PaperOfficialCombat implements Listener {
                     (state.slots.current() == null ? "선택 슬롯 비어 있음" : skillStatus(player,state,state.slots.current()))));
             hud.set(player.getUniqueId(),Layer.SKILL,message.build());
         }
+    }
+
+    private boolean activeSkillNow(Fighter state,String id) {
+        return switch (id) {
+            case "shadow_dash" -> state.shadowUntil > now();
+            case "duel_contract" -> state.duelTarget != null && state.duelUntil > now();
+            case "bomb_alchemy" -> state.bomb != null && state.bomb.isValid();
+            case "void_lord", "earthquake_mage" -> state.zones.stream()
+                    .anyMatch(zone -> zone.augment().equals(id) && zone.expiresAt() > now());
+            default -> false;
+        };
     }
 
     private String reactionProgress(UUID owner, String id, CombatReaction state) {
@@ -1639,9 +1669,15 @@ final class PaperOfficialCombat implements Listener {
     String cast(Player player, String id) {
         if (!ACTIVE_SKILLS.contains(id)) return "사용할 수 있는 발동형 증강 ID가 아닙니다.";
         if (match != null && owns(player,id) && clock.get().isPaused()) return "경기 일시정지 중에는 사용할 수 없습니다.";
-        if (!valid(player) || player.getGameMode() == org.bukkit.GameMode.SPECTATOR || !owns(player, id)) return "현재 이 증강을 발동할 수 없습니다.";
+        if (match == null) return "경기 밖에서는 발동할 수 없습니다.";
+        if (player.getGameMode() == org.bukkit.GameMode.SPECTATOR) return "관전 또는 탈락 중에는 발동할 수 없습니다.";
+        if (protectedPlayer.test(player)) return "부활 보호 중에는 발동할 수 없습니다.";
+        if (!valid(player) || !owns(player, id)) return "현재 이 증강을 발동할 수 없습니다.";
         Fighter state = fighter(player.getUniqueId());
-        if (!state.progress.ready(id, now())) return "재사용 대기 " + state.progress.cooldownRemaining(id,now()) + "초";
+        if (!state.progress.ready(id,now())) {
+            telemetry.augments().add(player.getUniqueId(),id,io.github.augmentwild.domain.AugmentTelemetry.Metric.CAST_FAILED,1);
+            return "재사용 대기 " + state.progress.cooldownRemaining(id,now()) + "초";
+        }
         Location before = player.getLocation();
         boolean applied = switch (id) {
             case "shadow_dash", "earthquake_mage" -> {
@@ -1694,6 +1730,9 @@ final class PaperOfficialCombat implements Listener {
             }
             default -> false;
         };
+        telemetry.augments().add(player.getUniqueId(),id,applied
+                ? io.github.augmentwild.domain.AugmentTelemetry.Metric.CAST_OK
+                : io.github.augmentwild.domain.AugmentTelemetry.Metric.CAST_FAILED,1);
         if (!applied) return switch (id) {
             case "duel_contract" -> "조준한 유효 상대가 없습니다.";
             case "bomb_alchemy" -> "폭탄이 이미 비행 중이거나 발사할 수 없습니다.";
@@ -2404,6 +2443,7 @@ final class PaperOfficialCombat implements Listener {
     }
 
     private void announceProc(Player player, String id) {
+        telemetry.augments().add(player.getUniqueId(),id,io.github.augmentwild.domain.AugmentTelemetry.Metric.PROC,1);
         var definition = catalog.rules.get(id);
         String name = definition != null ? definition.definition().name() : catalog.synergies.getString(id + ".name");
         if (name != null) hud.activated(player,name);
@@ -2461,6 +2501,12 @@ final class PaperOfficialCombat implements Listener {
             if (!owns(player,evo.augment) || state.growthNotices.contains(evo.augment)) continue;
             double goal = evolutionThreshold(evo);
             double progress = evo.progress(state.progress,state.burned);
+            int stage = io.github.augmentwild.domain.GrowthVisual.stage(progress,goal);
+            if (stage > 0 && stage < 4 && state.growthNotices.add(evo.augment + ":stage:" + stage)
+                    && PlayerUi.enabled(player,PlayerUi.Option.GROWTH)) {
+                hud.proc(player,rule(evo.augment).definition().name() + " · 성장 " + stage * 25 + "%");
+                art.growthStage(player,evo.augment,stage);
+            }
             if (progress < goal && progress >= .9 * goal && state.growthNotices.add("near:" + evo.augment)
                     && PlayerUi.enabled(player,PlayerUi.Option.GROWTH))
                 player.sendMessage("진화 임박 · " + rule(evo.augment).definition().name() + " · " + evolutionLine(player.getUniqueId(),evo));
@@ -2748,6 +2794,8 @@ final class PaperOfficialCombat implements Listener {
                     art.impact(player,"ward",player.getLocation().add(0,.85,0));
             }
             audit.add("resonance_revival", Metric.SHIELDED, confirmed);
+            telemetry.augments().add(player.getUniqueId(),"life_echo",
+                    io.github.augmentwild.domain.AugmentTelemetry.Metric.SHIELDED,confirmed);
             if (audit.sampleAvailable()) audit.sample(now(), "shield actor=" + audit.actor(player.getUniqueId())
                     + " reserved=" + spent.reserved() + " absorbed=" + confirmed);
             updateShieldDisplay(player, state);

@@ -372,13 +372,21 @@ final class PaperIntel implements Listener {
         player.sendMessage("사망 분석을 저장했습니다. 기본 리스폰 후 /aw death로 볼 수 있습니다.");
     }
 
+    void finalizeDeath(UUID player,boolean eliminated) {
+        var report = deaths.get(player);
+        if (report == null) return;
+        var cards = new ArrayList<>(report.cards());
+        cards.addFirst(card(eliminated ? Material.BARRIER : Material.CLOCK,
+                eliminated ? "최종 탈락" : "리스폰 예정",
+                eliminated ? "현재 위치와 생존자의 실시간 상태는 공개되지 않습니다." : "리스폰이 끝난 뒤에도 필요할 때 조회할 수 있습니다."));
+        retain(deaths,player,new Report(report.matchId(),report.title(),cards,report.deadline()));
+    }
+
     void onRespawn(Player player) {
-        UUID id = player.getUniqueId();
-        Report report = deaths.get(id);
-        if (report != null) plugin.getServer().getScheduler().runTask(plugin, () -> {
-            if (player.isOnline() && !player.isDead() && deaths.get(id) == report
-                    && (clock.get() == null || !clock.get().isPaused()) && report.valid()) open(player, report);
-        });
+        var report = deaths.get(player.getUniqueId());
+        if (report != null && report.valid())
+            player.sendMessage(Component.text("사망 분석 보기 · /aw death")
+                    .clickEvent(net.kyori.adventure.text.event.ClickEvent.runCommand("/aw death")));
     }
 
     void remove(UUID id) {

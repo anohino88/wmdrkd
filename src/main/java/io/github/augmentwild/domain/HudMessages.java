@@ -21,6 +21,12 @@ public final class HudMessages<T> {
 
     public void remove(Layer layer) { entries.remove(layer); }
 
+    public T layer(Layer layer,long now) {
+        var entry = entries.get(layer);
+        if (entry == null || now >= entry.expiry()) return null;
+        return entry.message();
+    }
+
     public T current(long now) {
         entries.values().removeIf(item -> now >= item.expiry());
         if (entries.isEmpty()) return null;

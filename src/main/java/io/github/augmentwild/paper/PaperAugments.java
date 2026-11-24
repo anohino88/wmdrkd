@@ -2,6 +2,7 @@ package io.github.augmentwild.paper;
 
 import io.github.augmentwild.augment.*;
 import io.github.augmentwild.augment.AugmentDefinition.Effect;
+import io.github.augmentwild.domain.AugmentTelemetry.Metric;
 import io.github.augmentwild.domain.MatchTelemetry;
 import io.github.augmentwild.domain.MatchTelemetry.Counter;
 import io.github.augmentwild.domain.MatchSimulationClock;
@@ -254,9 +255,23 @@ final class PaperAugments implements Listener {
             profile.level = profile.lastKnownLevel;
             var offers = roll(profile, last, List.of());
             if (!offers.isEmpty()) telemetry.count(Counter.DRAFTS);
+            recordOffers(playerId,round,offers);
             result.put(playerId, offers);
         }
         return result;
+    }
+
+    private void recordOffers(UUID player,int round,List<SelectionRound.Offer> offers) {
+        for (var offer : offers) telemetry.augments().offer(player,offer.id(),registry.get(offer.id()).rarity().name(),round);
+    }
+
+    void confirmedHealthDamage(UUID player,String id,double amount) {
+        telemetry.augments().add(player,id,Metric.HP_DAMAGE,amount);
+    }
+
+    int lastKnownLevel(UUID id) {
+        var profile = profiles.get(id);
+        return profile == null ? 0 : profile.lastKnownLevel;
     }
 
     private List<SelectionRound.Offer> roll(Profile profile, boolean last, List<SelectionRound.Offer> previous) {
@@ -348,6 +363,9 @@ final class PaperAugments implements Listener {
         var definition = registry.get(choice.selected());
         if (definition == null || !definition.selectable()) return;
         profile.grantedRound = round;
+        telemetry.augments().add(id,definition.id(),Metric.PICKED,1);
+        if (choice.status() == SelectionRound.Status.AUTOMATIC)
+            telemetry.augments().add(id,definition.id(),Metric.AUTO_PICKED,1);
         telemetry.count(choice.status() == SelectionRound.Status.AUTOMATIC ? Counter.AUTO_PICKS : Counter.MANUAL_PICKS);
         if (EXCHANGES.contains(definition.id())) {
             startExchange(profile, definition.id());
@@ -366,6 +384,7 @@ final class PaperAugments implements Listener {
     private boolean acquire(Profile profile, UUID player, AugmentDefinition definition, String source) {
         if (!profile.owned.add(definition.id())) return false;
         profile.acquired.add(definition.id());
+        telemetry.augments().own(player,definition.id());
         official.selected(player, definition.id(), source);
         official.acquired(player, definition.id());
         Player viewer = plugin.getServer().getPlayer(player);
@@ -649,7 +668,7 @@ final class PaperAugments implements Listener {
         };
         double shown = augment.unit().startsWith("%") ? augment.amount() * 100 : augment.amount();
         List<Component> lore = new ArrayList<>(List.of(
-                Component.text(augment.rarity().name() + " · " + AugmentRole.of(augment.id()).label(), color),
+                Component.text(augment.rarity().name() + " · " + AugmentRole.of(augment.id()).label() + " · " + art.family(augment.id()), color),
                 Component.text(PaperOfficialCombat.activeSkill(augment.id()) ? "액티브 · 1–3번 슬롯에 지정 가능" : "조건 충족 시 자동 발동"),
                 Component.text("조건 · " + augment.condition()),
                 Component.text(String.format(Locale.ROOT, "효과 · %.2f%s", shown, augment.unit())),
@@ -845,8 +864,13 @@ final class PaperAugments implements Listener {
         if (choice == null || !choice.offers().equals(menu.offers) || choice.status() != SelectionRound.Status.PENDING) return;
         var profile = profiles.get(menu.owner);
         if (slot == REROLL) {
-            if (!timer.hasRerolled(menu.owner) && timer.reroll(menu.owner, menu.round, roll(profile, round.prismaticOnly(), menu.offers))) {
-                telemetry.count(Counter.REROLLS);
+            if (!timer.hasRerolled(menu.owner)) {
+                var replacement = roll(profile,round.prismaticOnly(),menu.offers);
+                if (timer.reroll(menu.owner,menu.round,replacement)) {
+                    menu.offers.forEach(offer -> telemetry.augments().add(menu.owner,offer.id(),Metric.REROLLED,1));
+                    recordOffers(menu.owner,menu.round,replacement);
+                    telemetry.count(Counter.REROLLS);
+                }
             }
             return;
         }

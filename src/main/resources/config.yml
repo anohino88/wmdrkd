@@ -1,3 +1,7 @@
+# PHASE 8.2 operating settings
+settings-version: 1
+telemetry-retention-days: 90
+
 schema-version: 1
 game:
   min-players: 2
@@ -72,7 +76,7 @@ scouting:
   result-seconds: 15
   engagement-seconds: 30
 death-review:
-  window-seconds: 10
+  window-seconds: 15
   max-records: 128
   delivery-seconds: 60
 augments:

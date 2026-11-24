@@ -3,6 +3,10 @@ package io.github.augmentwild.domain;
 import java.util.*;
 
 public final class MatchTelemetry {
+    private final AugmentTelemetry augments = new AugmentTelemetry();
+    public AugmentTelemetry augments() { return augments; }
+    public int supplyClaims(UUID player) { return playerClaims.getOrDefault(player,0); }
+    private final Map<UUID,Integer> playerClaims = new HashMap<>();
     public enum Counter { CREATED, NO_POSITION, CANCELLED_AFTER_PUBLICATION, OPEN_ATTEMPTS, OPEN_HIT_CANCELS,
         OPEN_SUCCESSES, CLAIM_DELAY_MS, SUPPLY_PVP, PAYOUT_FAILURES, TRACK_USES, TRACK_NO_TARGET,
         SCOUT_ATTEMPTS, SCOUT_SUCCESSES, SCOUT_ENGAGEMENTS, DEATH_VIEWS, DRAFTS, MANUAL_PICKS, AUTO_PICKS, REROLLS }
@@ -36,6 +40,8 @@ public final class MatchTelemetry {
         scouts.clear();
         players.clear();
         for (UUID id : participants.stream().sorted().toList()) players.put(id, players.size());
+        augments.start(players.keySet());
+        playerClaims.clear();
         kills = new int[players.size()];
         deaths = new int[players.size()];
         lastCombat.clear();
@@ -86,8 +92,11 @@ public final class MatchTelemetry {
         }
     }
 
-    public void supplyClaim(String drop, long millis) {
+    public void supplyClaim(String drop, long millis) { supplyClaim(drop,millis,null); }
+
+    public void supplyClaim(String drop, long millis, UUID player) {
         if (!active || claimDelays.putIfAbsent(drop, millis) != null) return;
+        if (player != null && players.containsKey(player)) playerClaims.merge(player,1,Integer::sum);
         count(Counter.OPEN_SUCCESSES);
         add(Counter.CLAIM_DELAY_MS, millis);
     }
@@ -112,12 +121,18 @@ public final class MatchTelemetry {
 
     public void synergy(UUID player, String effect) {
         Integer index = players.get(player);
-        if (active && index != null && completedSynergies.add(index + ":" + effect)) synergies.merge(effect, 1, Integer::sum);
+        if (active && index != null && completedSynergies.add(index + ":" + effect)) {
+            synergies.merge(effect,1,Integer::sum);
+            augments.add(player,effect,AugmentTelemetry.Metric.SYNERGY,1);
+        }
     }
 
     public void evolution(UUID player, String effect, long elapsedSeconds) {
         Integer index = players.get(player);
-        if (active && index != null) evolutions.putIfAbsent("P" + (index + 1) + "/" + effect, elapsedSeconds);
+        if (active && index != null && evolutions.putIfAbsent("P" + (index + 1) + "/" + effect,elapsedSeconds) == null) {
+            augments.add(player,effect,AugmentTelemetry.Metric.EVOLVED,1);
+            augments.add(player,effect,AugmentTelemetry.Metric.EVOLUTION_SECONDS,elapsedSeconds);
+        }
     }
 
     public void survivors(long observedSecond, int count) {

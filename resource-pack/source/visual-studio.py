@@ -197,6 +197,17 @@ def animate(pivot,frames,root=None):
             point.interpolation = "LINEAR"
 
 
+if "--phase82" in args[3:]:
+    materials = {}
+    camera.ortho_scale = 19
+    for label,root,keys in (("81",previous,("supply","premium")),
+                          ("82",current,("supply","premium","tier_growth_1","tier_growth_2","tier_growth_3","sig_steel_heart"))):
+        for key in keys:
+            collection,_ = create(root,label + " · " + key,model(root,"fx/" + key))
+            render(label + "-" + key)
+            collection.hide_render = True
+    sys.exit(0)
+
 materials = {}
 gallery = []
 keys = {}

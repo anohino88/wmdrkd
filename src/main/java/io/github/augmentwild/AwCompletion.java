@@ -16,7 +16,7 @@ import org.bukkit.entity.Player;
 final class AwCompletion implements TabCompleter {
     private static final List<String> PLAYER = List.of(
             "menu", "join", "leave", "status", "augment", "augments", "ui", "combatlog",
-            "supply", "result", "scout", "death", "skill", "cast", "art");
+            "supply", "result", "scout", "death", "skill", "cast", "art", "guide");
     private static final List<String> SKILL = List.of("bind", "select", "next", "unbind", "use", "status","menu","input");
     private static final List<String> LAB = List.of(
             "status", "check", "start", "solo", "presets", "preset", "grant", "remove",
@@ -62,9 +62,15 @@ final class AwCompletion implements TabCompleter {
             choices = matches.availableSkills(player);
         } else if (first.equals("admin") && admin) {
             if (args.length == 2) {
-                var options = new ArrayList<>(List.of("start", "stop", "arena", "art"));
+                var options = new ArrayList<>(List.of("start", "stop", "arena", "art", "dashboard", "stats", "config"));
                 if (lab) options.add("test");
                 choices = options;
+            } else if (args[1].equalsIgnoreCase("stats")) {
+                if (args.length == 3) choices = List.of("augment","export");
+                else if (args.length == 4 && args[2].equals("augment")) choices = matches.registeredAugments();
+            } else if (args[1].equalsIgnoreCase("config")) {
+                if (args.length == 3) choices = List.of("check","migrate","backup");
+                else if (args.length == 4 && args[2].equals("migrate")) choices = List.of("--dry-run","--apply");
             } else if (args[1].equalsIgnoreCase("art") && args.length == 3) {
                 choices = List.of("status","report","validate","menu");
             } else if (args[1].equalsIgnoreCase("arena") && args.length == 3) {

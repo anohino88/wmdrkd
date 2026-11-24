@@ -294,10 +294,11 @@ final class CombatCinematics {
 
     private boolean reserve(Cue cue) {
         if (room.getAsBoolean()) return true;
-        var lower = active.stream().filter(display -> display.cue.key.form != Form.DANGER && tick - display.started >= 4
-                && (display.cue.key.form.priority > cue.key.form.priority
-                || display.cue.key.form.priority == cue.key.form.priority
-                   && tick - display.started >= display.cue.key.form.decayStart()))
+        // Cosmetic cleanup must not truncate a confirmed hit. Only an imminent warning may
+        // reclaim a model already in decay. New cues retain particle/sound delivery on pressure.
+        if (cue.key.form != Form.DANGER) return false;
+        var lower = active.stream().filter(display -> display.cue.key.form != Form.DANGER
+                && tick - display.started >= display.cue.key.form.decayStart())
                 .max(Comparator.comparingInt(display -> display.cue.key.form.priority));
         if (lower.isEmpty()) return false;
         remove(lower.get(),"budget");
