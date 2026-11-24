@@ -49,8 +49,14 @@ final class CombatCinematics {
         }
     }
     private record Key(UUID source, UUID target, UUID origin, String effect, Form form, UUID world, int x, int y, int z) {}
-    private record Cue(Key key, Player source, Player target, Location point, double radius, boolean particles, boolean sound) {}
-    private record Pair(UUID viewer, UUID source) {}
+    private record Cue(Key key, Player source, Player target, Location point, Point coordinates, double radius, boolean particles, boolean sound) {}
+    private record View(Location feet, Location eye, Point coordinates) {
+        View(Location feet, Location eye) { this(feet,eye,new Point(eye)); }
+    }
+    private record Point(double x, double y, double z) {
+        Point(Location location) { this(location.getX(),location.getY(),location.getZ()); }
+    }
+    private record SightRay(UUID world, Point from, Point to) {}
     private record Display(Cue cue, ItemDisplay model, List<Player> viewers, long started) {}
     @FunctionalInterface interface Spawn {
         ItemDisplay model(Location point, String name, Transformation pose);
@@ -69,9 +75,8 @@ final class CombatCinematics {
     private final List<Display> active = new ArrayList<>();
     private record Audible(UUID listener, UUID source, Form form) {}
     private final Map<Audible,Long> recentSounds = new HashMap<>();
-    private final Map<Pair,Boolean> sourceSight = new HashMap<>();
-    private record SightRay(Location from, Location to) {}
-    private final Map<SightRay,Boolean> cueSight = new HashMap<>();
+    private final Map<UUID,View> views = new HashMap<>();
+    private final Map<SightRay,Boolean> sight = new HashMap<>();
     private final Map<UUID,Integer> particleBudget = new HashMap<>();
     private final Map<UUID,Integer> ringBudget = new HashMap<>();
     private final Map<UUID,Integer> soundBudget = new HashMap<>();
@@ -120,7 +125,7 @@ final class CombatCinematics {
             recordDrop(lowest);
             pending.remove(lowest);
         }
-        pending.put(key,new Cue(key,source,target,point.clone(),radius,particles,sound));
+        pending.put(key,new Cue(key,source,target,point.clone(),new Point(point),radius,particles,sound));
     }
 
     private boolean eligible(Player viewer) {
@@ -143,7 +148,7 @@ final class CombatCinematics {
 
     private boolean sees(Location eye, Location at) {
         if (!loadedCorridor(eye,at)) return false;
-        var delta = at.toVector().subtract(eye.toVector());
+        var delta = new org.bukkit.util.Vector(at.getX() - eye.getX(),at.getY() - eye.getY(),at.getZ() - eye.getZ());
         double length = delta.length();
         if (length < .05) return true;
         sightRays++;
@@ -151,27 +156,35 @@ final class CombatCinematics {
                 length - .04,FluidCollisionMode.NEVER,true) == null;
     }
 
-    private boolean seesCue(Location eye, Location point) {
-        return cueSight.computeIfAbsent(new SightRay(eye,point),ray -> sees(ray.from(),ray.to()));
+    private boolean seesCached(View viewer, Location point, Point coordinates) {
+        var ray = new SightRay(viewer.eye.getWorld().getUID(),viewer.coordinates,coordinates);
+        return sight.computeIfAbsent(ray,unused -> sees(viewer.eye,point));
+    }
+
+    private View view(Player player) {
+        return views.computeIfAbsent(player.getUniqueId(),unused -> new View(player.getLocation(),player.getEyeLocation()));
+    }
+
+    private void clearSight() {
+        views.clear();
+        sight.clear();
     }
 
     private double distanceSquared(Player viewer, Cue cue) {
         if (!eligible(viewer) || !viewer.getWorld().equals(cue.point.getWorld())) return Double.POSITIVE_INFINITY;
-        return viewer.getLocation().distanceSquared(cue.point);
+        return view(viewer).feet.distanceSquared(cue.point);
     }
 
     private boolean visible(Player viewer, Cue cue) {
         if (cue.target != null && !viewer.getUniqueId().equals(cue.key.target)
                 && (!viewer.canSee(cue.target) || cue.target.isInvisible()
                     || !cue.target.getWorld().equals(cue.point.getWorld()))) return false;
-        if (viewer.getUniqueId().equals(cue.key.source)) return seesCue(viewer.getEyeLocation(),cue.point);
+        var observer = view(viewer);
+        if (viewer.getUniqueId().equals(cue.key.source)) return seesCached(observer,cue.point,cue.coordinates);
         if (!viewer.canSee(cue.source) || cue.source.isInvisible()) return false;
-        var eye = viewer.getEyeLocation();
-        var pair = new Pair(viewer.getUniqueId(),cue.key.source);
-        return sourceSight.computeIfAbsent(pair,k -> {
-            Location source = cue.source.getEyeLocation();
-            return eye.distanceSquared(source) <= RANGE * RANGE && sees(eye,source);
-        }) && seesCue(eye,cue.point);
+        var source = view(cue.source);
+        return observer.eye.distanceSquared(source.eye) <= RANGE * RANGE
+                && seesCached(observer,source.eye,source.coordinates) && seesCached(observer,cue.point,cue.coordinates);
     }
 
     int size() { return active.size(); }
@@ -182,8 +195,7 @@ final class CombatCinematics {
         if (!running.getAsBoolean()) { clear(); return; }
         soundBudget.clear();
         ringBudget.clear();
-        sourceSight.clear();
-        cueSight.clear();
+        clearSight();
         particleBudget.clear();
         for (var iterator = active.iterator(); iterator.hasNext();) {
             Display display = iterator.next();
@@ -345,7 +357,7 @@ final class CombatCinematics {
         int count = Math.min(PlayerUi.quality(viewer).samples,32 - ringBudget.getOrDefault(id,0));
         if (count <= 0) return;
         ringBudget.merge(id,count,Integer::sum);
-        var eye = viewer.getEyeLocation();
+        var eye = view(viewer).eye;
         boolean bypassesSendCap = cue.key.form.particle == Form.DANGER.particle;
         for (int index = 0; index < count; index++) {
             // Reserve the same samples as before, but do not ray trace particles that the send cap rejects.
@@ -434,8 +446,7 @@ final class CombatCinematics {
         active.clear();
         soundBudget.clear();
         ringBudget.clear();
-        sourceSight.clear();
-        cueSight.clear();
+        clearSight();
         particleBudget.clear();
     }
 
