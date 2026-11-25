@@ -123,6 +123,12 @@ final class PaperIntel implements Listener {
                 null, Tracker.Status.ACTIVE, location.getX(), location.getY(), location.getZ());
     }
 
+    List<String> trackingHelp() {
+        return List.of("비용 · 유효 대상 확인 후 다이아몬드 " + settings.cost() + "개", "조건 · 경기 중 활동 중인 참가자",
+                "정보 · 8방향 · 상대 좌표, 거리, 높이 미표시",
+                "지속 " + settings.trackDuration() + "초 · 재사용 " + settings.trackCooldown() + "초");
+    }
+
     String locate(Player player) {
         if (match == null || !playable(player) || clock.get().isPaused()) return "현재 위치 추적을 시작할 수 없습니다.";
         UUID id = player.getUniqueId();
@@ -494,7 +500,9 @@ final class PaperIntel implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST)
     public void click(InventoryClickEvent event) {
         if (!(event.getView().getTopInventory().getHolder() instanceof Menu menu)) return;
+        boolean cancelled = event.isCancelled();
         int slot = PaperMenu.lock(event, false);
+        if (cancelled) return;
         if (!menu.owner.equals(event.getWhoClicked().getUniqueId()) || !menu.report.valid()) return;
         if (slot == 36 && menu.page > 0) menu.page--;
         else if (slot == 44 && (menu.page + 1) * PAGE_SIZE < menu.report.cards().size()) menu.page++;

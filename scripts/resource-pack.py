@@ -34,12 +34,13 @@ FORMS = {"sig_" + key: color for key,color in SIGNATURES["PALETTES"].items()}
 PALETTE.update(FORMS)
 ARCANE = runpy.run_path(str(SOURCE / "arcane.py"))
 MENU_MARKS = runpy.run_path(str(SOURCE / "menu-marks.py"))
+PREMIUM = runpy.run_path(str(SOURCE / "premium-interface.py"))
 SYNTH = runpy.run_path(str(SOURCE / "sound-design.py"))
 SOURCE_SOUNDS = {"cast", "evolve", "supply"}
 SOUNDS = SOURCE_SOUNDS | SYNTH["CUES"].keys()
 RARITY_MARKS = dict(silver="#b7cbe0", gold="#ffd077", prismatic="#eab8ff")
 PACK_DIGEST = ROOT / "src/main/resources/art-pack.sha1"
-RELEASE_METADATA = {"release":"8.2","minecraft":"26.3","inventory_title":"native"}
+RELEASE_METADATA = {"release":"8.2.1-part1","minecraft":"26.3","inventory_title":"native"}
 PACK_METADATA = {"pack": {"description": "AugmentWild • combat art for Java 26.3",
                           "min_format": [97, 1], "max_format": [97, 1]}}
 
@@ -108,6 +109,12 @@ def inputs():
 
 def item(key, model):
     write_json(ASSETS / f"items/{key}.json", {"model":{"type":"minecraft:model","model":f"augmentwild:{model}"}})
+
+
+def inventory_item(key):
+    write_json(ASSETS / f"models/item/{key}.json",
+               {"parent":"minecraft:item/generated","textures":{"layer0":f"augmentwild:item/{key}"}})
+    item(key,f"item/{key}")
 
 
 # New solid silhouettes, kept wide enough for the 16-pixel item slot.
@@ -191,6 +198,7 @@ def badge(path, original, rarity, motif, profile):
         draw.polygon([(x,103),(x+4,108),(x,113),(x-4,108)],fill=edge)
     path.parent.mkdir(parents=True,exist_ok=True)
     im.save(path,optimize=True)
+    return silhouette
 
 
 def bake(rarities, motifs, sources):
@@ -208,7 +216,15 @@ def bake(rarities, motifs, sources):
                                 "-af","volume=0.5,afade=t=out:st=0.18:d=0.13","-t","0.32","-c:a","libvorbis",
                                 "-fflags","+bitexact","-flags:a","+bitexact",str(output)],check=True)
             else:
-                badge(output,source,rarities.get(key,"GUI"),motifs[key],profile)
+                silhouette = badge(output,source,rarities.get(key,"GUI"),motifs[key],profile)
+                if key in rarities:
+                    texture = ASSETS / f"textures/item/folio/{key}.png"
+                    texture.parent.mkdir(parents=True,exist_ok=True)
+                    master = PREMIUM["write_folio"](texture,silhouette,rarities[key],PALETTE[motifs[key]],key)
+                    originals = ROOT / "build/premium-ui-masters"
+                    originals.mkdir(parents=True,exist_ok=True)
+                    master.save(originals / f"{key}.png",optimize=True)
+                    inventory_item(f"folio/{key}")
                 model = output.relative_to(ASSETS / "textures").with_suffix("").as_posix()
                 write_json(ASSETS / f"models/{model}.json",
                            {"parent":"minecraft:item/generated","textures":{"layer0":f"augmentwild:{model}"}})
@@ -240,24 +256,17 @@ def bake(rarities, motifs, sources):
                     im.putpixel((x,y),tuple(min(255,round(p*tone)) for p in rgb))
             im.save(path,optimize=True)
     from PIL import ImageDraw
-    for count, (tier,color) in enumerate(RARITY_MARKS.items(),1):
-        key = f"gui/tier_{tier}"
-        tile = Image.new("RGBA",(64,64))
-        draw = ImageDraw.Draw(tile)
-        frame = {
-            "silver": [(14,9),(50,9),(57,16),(57,48),(50,55),(14,55),(7,48),(7,16)],
-            "gold": [(11,7),(53,7),(57,16),(54,45),(32,60),(10,45),(7,16)],
-            "prismatic": [(32,3),(55,15),(61,31),(52,48),(32,61),(12,48),(3,31),(9,15)],
-        }[tier]
-        draw.polygon(frame,fill="#182433",outline=color,width=3)
-        for index in range(count):
-            x = 32 + (2 * index - count + 1) * 8
-            draw.polygon([(x,19),(x+6,31),(x,43),(x-6,31)],fill=color)
-            draw.line((x,20,x-5,31,x,35),fill="#edf4ff",width=2)
-        tile.save(ASSETS / f"textures/item/{key}.png",optimize=True)
-        write_json(ASSETS / f"models/item/{key}.json",
-                   {"parent":"minecraft:item/generated","textures":{"layer0":f"augmentwild:item/{key}"}})
-        item(key,f"item/{key}")
+    for tier in RARITY_MARKS:
+        for kind in ("tier","seat"):
+            key = f"gui/{kind}_{tier}"
+            PREMIUM["frame"](tier.upper(),kind == "seat").resize((32,32),Image.Resampling.LANCZOS).save(
+                    ASSETS / f"textures/item/{key}.png",optimize=True)
+            inventory_item(key)
+    for mark in PREMIUM["SEALS"]:
+        key = f"gui/{mark}"
+        PREMIUM["seal"](mark).resize((32,32),Image.Resampling.LANCZOS).save(
+                ASSETS / f"textures/item/{key}.png",optimize=True)
+        inventory_item(key)
     for filled in range(5):
         key = f"gui/gauge_{filled}"
         tile = Image.open(ASSETS / "textures/item/gui/gauge.png").convert("RGBA")
@@ -292,7 +301,8 @@ def verify(rarities, motifs, sources):
     keys = {f"augment/{key}" if key in rarities else key for key in motifs}
     keys |= {f"fx/{key}" for key in PALETTE} | {f"proc/{key}" for key in rarities}
     keys |= {f"gui/gauge_{filled}" for filled in range(5)} | {f"gui/{key}" for key in MENU_MARKS["marks"]()}
-    keys |= {f"gui/tier_{tier}" for tier in RARITY_MARKS}
+    keys |= {f"gui/{kind}_{tier}" for tier in RARITY_MARKS for kind in ("tier","seat")}
+    keys |= {f"gui/{mark}" for mark in PREMIUM["SEALS"]} | {f"folio/{key}" for key in rarities}
     keys |= {f"gui/{key}" for key in ARCANE["GUI"]} | {f"fx/{key}" for key in ARCANE["components"](ROOT)}
     models = {p.relative_to(ASSETS / "items").with_suffix("").as_posix() for p in (ASSETS / "items").rglob("*.json")}
     assert models == keys, models ^ keys
@@ -350,11 +360,11 @@ def verify(rarities, motifs, sources):
                 for key in SIGNATURES["ACTIVE"]}) == 7
     screens = json.loads((SOURCE / "screens.json").read_text())
     samples = dict(row.split("=",1) for row in (ROOT / "src/main/resources/art-screen-samples.properties").read_text().splitlines())
-    assert samples.keys() == screens.keys()
+    assert samples.keys() == PREMIUM["ROWS"].keys()
     for screen, controls in samples.items():
         pairs = [pair.split("=") for pair in controls.split()]
         assert len({slot for slot,key in pairs}) == len(pairs)
-        assert all(0 <= int(slot) < screens[screen][0]*9 and key in keys for slot,key in pairs)
+        assert all(0 <= int(slot) < PREMIUM["ROWS"][screen]*9 and key in keys for slot,key in pairs)
     assert len(screens) == 12 and not (ASSETS / "font/interface.json").exists()
     for screen,(rows,_,slots) in screens.items():
         assert all(0 <= slot < rows*9 for slot in slots)
@@ -366,6 +376,9 @@ def verify(rarities, motifs, sources):
         assert path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n"), path
     assert len({hashlib.sha256((ASSETS / f"textures/item/augment/{key}.png").read_bytes()).digest()
                 for key in rarities}) == 84, "Icons must be distinct"
+    folios = [(ASSETS / f"textures/item/folio/{key}.png").read_bytes() for key in rarities]
+    assert all(data[16:24] == bytes.fromhex("0000002000000020") for data in folios)
+    assert len(set(folios)) == len(rarities), "Inventory emblems must be distinct"
     assert json.loads((ASSETS / "sounds.json").read_text()) == {key: {"sounds":[f"augmentwild:{key}"]} for key in SOUNDS}
     for asset in sources:
         assert (PACK / asset["output"]).is_file(), asset["output"]

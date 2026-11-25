@@ -53,6 +53,24 @@ public final class BorderProbe extends JavaPlugin implements Listener {
 
     @Override public void onEnable() {
         if ("1".equals(System.getenv("AW_START_CLIENTS"))) {
+            java.util.Objects.requireNonNull(getCommand("aw821probe")).setExecutor((sender,command,label,args) -> {
+                if (!(sender instanceof org.bukkit.command.ConsoleCommandSender) || args.length != 2) return false;
+                var player = getServer().getPlayerExact(args[1]);
+                if (player == null) return false;
+                switch (args[0]) {
+                    case "lobby" -> InterfaceProbe.lobby(this,player);
+                    case "selection" -> InterfaceProbe.selection(this,player);
+                    case "cleanup" -> {
+                        if (io.github.augmentwild.paper.PaperMenu.protectedInventory(player.getOpenInventory().getTopInventory())
+                                && !net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText()
+                                        .serialize(player.getOpenInventory().title()).equals("경기 결과"))
+                            throw new AssertionError("Paper left a stale game menu open");
+                        getLogger().info("AW_PREMIUM_CLEANUP_PASS");
+                    }
+                    default -> { return false; }
+                }
+                return true;
+            });
             getServer().getScheduler().runTask(this, () -> {
                 var lab = new org.bukkit.WorldCreator("aw_lab").type(org.bukkit.WorldType.FLAT)
                         .generateStructures(false).seed(67026).createWorld();

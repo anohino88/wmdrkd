@@ -190,12 +190,16 @@ def exercise(command, log):
     try:
         command("setworldspawn 0 -60 0")
         connect(0)
+        expect("aw821probe lobby AW00","AW_PREMIUM_LOBBY_PASS")
         expect("tp AW00 0.5 -60 0.5","Teleported AW00")
         expect("item replace entity AW00 hotbar.0 with minecraft:diamond","AW00")
         start_match(1,1,practice=True)
+        expect("aw821probe selection AW00","AW_PREMIUM_SELECTION_PASS")
         expect("execute as AW00 at @s if dimension minecraft:aw_lab run say AW_SOLO_IN_LAB","AW_SOLO_IN_LAB")
         expect("execute unless items entity AW00 hotbar.0 minecraft:diamond run say AW_SOLO_CLEARED","AW_SOLO_CLEARED")
         stop_match()
+        # The final results inventory may intentionally replace the close. Check that the old codex is gone.
+        expect("aw821probe cleanup AW00","AW_PREMIUM_CLEANUP_PASS")
         expect("execute as AW00 at @s if dimension minecraft:overworld run say AW_RESTORED_WORLD","AW_RESTORED_WORLD")
         expect("execute if items entity AW00 hotbar.0 minecraft:diamond run say AW_RESTORED_ITEM","AW_RESTORED_ITEM")
         if (log.parent / "plugins/AugmentWild/used-regions.yml").exists():

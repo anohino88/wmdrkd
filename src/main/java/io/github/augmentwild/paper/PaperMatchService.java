@@ -165,6 +165,32 @@ public final class PaperMatchService implements Listener {
     public Listener feedbackListener() { return feedback; }
     public Listener uiListener() { return new PlayerUi(); }
     public String ui(Player p) { return PlayerUi.open(p,art); }
+    public String statusMenu(Player p) {
+        var lines = new java.util.ArrayList<>(List.of(status(p).split(" [|] ")));
+        if (!isLobby()) {
+            long alive = session.participantIds().stream().filter(id -> !departures.contains(id)
+                    && session.player(id).life().status() != LifeState.Status.ELIMINATED).count();
+            lines.add("생존 " + alive + " / " + entrants.size());
+        }
+        ArtGallery.read(p,art,PaperArt.Screen.STATUS,"경기 현황",lines);
+        return "";
+    }
+
+    public String adminMenu(Player p) {
+        if (!p.hasPermission("augmentwild.admin")) return "관리자 권한이 없습니다.";
+        ArtGallery.read(p,art,PaperArt.Screen.ADMIN,"서버 진단",List.of(operations(p,"dashboard",new String[0]).split("\n")));
+        return "";
+    }
+
+    public String trackMenu(Player p) {
+        if (!p.hasPermission("augmentwild.play") || !p.hasPermission("augmentwild.track")) return "위치 추적 권한이 없습니다.";
+        ArtGallery.track(p,art,intel.trackingHelp(),() -> p.sendMessage(
+                p.hasPermission("augmentwild.play") && p.hasPermission("augmentwild.track") ? locate(p) : "위치 추적 권한이 없습니다."));
+        return "";
+    }
+
+    public String augmentSection(Player p, String section) { return augments.openSection(p,section); }
+
     public String guide(Player p) {
         if (!augmentActive(p) || !PlayerUi.enabled(p,PlayerUi.Option.SUPPLY)) return "보급 안내를 사용할 수 없습니다.";
         ArtGallery.read(p,art,PaperArt.Screen.SUPPLY,"보급 길잡이",List.of(supply.guide(p,true).split(" / ")));
@@ -758,7 +784,7 @@ public final class PaperMatchService implements Listener {
         target.clear();
         art.clear();
         for (Player viewer : plugin.getServer().getOnlinePlayers()) {
-            if (viewer.getOpenInventory().getTopInventory().getHolder() instanceof ArtGallery) viewer.closeInventory();
+            if (PaperMenu.protectedInventory(viewer.getOpenInventory().getTopInventory())) viewer.closeInventory();
         }
         displays.clear();
         overhead.clear();

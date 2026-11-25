@@ -81,6 +81,13 @@ public final class PlayerUi implements Listener {
                 "본인 장식과 잔여 연출 · " + pacing(p).label, "공개 타격·위험 예고는 서버 공통")));
         menu.inventory.setItem(24,PaperIntel.item(PaperIntel.card(Material.AMETHYST_SHARD,
                 "연출 품질 · " + quality(p), "클릭 · 다음 단계")));
+        if (menu.art != null) {
+            menu.art.button(p,menu.inventory,19,"resonance");
+            menu.art.button(p,menu.inventory,21,"graphics");
+            menu.art.button(p,menu.inventory,23,PaperArt.safe(p) ? "sealed" : "pack");
+            menu.art.button(p,menu.inventory,24,"selected");
+            menu.art.button(p,menu.inventory,25,"status");
+        }
     }
     private static final NamespacedKey FAVORITES = new NamespacedKey("augmentwild", "favorite_augments");
     public static Set<String> favorites(Player player) {
@@ -102,16 +109,26 @@ public final class PlayerUi implements Listener {
         for (Player viewer : at.getNearbyPlayers(32))
             if (enabled(viewer,option)) send.accept(viewer);
     }
+    enum Tab { HUD, GRAPHICS, CONTROLS }
+
     private static class Menu implements PaperMenu {
         final UUID owner;
         final Inventory inventory;
         final boolean settings;
         final PaperArt art;
-        Menu(Player player, boolean settings, PaperArt art) {
+        final Tab tab;
+        Menu(Player player, boolean settings, PaperArt art, Tab tab) {
             owner = player.getUniqueId();
             this.settings = settings;
             this.art = art;
-            inventory = Bukkit.createInventory(this, settings ? Math.max(27, ((Option.values().length + 8) / 9) * 9) : 27, art == null ? Component.text(settings ? "화면 설정" : "경기 결과") : art.title(player,settings ? PaperArt.Screen.SETTINGS : PaperArt.Screen.RESULT,settings ? "화면 설정" : "경기 결과"));
+            this.tab = tab;
+            String title = !settings ? "경기 결과" : switch (tab) {
+                case HUD -> "개인 설정 · HUD";
+                case GRAPHICS -> "개인 설정 · 그래픽";
+                case CONTROLS -> "개인 설정 · 조작";
+            };
+            inventory = Bukkit.createInventory(this,settings ? 36 : 54,
+                    art == null ? Component.text(title) : art.title(player,settings ? PaperArt.Screen.SETTINGS : PaperArt.Screen.RESULT,title));
         }
         public Inventory getInventory() { return inventory; }
         public boolean availableWhileRestricted() { return true; }
@@ -119,17 +136,34 @@ public final class PlayerUi implements Listener {
     public static String open(Player p) { return open(p,null); }
 
     static String open(Player p, PaperArt art) {
-        var menu = new Menu(p, true,art);
-        for (var option : Option.values()) paint(p, menu, option);
-        menu.inventory.setItem(18, PaperIntel.item(PaperIntel.card(Material.BEACON, "기본 / 상세 프리셋",
-                "클릭으로 STANDARD와 DETAILED 전환", "최근 프리셋 · " +
-                p.getPersistentDataContainer().getOrDefault(HUD_PRESET,PersistentDataType.STRING,"STANDARD"))));
-        menu.inventory.setItem(20, PaperIntel.item(PaperIntel.card(Material.IRON_SWORD, "전투 집중", "전투 HUD 중심 · 파티클 및 효과음 최소화")));
-        menu.inventory.setItem(22, PaperIntel.item(PaperIntel.card(Material.GLASS_PANE, "최소 표시", "체력·피해·스킬·위험 경고만 표시")));
-        if (art != null) menu.inventory.setItem(18,art.icon(p,menu.inventory.getItem(18),"gui/settings"));
-        qualityButton(p,menu);
-        menu.inventory.setItem(26, PaperIntel.item(PaperIntel.card(Material.ARROW, "빠른 메뉴로 돌아가기")));
-        if (art != null) art.button(p,menu.inventory,26,"previous");
+        return open(p,art,Tab.HUD);
+    }
+
+    static String open(Player p, PaperArt art, Tab tab) {
+        var menu = new Menu(p,true,art,tab);
+        if (tab == Tab.HUD) {
+            menu.inventory.setItem(18, PaperIntel.item(PaperIntel.card(Material.BEACON, "기본 / 상세 프리셋",
+                    "클릭으로 STANDARD와 DETAILED 전환", "최근 프리셋 · " +
+                    p.getPersistentDataContainer().getOrDefault(HUD_PRESET,PersistentDataType.STRING,"STANDARD"))));
+            menu.inventory.setItem(20, PaperIntel.item(PaperIntel.card(Material.IRON_SWORD, "전투 집중", "전투 HUD 중심 · 파티클 및 효과음 최소화")));
+            menu.inventory.setItem(22, PaperIntel.item(PaperIntel.card(Material.GLASS_PANE, "최소 표시", "체력·피해·스킬·위험 경고만 표시")));
+            if (art != null) menu.inventory.setItem(18,art.icon(p,menu.inventory.getItem(18),"gui/settings"));
+            for (var option : Option.values()) if (option != Option.HOTBAR && option != Option.AUTO_BIND) paint(p,menu,option);
+        } else if (tab == Tab.GRAPHICS) {
+            qualityButton(p,menu);
+        } else {
+            paint(p,menu,Option.HOTBAR);
+            paint(p,menu,Option.AUTO_BIND);
+            InterfaceTheme.put(art,p,menu.inventory,4,Material.BOOK,"journal","스킬 조작",InterfaceTheme.Tone.SECTION,
+                    "/aw skill menu · 스킬 지정 및 사용", "전환 입력은 아래에서 변경");
+        }
+        InterfaceTheme.put(art,p,menu.inventory,28,Material.BEACON,tab == Tab.HUD ? "selected" : "settings",
+                "HUD",InterfaceTheme.Tone.NORMAL);
+        InterfaceTheme.put(art,p,menu.inventory,30,Material.AMETHYST_SHARD,tab == Tab.GRAPHICS ? "selected" : "graphics",
+                "그래픽",InterfaceTheme.Tone.NORMAL);
+        InterfaceTheme.put(art,p,menu.inventory,32,Material.COMPASS,tab == Tab.CONTROLS ? "selected" : "slots",
+                "조작",InterfaceTheme.Tone.NORMAL);
+        InterfaceTheme.put(art,p,menu.inventory,35,Material.ARROW,"previous","빠른 메뉴",InterfaceTheme.Tone.NORMAL);
         p.openInventory(menu.inventory);
         return "화면 설정";
     }
@@ -174,18 +208,19 @@ public final class PlayerUi implements Listener {
     public static void result(Player player, List<String> lines) { result(player,lines,null); }
 
     static void result(Player player, List<String> lines, PaperArt art) {
-        var menu = new Menu(player, false,art);
+        var menu = new Menu(player,false,art,Tab.HUD);
         if (!lines.isEmpty()) {
             menu.inventory.setItem(4,PaperIntel.item(PaperIntel.card(Material.NETHER_STAR,lines.get(0))));
             if (art != null) art.button(player,menu.inventory,4,"result");
         }
-        for (int i = 1; i < Math.min(lines.size(),19); i++) {
+        for (int i = 1; i < Math.min(lines.size(),36); i++) {
             int slot = 8 + i;
             String line = lines.get(i);
             menu.inventory.setItem(slot,PaperIntel.item(PaperIntel.card(Material.PAPER,line)));
             if (art != null) art.button(player,menu.inventory,slot,line.startsWith("획득") ? "codex"
                     : line.startsWith("생존") ? "gauge" : line.startsWith("스킬") ? "slots" : "report");
         }
+        InterfaceTheme.put(art,player,menu.inventory,53,Material.ARROW,"previous","빠른 메뉴",InterfaceTheme.Tone.NORMAL);
         player.openInventory(menu.inventory);
     }
     @EventHandler public void click(InventoryClickEvent e) {
@@ -193,8 +228,23 @@ public final class PlayerUi implements Listener {
         boolean cancelled = e.isCancelled();
         int slot = PaperMenu.lock(e, false);
         if (cancelled) return;
-        if (!menu.settings || slot < 0 || !(e.getWhoClicked() instanceof Player p)
+        if (slot < 0 || menu.inventory.getItem(slot) == null || !(e.getWhoClicked() instanceof Player p)
                 || !p.getUniqueId().equals(menu.owner)) return;
+        if (slot == 35 && menu.settings || slot == 53 && !menu.settings
+                || menu.settings && (slot == 28 || slot == 30 || slot == 32)) {
+            var plugin = Bukkit.getPluginManager().getPlugin("AugmentWild");
+            if (plugin != null) Bukkit.getScheduler().runTask(plugin,() -> {
+                if (!p.isOnline() || p.getOpenInventory().getTopInventory().getHolder() != menu) return;
+                switch (slot) {
+                    case 28 -> open(p,menu.art,Tab.HUD);
+                    case 30 -> open(p,menu.art,Tab.GRAPHICS);
+                    case 32 -> open(p,menu.art,Tab.CONTROLS);
+                    default -> p.performCommand("aw menu");
+                }
+            });
+            return;
+        }
+        if (!menu.settings) return;
         if (slot == 19 || slot == 21) {
             var key = slot == 19 ? HIDE_AURAS : REDUCE_FLASH;
             if (p.getPersistentDataContainer().has(key)) p.getPersistentDataContainer().remove(key);
@@ -220,13 +270,6 @@ public final class PlayerUi implements Listener {
             qualityButton(p,menu);
             return;
         }
-        if (slot == 26) {
-            var plugin = Bukkit.getPluginManager().getPlugin("AugmentWild");
-            if (plugin != null) Bukkit.getScheduler().runTask(plugin, () -> {
-                if (p.isOnline()) p.performCommand("aw menu");
-            });
-            return;
-        }
         Preset preset = switch (slot) {
             case 18 -> p.getPersistentDataContainer().getOrDefault(HUD_PRESET,PersistentDataType.STRING,"STANDARD")
                     .equals("DETAILED") ? Preset.STANDARD : Preset.DETAILED;
@@ -239,7 +282,7 @@ public final class PlayerUi implements Listener {
             p.getPersistentDataContainer().set(HUD_PRESET,PersistentDataType.STRING,preset.name());
             var tag = PaperIntel.item(PaperIntel.card(Material.BEACON,"기본 / 상세 프리셋","최근 프리셋 · " + preset));
             menu.inventory.setItem(18,menu.art == null ? tag : menu.art.icon(p,tag,"gui/settings"));
-            for (var option : Option.values()) paint(p, menu, option);
+            for (var option : Option.values()) if (option != Option.HOTBAR && option != Option.AUTO_BIND) paint(p,menu,option);
             p.sendMessage("화면 설정을 변경했습니다 · " + switch (preset) {
                 case ALL, DETAILED -> "상세 표시";
                 case STANDARD -> "기본 표시";

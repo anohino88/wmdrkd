@@ -86,7 +86,7 @@ final class ArtProbe {
         art.status(new PlayerResourcePackStatusEvent(p,id,Status.SUCCESSFULLY_LOADED));
         var item = art.icon(p,new ItemStack(Material.GOLD_INGOT),model);
         require(item.getType() == Material.GOLD_INGOT &&
-                "augmentwild:augment/steel_heart".equals(item.getItemMeta().getItemModel().toString()));
+                "augmentwild:folio/steel_heart".equals(item.getItemMeta().getItemModel().toString()));
         verifyRecovery(art,p);
         try (var input = host.getResource("art-motifs.properties")) {
             var ids = new Properties();

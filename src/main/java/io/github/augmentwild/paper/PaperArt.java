@@ -130,7 +130,13 @@ public final class PaperArt implements Listener {
             "steel_king","ward","calamity_train","impact","infinite_barrage","bolt",
             "hell_lord","fire","thousand_swords","blade","stacking","growth","life_echo","ward");
 
-    enum Screen { MENU, CHOICE, DETAIL, CODEX, SLOTS, SETTINGS, LAB, RESULT, SUPPLY, JOURNAL, WARNING, SCOUT }
+    enum Screen {
+        MENU(6), CHOICE(4), DETAIL(3), CODEX(6), SLOTS(3), SETTINGS(4), LAB(6), RESULT(6),
+        SUPPLY(3), JOURNAL(6), WARNING(1), SCOUT(5), STATUS(6), TRACK(3), ADMIN(6),
+        GRAPHICS(4), CONTROLS(4), PACK(3), DEATH(5), OWNED(6), EVOLUTION(4), SYNERGY(4), RESONANCE(4), FILTERS(6);
+        final int rows;
+        Screen(int rows) { this.rows = rows; }
+    }
     private static final Map<String,Motion> MOTIONS = Map.ofEntries(
             Map.entry("blade",new Motion(SWEEP,.22f,2.7f,.6f)), Map.entry("bolt",new Motion(SWEEP,.18f,.45f,1.3f)),
             Map.entry("fire",new Motion(GROW,.8f,1.5f,.13f)), Map.entry("frost",new Motion(HOLD,.25f,-.7f,0)),
@@ -210,7 +216,7 @@ public final class PaperArt implements Listener {
 
     String packStatus(Player p) {
         if (pack == null) return settingsIssue + " · 기본 표시";
-        if (!matchingPack) return "팩 SHA-1이 8.2 배포본과 다릅니다 · 기본 표시";
+        if (!matchingPack) return "팩 SHA-1이 8.2.1 배포본과 다릅니다 · 기본 표시";
         String mode = safe(p) ? " · 안전 모드" : "";
         if (loaded.contains(p.getUniqueId())) return "클라이언트 로드 응답 · " + pack.hash().substring(0,8) + mode;
         var status = reports.get(p.getUniqueId());
@@ -280,6 +286,12 @@ public final class PaperArt implements Listener {
             menu.inventory.setItem(16,PaperIntel.item(PaperIntel.card(Material.WRITABLE_BOOK,"접속 세션 상태 보고")));
         }
         menu.inventory.setItem(26,PaperIntel.item(PaperIntel.card(Material.ARROW,"메인 메뉴")));
+        button(player,menu.inventory,4,"pack");
+        button(player,menu.inventory,10,"reroll");
+        button(player,menu.inventory,12,safe(player) ? "sealed" : "selected");
+        button(player,menu.inventory,14,"diagnostics");
+        button(player,menu.inventory,16,"report");
+        button(player,menu.inventory,26,"previous");
         player.openInventory(menu.inventory);
         return "리소스팩 진단 메뉴를 열었습니다.";
     }
@@ -429,7 +441,11 @@ public final class PaperArt implements Listener {
 
     public ItemStack icon(Player viewer, ItemStack item, String key) {
         if (!custom(viewer)) return item;
-        if (key.startsWith("augment/") && !motifs.containsKey(key.substring("augment/".length()))) return item;
+        if (key.startsWith("augment/")) {
+            String id = key.substring("augment/".length());
+            if (!motifs.containsKey(id)) return item;
+            key = "folio/" + id;
+        }
         return model(item,key);
     }
 

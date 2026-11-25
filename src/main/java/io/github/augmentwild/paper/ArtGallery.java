@@ -25,7 +25,7 @@ final class ArtGallery implements PaperMenu {
     private final List<String> entries;
     private static final java.util.Map<Integer,String> SECTIONS = java.util.Map.of(
             46,"augment/",47,"model/",48,"cinema/",50,"rarity/",51,"sound/",52,"screen/");
-    private Runnable back;
+    private Runnable back, primary;
     private int page;
     private Mode mode = Mode.PREVIEW;
     private enum Mode { PREVIEW, GRANT, REMOVE, CAST }
@@ -67,16 +67,52 @@ final class ArtGallery implements PaperMenu {
     }
 
     static void read(Player p, PaperArt art, PaperArt.Screen screen, String title, List<String> rows) {
-        boolean journal = screen == PaperArt.Screen.JOURNAL;
-        var view = new ArtGallery(p,art,screen,title,journal ? 5 : 3,List.of(),() -> false);
-        view.liveGuide = screen == PaperArt.Screen.SUPPLY;
-        int index = 0;
-        for (String row : rows) {
-            int slot = journal ? index : 10 + index * 3;
-            if (slot >= view.inventory.getSize()) break;
-            view.put(p,slot,Material.PAPER,journal ? "gui/journal" : "gui/supply",row);
-            index++;
+        boolean supply = screen == PaperArt.Screen.SUPPLY;
+        var view = new ArtGallery(p,art,screen,title,supply ? 3 : 6,List.of(),() -> false);
+        view.liveGuide = supply;
+        if (supply) {
+            view.put(p,4,Material.CHEST,"gui/supply","보급 현황","공개된 정보만 표시합니다");
+            view.updateGuide(p,rows);
+        } else {
+            String symbol = switch (screen) {
+                case ADMIN -> "diagnostics";
+                case STATUS -> "status";
+                default -> "journal";
+            };
+            view.put(p,4,Material.WRITABLE_BOOK,"gui/" + symbol,title);
+            for (int i = 0; i < Math.min(36,rows.size()); i++) {
+                String row = rows.get(i);
+                String[] columns = row.split(" · ",2);
+                String name = columns[0];
+                var lines = new java.util.ArrayList<String>();
+                if (name.length() > 22) {
+                    int split = name.lastIndexOf(' ',22);
+                    if (split <= 0) split = 22;
+                    lines.addAll(InterfaceTheme.wrap(name.substring(split).strip()));
+                    name = name.substring(0,split);
+                }
+                if (columns.length > 1) lines.addAll(InterfaceTheme.wrap(columns[1]));
+                view.put(p,9+i,Material.PAPER,"gui/" + symbol,name,lines.toArray(String[]::new));
+            }
         }
+        view.returnTo(p,() -> p.performCommand("aw menu"));
+        p.openInventory(view.inventory);
+    }
+
+    static void cards(Player p, PaperArt art, String title,String model,List<PaperIntel.Card> rows) {
+        var view = new ArtGallery(p,art,PaperArt.Screen.CODEX,title,4,List.of(),() -> false);
+        view.put(p,4,Material.BOOK,"gui/" + model,title);
+        for (int i = 0; i < Math.min(14,rows.size()); i++)
+            view.inventory.setItem(10+i/7*9+i%7,art.icon(p,PaperIntel.item(rows.get(i)),"gui/" + model));
+        view.returnTo(p,() -> p.performCommand("aw menu"));
+        p.openInventory(view.inventory);
+    }
+
+    static void track(Player p, PaperArt art,List<String> lines,Runnable track) {
+        var view = new ArtGallery(p,art,PaperArt.Screen.TRACK,"적 탐지",3,List.of(),() -> false);
+        view.put(p,4,Material.COMPASS,"gui/track","탐지 규칙",lines.toArray(String[]::new));
+        view.put(p,13,Material.DIAMOND,"gui/start","탐지 실행","대상이 확인되면 비용을 소비합니다");
+        view.primary = track;
         view.returnTo(p,() -> p.performCommand("aw menu"));
         p.openInventory(view.inventory);
     }
@@ -90,7 +126,7 @@ final class ArtGallery implements PaperMenu {
         }
     }
 
-    static void detail(Player p,PaperArt art,String id,String title,ItemStack card,Runnable back) {
+    static void detail(Player p,PaperArt art,String id,String title,ItemStack card,List<Component> effect,List<Component> growth,List<Component> relations,Runnable back) {
         var view = new ArtGallery(p,art,PaperArt.Screen.DETAIL,title,3,List.of(),() -> false);
         view.inventory.setItem(4,card);
         art.inlay(p,view.inventory,"rail_left",0,1,2,3);
@@ -98,15 +134,17 @@ final class ArtGallery implements PaperMenu {
         view.put(p,6,Material.AMETHYST_SHARD,"proc/" + id,"외형 미리보기",art.packStatus(p));
         view.put(p,7,Material.BLAZE_POWDER,"gui/showcase","발동 연출 미리보기","경기 참가 중 사용 가능 · 본인에게만 표시");
         view.detailPreview = id;
-        var lore = card.getItemMeta().lore();
-        if (lore != null) for (int i = 0; i < Math.min(lore.size(),16); i++) {
-            var note = new ItemStack(Material.PAPER);
-            final Component text = lore.get(i);
-            note.editMeta(meta -> meta.displayName(text));
-            view.inventory.setItem(9+i,art.icon(p,note,i == 0 ? "gui/detail" : i == 3 ? "gui/gauge" : "gui/" + (i == 4 ? "slots" : "report")));
-        }
+        view.detailPanel(p,10,Material.WRITTEN_BOOK,"detail","효과와 발동 조건",effect);
+        view.detailPanel(p,13,Material.EXPERIENCE_BOTTLE,"evolution","성장과 진화",growth);
+        view.detailPanel(p,16,Material.END_CRYSTAL,"synergy","조합과 공명",relations);
         view.returnTo(p,back);
         p.openInventory(view.inventory);
+    }
+
+    private void detailPanel(Player p,int slot,Material material,String model,String title,List<Component> lines) {
+        var stack = InterfaceTheme.card(material,title,InterfaceTheme.Tone.SECTION,List.of());
+        stack.editMeta(meta -> meta.lore(lines.isEmpty() ? List.of(Component.text("해당 없음")) : lines));
+        inventory.setItem(slot,art.icon(p,stack,"gui/" + model));
     }
 
     private void returnTo(Player p, Runnable action) {
@@ -142,7 +180,10 @@ final class ArtGallery implements PaperMenu {
                 "클릭 · 촬영 연출의 반복 횟수 전환");
         put(p,44,Material.LEVER,"gui/settings","증강 클릭 동작 · " + mode,
                 "클릭 · 미리보기 / 실제 지급 / 제거 / 보유 스킬 발동");
-        SECTIONS.forEach((slot,type) -> put(p,slot,Material.BOOK,"gui/codex",
+        SECTIONS.forEach((slot,type) -> put(p,slot,Material.BOOK,"gui/" + switch (type) {
+                    case "augment/" -> "codex"; case "model/" -> "owned"; case "cinema/" -> "showcase";
+                    case "rarity/" -> "tier_prismatic"; case "sound/" -> "resonance"; default -> "settings";
+                },
                 switch (type) { case "augment/" -> "증강"; case "model/" -> "모델"; case "cinema/" -> "촬영 연출";
                     case "rarity/" -> "선택 등급"; case "sound/" -> "효과음"; default -> "화면"; }));
         if (page > 0) put(p,45,Material.ARROW,"gui/previous","이전 페이지");
@@ -154,6 +195,7 @@ final class ArtGallery implements PaperMenu {
 
     private void activate(Player p, int slot) {
         if (entries.isEmpty()) {
+            if (slot == 13 && primary != null) { primary.run(); return; }
             if (slot == 7 && detailPreview != null) {
                 if (!art.canPreview(p)) p.sendMessage("활성 경기에서 발동 연출을 미리 볼 수 있습니다.");
                 else {
@@ -231,12 +273,12 @@ final class ArtGallery implements PaperMenu {
         var parts = key.split("/");
         boolean rarity = parts[0].equals("rarity");
         var screen = rarity ? PaperArt.Screen.CHOICE : PaperArt.Screen.valueOf(parts[1].toUpperCase(Locale.ROOT));
-        int rows = switch (screen) { case WARNING -> 1; case LAB,CODEX -> 6; case JOURNAL,SCOUT -> 5; default -> 3; };
+        int rows = screen.rows;
         var sample = new ArtGallery(p,art,screen,"미리보기 · " + parts[1],rows,List.of(),() -> false);
         var slots = art.sampleCards(screen);
         if (rarity) {
             String[] cards = art.rarityCards(parts[1]);
-            for (int i = 0; i < cards.length; i++) slots.put(10 + i * 3,cards[i]);
+            for (int i = 0; i < cards.length; i++) slots.put(11 + i * 2,cards[i]);
             if (!simple && cards.length > 0) art.choice(p,cards[0].substring("augment/".length()),parts[1].toUpperCase(Locale.ROOT));
         }
         slots.forEach((slot,model) -> sample.put(p,slot,Material.PAPER,model,art.label(model),"예시 데이터 · 미리보기"));

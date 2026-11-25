@@ -28,27 +28,19 @@ public final class PaperQuickMenu implements Listener {
     private final JavaPlugin plugin;
     private final PaperMatchService matches;
 
-    // Map physical inventory positions to the existing actions. Headers have no action.
-    private static final java.util.Map<Integer,Integer> MAIN_ACTIONS = java.util.Map.ofEntries(
-            java.util.Map.entry(3,27), java.util.Map.entry(9,10), java.util.Map.entry(10,11), java.util.Map.entry(11,16),
-            java.util.Map.entry(12,15), java.util.Map.entry(14,12), java.util.Map.entry(15,18),
-            java.util.Map.entry(16,14), java.util.Map.entry(17,13), java.util.Map.entry(18,21),
-            java.util.Map.entry(19,22), java.util.Map.entry(20,19), java.util.Map.entry(21,17),
-            java.util.Map.entry(22,20), java.util.Map.entry(23,23), java.util.Map.entry(24,24),
-            java.util.Map.entry(25,25), java.util.Map.entry(26,26));
-
     private static final class Menu implements PaperMenu {
         final UUID owner;
         final UUID match;
         final boolean skills;
         final Inventory inventory;
         final List<String> available;
+        final java.util.Map<Integer,java.util.function.Supplier<String>> actions = new java.util.HashMap<>();
         Menu(PaperArt art, Player player, UUID match, boolean skills, List<String> available) {
             this.owner = player.getUniqueId();
             this.match = match;
             this.skills = skills;
             this.available = List.copyOf(available);
-            this.inventory = Bukkit.createInventory(this, 27,
+            this.inventory = Bukkit.createInventory(this, skills ? 27 : 54,
                     art.title(player,skills ? PaperArt.Screen.SLOTS : PaperArt.Screen.MENU,skills ? "증강 스킬 · 빠른 설정" : "증강 야생 · 빠른 메뉴"));
         }
         @Override public boolean availableWhileRestricted() { return true; }
@@ -104,72 +96,70 @@ public final class PaperQuickMenu implements Listener {
         menu.inventory.setItem(slot, PaperIntel.item(PaperIntel.card(material, name, details)));
     }
 
-    public String open(Player player) {
-        if (!player.hasPermission("augmentwild.play")) return "플레이어 권한이 없습니다.";
-        if (matches.picking(player)) return matches.openAugments(player);
-        Menu menu = new Menu(matches.art(),player, matches.menuSession(), false, List.of());
-        item(menu,4,Material.NETHER_STAR,matches.isLobby() ? "경기 대기실" : "진행 중인 경기",
-                matches.inMatch(player) ? "참가 상태 · 참가 중" : "참가 상태 · 미참가",
-                "웅크리기 + 빈손 우클릭 · 이 화면 열기");
-        item(menu, 10, matches.inMatch(player) ? Material.RED_DYE : Material.LIME_DYE,
-                matches.inMatch(player) ? "경기 나가기 · 확인 필요" : "경기 참가",
-                matches.inMatch(player) ? "실수 방지를 위해 종료 여부를 다시 확인합니다" : "자동 참가보다 우선 배정됩니다");
-        item(menu, 11, Material.CLOCK, "경기 현황", matches.status(player).split(" [|] "));
-        item(menu,12,matches.inMatch(player) ? Material.ENCHANTED_BOOK : Material.BARRIER,"증강 선택",
-                matches.inMatch(player) ? "현재 선택 또는 교환 주문 확인" : "선택 불가 · 경기 참가 필요");
-        item(menu,18,Material.BOOK,"증강 도감 · 84종","희귀도·능력·보유 상태별 필터");
-        item(menu, 13, Material.COMPARATOR, "화면 설정 · 프리셋 지원", "전체 표시 / 전투 집중 / 최소 표시");
-        item(menu, 14, Material.NETHER_STAR, "증강 스킬 / 퀵슬롯", "1~3번 슬롯을 클릭으로 선택하고 지정합니다");
-        item(menu, 15, Material.DIAMOND, "가까운 적 추적 · 다이아몬드 소비", "평소에는 다이아몬드를 들고 우클릭");
-        item(menu, 16, Material.COMPASS, "보급 길잡이", "나침반을 들고 공중 우클릭으로도 확인 가능");
-        item(menu, 21, Material.WRITABLE_BOOK, "전투 기록");
-        item(menu, 22, Material.PAPER, "최근 경기 결과");
-        PaperArt art = matches.art();
-        for (var control : java.util.Map.of(4,"menu",12,matches.inMatch(player) ? "choice" : "disabled",13,"settings",16,"supply",18,"codex",21,"report",22,"result").entrySet()) {
-            int slot = control.getKey();
-            menu.inventory.setItem(slot,art.icon(player,menu.inventory.getItem(slot),"gui/" + control.getValue()));
-        }
-        item(menu,19,Material.PAINTING,"리소스팩",art.packStatus(player),"클릭 · 상태, 재요청, 안전 모드");
-        art.button(player,menu.inventory,10,matches.inMatch(player) ? "leave" : "join");
-        art.button(player,menu.inventory,11,"status");
-        art.button(player,menu.inventory,15,"track");
-        art.button(player,menu.inventory,19,"pack");
-        item(menu, 26, Material.ARROW, "메뉴 새로고침");
-        art.button(player,menu.inventory,14,"slots");
-        art.button(player,menu.inventory,26,"reroll");
-        if (player.hasPermission("augmentwild.admin") && player.hasPermission("augmentwild.admin.test")) {
-            if (matches.soloInProgress(player)) {
-                item(menu,20,Material.SPYGLASS,"전투 실험실");
-                item(menu,17,Material.TARGET,"고체력 연습 표적 설치");
-                art.button(player,menu.inventory,20,"lab");
+    private void section(Player p, Menu m, int slot, Material icon, String key, String name) {
+        InterfaceTheme.put(matches.art(),p,m.inventory,slot,icon,key,name,InterfaceTheme.Tone.SECTION);
+    }
+
+    private void control(Player p, Menu m, int slot, Material icon, String key, String name,
+                         java.util.function.Supplier<String> action, String... lore) {
+        boolean enabled = action != null;
+        InterfaceTheme.put(matches.art(),p,m.inventory,slot,enabled ? icon : Material.GRAY_DYE,
+                enabled ? key : "sealed",name,enabled ? InterfaceTheme.Tone.NORMAL : InterfaceTheme.Tone.LOCKED,lore);
+        if (enabled) m.actions.put(slot,action);
+    }
+
+    public String open(Player p) {
+        if (!p.hasPermission("augmentwild.play")) return "플레이어 권한이 없습니다.";
+        if (matches.picking(p)) return matches.openAugments(p);
+        Menu m = new Menu(matches.art(),p,matches.menuSession(),false,List.of());
+        boolean joined = matches.inMatch(p), lobby = matches.isLobby();
+        section(p,m,0,Material.COMPASS,"sector_match","경기 관제");
+        control(p,m,1,Material.CLOCK,"status","경기 현황",() -> matches.statusMenu(p));
+        control(p,m,2,Material.LIME_DYE,"join","참가",lobby && !joined ? () -> matches.join(p) : null,
+                joined ? "이미 참가 중" : lobby ? "대기실 참가자 등록" : "경기 진행 중");
+        control(p,m,3,Material.RED_DYE,"leave","참가 취소",joined ? () -> confirmDecision(p,ConfirmKind.LEAVE) : null,
+                joined ? "확인 후 참가 취소" : "참가 중인 경기 없음");
+        control(p,m,5,Material.ENCHANTED_BOOK,"choice","증강 선택",joined && !lobby ? () -> matches.openAugments(p) : null);
+        control(p,m,6,Material.PAPER,"result","최근 경기 결과",() -> matches.result(p));
+        control(p,m,7,Material.WRITABLE_BOOK,"journal","경기 안내",() -> matches.newcomerGuide(p));
+        section(p,m,9,Material.ENCHANTED_BOOK,"sector_archive","증강 기록관");
+        control(p,m,10,Material.CHEST,"owned","보유 증강",() -> matches.augmentSection(p,"owned"));
+        control(p,m,11,Material.BOOK,"codex","증강 도감",() -> matches.openCodex(p),"희귀도 · 전투 계열 · 발동 방식");
+        control(p,m,12,Material.EXPERIENCE_BOTTLE,"evolution","진화",() -> matches.augmentSection(p,"evolution"));
+        control(p,m,13,Material.END_CRYSTAL,"synergy","시너지",() -> matches.augmentSection(p,"synergy"));
+        control(p,m,14,Material.ECHO_SHARD,"resonance","계열 공명",() -> matches.augmentSection(p,"resonance"));
+        section(p,m,18,Material.IRON_SWORD,"sector_combat","전투 장치");
+        control(p,m,19,Material.NETHER_STAR,"slots","스킬 설정",() -> openSkills(p),"지정 · 선택 · 해제");
+        control(p,m,20,Material.WRITABLE_BOOK,"report","전투 기록",() -> matches.combatLog(p));
+        control(p,m,21,Material.COMPASS,"supply","보급",joined && !lobby ? () -> matches.guide(p) : null);
+        control(p,m,22,Material.DIAMOND,"track","적 탐지",p.hasPermission("augmentwild.track") ? () -> matches.trackMenu(p) : null,
+                "비용과 사용 조건 확인");
+        control(p,m,23,Material.SKELETON_SKULL,"warning","사망 분석",() -> matches.deathReport(p));
+        section(p,m,27,Material.COMPARATOR,"sector_settings","개인 설정");
+        control(p,m,28,Material.BEACON,"settings","HUD 설정",() -> PlayerUi.open(p,matches.art(),PlayerUi.Tab.HUD));
+        control(p,m,29,Material.AMETHYST_SHARD,"graphics","그래픽 설정",() -> PlayerUi.open(p,matches.art(),PlayerUi.Tab.GRAPHICS));
+        control(p,m,30,Material.COMPASS,"slots","조작 설정",() -> PlayerUi.open(p,matches.art(),PlayerUi.Tab.CONTROLS));
+        control(p,m,31,Material.PAINTING,"pack","리소스팩",() -> matches.artCommand(p,"menu",false),matches.art().packStatus(p));
+        if (p.hasPermission("augmentwild.admin")) {
+            section(p,m,36,Material.LECTERN,"sector_admin","운영");
+            control(p,m,37,Material.EMERALD,"start","일반 경기 시작",lobby ? () -> confirmDecision(p,ConfirmKind.START) : null);
+            control(p,m,38,Material.SPYGLASS,"diagnostics","서버 진단",() -> matches.adminMenu(p));
+            if (p.hasPermission("augmentwild.admin.test")) {
+                boolean solo = matches.soloInProgress(p);
+                control(p,m,39,Material.ENDER_EYE,"solo","1인 전투 실험",lobby ? () -> matches.soloStart(p) : null);
+                control(p,m,40,Material.SPYGLASS,"lab","실험실 미리보기",solo ? () -> matches.labCommand(p,new String[]{"preview"}) : null);
+                control(p,m,41,Material.TARGET,"target","고체력 표적",solo ? () -> matches.labCommand(p,new String[]{"dummy","high"}) : null);
+                control(p,m,42,Material.BARRIER,"warning","실험 종료",solo ? () -> confirmStop(p) : null);
             }
-            if (matches.soloInProgress(player)) item(menu, 24, Material.BARRIER, "1인 전투 실험 종료");
-            else if (matches.isLobby()) item(menu, 23, Material.ENDER_EYE, "1인 전투 실험 시작 · 관리자 전용");
         }
-        if (player.hasPermission("augmentwild.admin") && matches.isLobby())
-            item(menu, 25, Material.EMERALD, "일반 경기 시작 · 관리자", "최소 참가자 충족 시 시작", "실수 방지를 위해 확인 화면이 열립니다");
-        art.button(player,menu.inventory,17,"target");
-        art.button(player,menu.inventory,23,"solo");
-        art.button(player,menu.inventory,24,"leave");
-        art.button(player,menu.inventory,25,"start");
-        var controls = menu.inventory.getContents();
-        for (int slot = 9; slot < menu.inventory.getSize(); slot++)
-            menu.inventory.setItem(slot,MAIN_ACTIONS.containsKey(slot) ? controls[MAIN_ACTIONS.get(slot)] : null);
-        item(menu,1,Material.COMPASS,"경기 정보","참가 · 경기 현황 · 보급");
-        item(menu,7,Material.ENCHANTED_BOOK,"증강 관리","선택 · 도감 · 스킬");
-        art.button(player,menu.inventory,1,"status");
-        art.button(player,menu.inventory,7,"codex");
-        art.button(player,menu.inventory,4,"atlas");
-        item(menu,3,Material.WRITABLE_BOOK,"처음 하는 경기","참가 · 스킬 조작 · 부활 및 전투 규칙");
-        art.button(player,menu.inventory,3,"journal");
-        art.inlay(player,menu.inventory,"rail_left",0,2);
-        art.inlay(player,menu.inventory,"rail_right",5,6,8);
-        art.inlay(player,menu.inventory,"bezel",13);
-        player.openInventory(menu.inventory);
-        return "빠른 메뉴 · 웅크리기 + 빈손 우클릭(공중)으로 다시 열 수 있습니다.";
+        section(p,m,49,Material.NETHER_STAR,"atlas",lobby ? "대기실" : "진행 중인 경기");
+        control(p,m,53,Material.ARROW,"reroll","메뉴 새로고침",() -> open(p));
+        p.openInventory(m.inventory);
+        return "";
     }
 
     public String openSkills(Player player) {
+        if (!player.hasPermission("augmentwild.play")) return "플레이어 권한이 없습니다.";
         if (matches.picking(player)) return matches.openAugments(player);
         Menu menu = new Menu(matches.art(),player, matches.menuSession(), true, matches.availableSkills(player));
         item(menu,4,Material.CLOCK,"스킬 전환 입력",PlayerUi.skillInput(player).label,
@@ -196,7 +186,11 @@ public final class PaperQuickMenu implements Listener {
             int slot = 18 + i;
             menu.inventory.setItem(slot,matches.art().icon(player,menu.inventory.getItem(slot),"augment/" + menu.available.get(i)));
         }
+        for (int i = 0; i < 3; i++) matches.art().button(player,menu.inventory,10+i,
+                i < slots.length && slots[i].startsWith("▶") ? "selected" : "slots");
+        matches.art().button(player,menu.inventory,4,"sector_combat");
         matches.art().button(player,menu.inventory,13,"next");
+        matches.art().button(player,menu.inventory,14,"start");
         matches.art().button(player,menu.inventory,15,"disabled");
         matches.art().button(player,menu.inventory,26,"previous");
         player.openInventory(menu.inventory);
@@ -290,42 +284,15 @@ public final class PaperQuickMenu implements Listener {
         int slot = PaperMenu.lock(event, false);
         if (blocked || slot < 0 || menu.inventory.getItem(slot) == null || !(event.getWhoClicked() instanceof Player player)
                 || !player.getUniqueId().equals(menu.owner)) return;
-        if (!menu.skills && !MAIN_ACTIONS.containsKey(slot)) return;
+        if (!menu.skills && !menu.actions.containsKey(slot)) return;
         Bukkit.getScheduler().runTask(plugin, () -> {
-            if (!player.isOnline() || !menu.match.equals(matches.menuSession())) return;
+            if (!player.isOnline() || !player.hasPermission("augmentwild.play") || !menu.match.equals(matches.menuSession())) return;
             matches.art().sound(player,"ui",org.bukkit.Sound.UI_BUTTON_CLICK);
             if (player.getOpenInventory().getTopInventory().getHolder() != menu) return;
             player.closeInventory();
-            String response = menu.skills ? skillClick(player, menu, slot) : mainClick(player, MAIN_ACTIONS.get(slot));
+            String response = menu.skills ? skillClick(player, menu, slot) : menu.actions.get(slot).get();
             if (response != null && !response.isBlank()) player.sendMessage(response);
         });
-    }
-
-    private String mainClick(Player player, int slot) {
-        return switch (slot) {
-            case 10 -> matches.inMatch(player) ? confirmDecision(player, ConfirmKind.LEAVE) : matches.join(player);
-            case 11 -> matches.status(player);
-            case 12 -> matches.openAugments(player);
-            case 13 -> matches.ui(player);
-            case 14 -> openSkills(player);
-            case 15 -> player.hasPermission("augmentwild.track")
-                    ? matches.locate(player) : "위치 추적 권한이 없습니다.";
-            case 16 -> matches.guide(player);
-            case 17 -> matches.labCommand(player,new String[]{"dummy","high"});
-            case 18 -> matches.openCodex(player);
-            case 19 -> matches.artCommand(player,"menu",false);
-            case 20 -> matches.labCommand(player,new String[]{"preview"});
-            case 21 -> matches.combatLog(player);
-            case 22 -> matches.result(player);
-            case 23 -> player.hasPermission("augmentwild.admin") && player.hasPermission("augmentwild.admin.test")
-                    ? matches.soloStart(player) : "관리자 권한이 없습니다.";
-            case 24 -> confirmStop(player);
-            case 25 -> player.hasPermission("augmentwild.admin")
-                    ? confirmDecision(player, ConfirmKind.START) : "관리자 권한이 없습니다.";
-            case 26 -> open(player);
-            case 27 -> matches.newcomerGuide(player);
-            default -> "";
-        };
     }
 
     private String skillClick(Player player, Menu menu, int slot) {

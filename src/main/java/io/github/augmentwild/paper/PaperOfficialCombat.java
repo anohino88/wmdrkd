@@ -1287,6 +1287,10 @@ final class PaperOfficialCombat implements Listener {
 
     static boolean activeSkill(String id) { return ACTIVE_SKILLS.contains(id); }
 
+    boolean permanentGrowth(String id) {
+        return AugmentResonance.PERMANENT.contains(id) || AugmentEvolution.of(id) != null;
+    }
+
     boolean resonanceMember(String id) {
         return resonance.families().stacking().members().contains(id) || resonance.families().revival().members().contains(id);
     }
