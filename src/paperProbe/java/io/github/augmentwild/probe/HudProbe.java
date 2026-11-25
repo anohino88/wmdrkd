@@ -71,7 +71,8 @@ final class HudProbe {
         var plain = net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText();
         if (winner == null || stats == null || !"우승 · A".equals(plain.serialize(winner.getItemMeta().displayName()))
                 || !"처치 3 · 사망 1".equals(plain.serialize(stats.getItemMeta().displayName()))
-                || java.util.Arrays.stream(viewer.menu.getContents()).filter(java.util.Objects::nonNull).count() != 2)
+                || viewer.menu.getItem(53) == null || viewer.menu.getItem(53).getType() != Material.ARROW
+                || java.util.Arrays.stream(viewer.menu.getContents()).filter(java.util.Objects::nonNull).count() != 3)
             throw new AssertionError("result cards must preserve the winner and personal statistics");
     }
 

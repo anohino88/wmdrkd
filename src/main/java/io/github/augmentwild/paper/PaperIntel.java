@@ -31,7 +31,7 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 
 final class PaperIntel implements Listener {
-    private static final int PAGE_SIZE = 36;
+    private static final int PAGE_SIZE = 27;
     private static final Set<String> PERIODIC = Set.of("infernal_conductor", "venom_swarm", "void_lord");
     private static final Set<String> AREA = Set.of("steel_king", "chain_impact", "explosive_arrow", "earthquake_mage",
             "final_judgment", "bomb_alchemy", "falling_shockwave", "calamity_giant");
@@ -65,7 +65,12 @@ final class PaperIntel implements Listener {
         Report(UUID matchId, String title, List<Card> cards, long deadline) {
             this(matchId, title, new CombatIntel.TimedReport<>(cards, deadline));
         }
+        boolean scout() { return title.equals("망원경 정찰"); }
         boolean valid() { return data.valid(System.nanoTime()); }
+        int summaryCount() {
+            if (scout()) return 1;
+            return Math.min(cards().size(),cards().getFirst().icon() == Material.PAPER ? 1 : 2);
+        }
         List<Card> cards() { return data.values(); }
         long deadline() { return data.deadline(); }
     }
@@ -440,7 +445,7 @@ final class PaperIntel implements Listener {
 
     private void open(Player player, Report report) {
         var menu = new Menu(player.getUniqueId(), report);
-        menu.inventory = plugin.getServer().createInventory(menu, 45, art.title(player,report.title().equals("망원경 정찰") ? PaperArt.Screen.SCOUT : PaperArt.Screen.JOURNAL,report.title()));
+        menu.inventory = plugin.getServer().createInventory(menu, 45, art.title(player,report.scout() ? PaperArt.Screen.SCOUT : PaperArt.Screen.DEATH,report.title()));
         render(menu,player);
         player.openInventory(menu.inventory);
         if (deaths.get(menu.owner) == report && player.getOpenInventory().getTopInventory().getHolder() == menu) {
@@ -480,19 +485,20 @@ final class PaperIntel implements Listener {
     }
 
     private void render(Menu menu, Player player) {
-        menu.inventory.clear();
-        int offset = menu.page * PAGE_SIZE;
-        for (int i = 0; i < PAGE_SIZE && offset + i < menu.report.cards().size(); i++) {
-            menu.inventory.setItem(i, item(menu.report.cards().get(offset + i)));
-        }
-        if (menu.page == 0 && menu.inventory.getItem(0) != null) {
-            String key = menu.report.title().equals("망원경 정찰") ? "gui/scout" : "gui/report";
-            menu.inventory.setItem(0,art.icon(player,menu.inventory.getItem(0),key));
-        }
-        if (menu.page > 0) menu.inventory.setItem(36, item(card(Material.ARROW, "이전 페이지")));
-        if (offset + PAGE_SIZE < menu.report.cards().size()) menu.inventory.setItem(44, item(card(Material.ARROW, "다음 페이지")));
-        art.button(player,menu.inventory,36,"previous");
-        art.button(player,menu.inventory,44,"next");
+        var inv = menu.inventory;
+        inv.clear();
+        var cards = menu.report.cards();
+        int summaries = menu.report.summaryCount();
+        inv.setItem(4,art.icon(player,item(cards.getFirst()),
+                menu.report.scout() ? "gui/scout" : summaries == 2 ? "gui/warning" : "gui/report"));
+        if (summaries == 2) inv.setItem(6,art.icon(player,item(cards.get(1)),"gui/report"));
+        int offset = summaries + menu.page * PAGE_SIZE;
+        for (int i = 0; i < PAGE_SIZE && offset + i < cards.size(); i++) inv.setItem(9+i,item(cards.get(offset+i)));
+        if (menu.page > 0)
+            InterfaceTheme.put(art,player,inv,36,Material.ARROW,"previous","이전 페이지",InterfaceTheme.Tone.NORMAL);
+        InterfaceTheme.put(art,player,inv,40,Material.COMPASS,"menu","빠른 메뉴",InterfaceTheme.Tone.NORMAL);
+        if (offset + PAGE_SIZE < cards.size())
+            InterfaceTheme.put(art,player,inv,44,Material.ARROW,"next","다음 페이지",InterfaceTheme.Tone.NORMAL);
     }
 
     static boolean isReadOnly(Inventory inventory) { return inventory.getHolder() instanceof Menu; }
@@ -504,8 +510,15 @@ final class PaperIntel implements Listener {
         int slot = PaperMenu.lock(event, false);
         if (cancelled) return;
         if (!menu.owner.equals(event.getWhoClicked().getUniqueId()) || !menu.report.valid()) return;
+        if (slot == 40 && event.getWhoClicked() instanceof Player viewer) {
+            plugin.getServer().getScheduler().runTask(plugin,() -> {
+                if (viewer.isOnline() && viewer.getOpenInventory().getTopInventory().getHolder() == menu)
+                    viewer.performCommand("aw menu");
+            });
+            return;
+        }
         if (slot == 36 && menu.page > 0) menu.page--;
-        else if (slot == 44 && (menu.page + 1) * PAGE_SIZE < menu.report.cards().size()) menu.page++;
+        else if (slot == 44 && menu.report.summaryCount() + (menu.page + 1) * PAGE_SIZE < menu.report.cards().size()) menu.page++;
         else return;
         if (event.getWhoClicked() instanceof Player player) render(menu,player);
     }
@@ -517,8 +530,9 @@ final class PaperIntel implements Listener {
     static ItemStack item(Card card) {
         var result = new ItemStack(card.icon());
         var meta = result.getItemMeta();
-        meta.displayName(card.name());
-        meta.lore(card.lore());
+        meta.displayName(card.name().decoration(net.kyori.adventure.text.format.TextDecoration.ITALIC,false));
+        meta.lore(card.lore().stream().map(line -> line.decoration(
+                net.kyori.adventure.text.format.TextDecoration.ITALIC,false)).toList());
         result.setItemMeta(meta);
         return result;
     }

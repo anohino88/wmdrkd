@@ -166,14 +166,18 @@ public final class PaperMatchService implements Listener {
     public Listener uiListener() { return new PlayerUi(); }
     public String ui(Player p) { return PlayerUi.open(p,art); }
     public String statusMenu(Player p) {
+        ArtGallery.read(p,art,PaperArt.Screen.STATUS,"경기 현황",statusLines(p));
+        return "";
+    }
+
+    private List<String> statusLines(Player p) {
         var lines = new java.util.ArrayList<>(List.of(status(p).split(" [|] ")));
         if (!isLobby()) {
             long alive = session.participantIds().stream().filter(id -> !departures.contains(id)
                     && session.player(id).life().status() != LifeState.Status.ELIMINATED).count();
             lines.add("생존 " + alive + " / " + entrants.size());
         }
-        ArtGallery.read(p,art,PaperArt.Screen.STATUS,"경기 현황",lines);
-        return "";
+        return lines;
     }
 
     public String adminMenu(Player p) {
@@ -241,6 +245,9 @@ public final class PaperMatchService implements Listener {
 
     public UUID menuSession() { return session.matchId(); }
     public boolean isLobby() { return session.state() == MatchState.WAITING; }
+    public boolean canCancelFromMenu(Player p) {
+        return inMatch(p) || isLobby() && settings.autoJoin() && !optedOut.contains(p.getUniqueId()) && canPlay(p);
+    }
     public boolean inMatch(Player player) { return contains(player.getUniqueId()) && !departures.contains(player.getUniqueId()); }
     public boolean soloInProgress(Player player) {
         return soloLab && labWorld != null && task != null && inMatch(player)
@@ -1005,9 +1012,10 @@ public final class PaperMatchService implements Listener {
                     overhead.update(player,tickNumber);
                     if (tickNumber % 20 == 1) {
                         displays.sidebar(player,sidebar(player));
-                        if (player.getOpenInventory().getTopInventory().getHolder() instanceof ArtGallery gallery
-                                && gallery.isGuideFor(player))
-                            gallery.updateGuide(player,List.of(supply.guide(player,true).split(" / ")));
+                        if (player.getOpenInventory().getTopInventory().getHolder() instanceof ArtGallery gallery) {
+                            if (gallery.isGuideFor(player)) gallery.updateGuide(player,List.of(supply.guide(player,true).split(" / ")));
+                            else if (gallery.isStatusFor(player)) gallery.updateRows(player,"status",statusLines(player));
+                        }
                     }
                 });
                 if (player == null || !augmentActive(player)) {

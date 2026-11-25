@@ -37,7 +37,8 @@ final class ArtGallery implements PaperMenu {
     private static final List<ArtPacing> FILM_SPEEDS = List.of(
             ArtPacing.BALANCED,ArtPacing.CINEMATIC,ArtPacing.SHOWCASE,ArtPacing.LEGACY);
     private int speed;
-    private boolean liveGuide;
+    private boolean liveGuide, liveStatus;
+    private List<String> displayedRows = List.of();
 
     private ArtGallery(Player p, PaperArt art, PaperArt.Screen screen, String title, int rows,
                        List<String> entries, BooleanSupplier allowed) {
@@ -70,6 +71,7 @@ final class ArtGallery implements PaperMenu {
         boolean supply = screen == PaperArt.Screen.SUPPLY;
         var view = new ArtGallery(p,art,screen,title,supply ? 3 : 6,List.of(),() -> false);
         view.liveGuide = supply;
+        view.liveStatus = screen == PaperArt.Screen.STATUS;
         if (supply) {
             view.put(p,4,Material.CHEST,"gui/supply","보급 현황","공개된 정보만 표시합니다");
             view.updateGuide(p,rows);
@@ -80,23 +82,32 @@ final class ArtGallery implements PaperMenu {
                 default -> "journal";
             };
             view.put(p,4,Material.WRITABLE_BOOK,"gui/" + symbol,title);
-            for (int i = 0; i < Math.min(36,rows.size()); i++) {
-                String row = rows.get(i);
-                String[] columns = row.split(" · ",2);
-                String name = columns[0];
-                var lines = new java.util.ArrayList<String>();
-                if (name.length() > 22) {
-                    int split = name.lastIndexOf(' ',22);
-                    if (split <= 0) split = 22;
-                    lines.addAll(InterfaceTheme.wrap(name.substring(split).strip()));
-                    name = name.substring(0,split);
-                }
-                if (columns.length > 1) lines.addAll(InterfaceTheme.wrap(columns[1]));
-                view.put(p,9+i,Material.PAPER,"gui/" + symbol,name,lines.toArray(String[]::new));
-            }
+            view.updateRows(p,symbol,rows);
         }
         view.returnTo(p,() -> p.performCommand("aw menu"));
         p.openInventory(view.inventory);
+    }
+
+    boolean isStatusFor(Player viewer) { return liveStatus && owner.equals(viewer.getUniqueId()); }
+
+    void updateRows(Player p,String symbol,List<String> rows) {
+        if (rows.equals(displayedRows)) return;
+        for (int i = rows.size(); i < Math.min(36,displayedRows.size()); i++) inventory.clear(9+i);
+        displayedRows = List.copyOf(rows);
+        for (int i = 0; i < Math.min(36,rows.size()); i++) {
+            String row = rows.get(i);
+            String[] columns = row.split(" · ",2);
+            String name = columns[0];
+            var lines = new java.util.ArrayList<String>();
+            if (name.length() > 22) {
+                int split = name.lastIndexOf(' ',22);
+                if (split <= 0) split = 22;
+                lines.addAll(InterfaceTheme.wrap(name.substring(split).strip()));
+                name = name.substring(0,split);
+            }
+            if (columns.length > 1) lines.addAll(InterfaceTheme.wrap(columns[1]));
+            put(p,9+i,Material.PAPER,"gui/" + symbol,name,lines.toArray(String[]::new));
+        }
     }
 
     static void cards(Player p, PaperArt art, String title,String model,List<PaperIntel.Card> rows) {

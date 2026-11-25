@@ -33,10 +33,10 @@ final class InterfaceProbe {
         var item = new ItemStack(Material.STONE);
         var drag = new InventoryDragEvent(player.getOpenInventory(),item,item,false,java.util.Map.of(11,item,54,item));
         Bukkit.getPluginManager().callEvent(drag);
-        require(drag.isCancelled() && top(player) == main,"drag and control unchanged");
+        require(drag.isCancelled() && top(player).getHolder() == main.getHolder(),"drag and control unchanged");
         click(player,11,ClickType.LEFT);
         later(plugin,() -> {
-            require(top(player) != main && top(player).getSize() == 54,"codex link");
+            require(top(player).getHolder() != main.getHolder() && top(player).getSize() == 54,"codex link");
             Set<ItemStack> icons = new HashSet<>();
             for (int page = 0; page < 3; page++) {
                 click(player,53,ClickType.LEFT);
@@ -80,7 +80,7 @@ final class InterfaceProbe {
         permissions.setPermission("augmentwild.admin.test",true);
         open(player,"aw admin test preview",54);
         require(top(player).getItem(42) != null,"experiment preview and distance");
-        player.performCommand("aw admin test advance");
+        command(player,"aw admin test advance");
         later(plugin,() -> {
             open(player,"aw augment",36);
             for (int slot : new int[]{11,13,15,22,26,29,31,33})
@@ -106,8 +106,13 @@ final class InterfaceProbe {
     }
 
     private static void open(Player p,String command,int size) {
-        p.performCommand(command);
+        command(p,command);
         require(PaperMenu.protectedInventory(top(p)) && top(p).getSize() == size,command + " size " + top(p).getSize());
+    }
+
+    private static void command(Player p,String line) {
+        var aw = java.util.Objects.requireNonNull(Bukkit.getPluginCommand("aw"));
+        require(aw.execute(p,"aw",line.substring(3).split(" ")),"plugin command " + line);
     }
 
     private static org.bukkit.inventory.Inventory top(Player p) { return p.getOpenInventory().getTopInventory(); }

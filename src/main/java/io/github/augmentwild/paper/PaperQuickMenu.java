@@ -113,12 +113,14 @@ public final class PaperQuickMenu implements Listener {
         if (matches.picking(p)) return matches.openAugments(p);
         Menu m = new Menu(matches.art(),p,matches.menuSession(),false,List.of());
         boolean joined = matches.inMatch(p), lobby = matches.isLobby();
+        boolean canCancel = matches.canCancelFromMenu(p);
         section(p,m,0,Material.COMPASS,"sector_match","경기 관제");
         control(p,m,1,Material.CLOCK,"status","경기 현황",() -> matches.statusMenu(p));
         control(p,m,2,Material.LIME_DYE,"join","참가",lobby && !joined ? () -> matches.join(p) : null,
                 joined ? "이미 참가 중" : lobby ? "대기실 참가자 등록" : "경기 진행 중");
-        control(p,m,3,Material.RED_DYE,"leave","참가 취소",joined ? () -> confirmDecision(p,ConfirmKind.LEAVE) : null,
-                joined ? "확인 후 참가 취소" : "참가 중인 경기 없음");
+        control(p,m,3,Material.RED_DYE,"leave",lobby && !joined ? "자동 참가 거부" : "참가 취소",
+                canCancel ? () -> confirmDecision(p,ConfirmKind.LEAVE) : null,
+                canCancel ? "확인 후 적용" : "취소할 참가 상태 없음");
         control(p,m,5,Material.ENCHANTED_BOOK,"choice","증강 선택",joined && !lobby ? () -> matches.openAugments(p) : null);
         control(p,m,6,Material.PAPER,"result","최근 경기 결과",() -> matches.result(p));
         control(p,m,7,Material.WRITABLE_BOOK,"journal","경기 안내",() -> matches.newcomerGuide(p));
@@ -228,7 +230,7 @@ public final class PaperQuickMenu implements Listener {
     }
 
     private String confirmDecision(Player player, ConfirmKind kind) {
-        if (kind == ConfirmKind.LEAVE && !matches.inMatch(player))
+        if (kind == ConfirmKind.LEAVE && !matches.canCancelFromMenu(player))
             return "현재 참가한 경기가 없습니다.";
         if (kind == ConfirmKind.START && (!player.hasPermission("augmentwild.admin") || !matches.isLobby()))
             return "관리자 경기 시작을 사용할 수 없습니다.";
@@ -255,7 +257,7 @@ public final class PaperQuickMenu implements Listener {
                         || p.getOpenInventory().getTopInventory().getHolder() != confirm) return;
                 p.closeInventory();
                 if (selection == 3) {
-                    if (confirm.kind == ConfirmKind.LEAVE && matches.inMatch(p)) {
+                    if (confirm.kind == ConfirmKind.LEAVE && matches.canCancelFromMenu(p)) {
                         p.sendMessage(matches.leave(p));
                     } else if (confirm.kind == ConfirmKind.START && p.hasPermission("augmentwild.admin")
                             && matches.isLobby()) p.sendMessage(matches.start(p));
