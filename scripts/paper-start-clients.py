@@ -194,7 +194,9 @@ def exercise(command, log):
         expect("tp AW00 0.5 -60 0.5","Teleported AW00")
         expect("item replace entity AW00 hotbar.0 with minecraft:diamond","AW00")
         start_match(1,1,practice=True)
+        position = log.stat().st_size
         expect("aw821probe selection AW00","AW_PREMIUM_SELECTION_PASS")
+        wait("AW_HUD_INPUT_PASS",position)
         expect("execute as AW00 at @s if dimension minecraft:aw_lab run say AW_SOLO_IN_LAB","AW_SOLO_IN_LAB")
         expect("execute unless items entity AW00 hotbar.0 minecraft:diamond run say AW_SOLO_CLEARED","AW_SOLO_CLEARED")
         stop_match()

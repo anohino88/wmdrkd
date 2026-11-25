@@ -2,6 +2,7 @@ package io.github.augmentwild.paper;
 
 import io.github.augmentwild.domain.HudMessages;
 import io.github.augmentwild.domain.HudMessages.Layer;
+import io.github.augmentwild.domain.HudMessages.Kind;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -16,6 +17,19 @@ import org.bukkit.plugin.java.JavaPlugin;
 final class PaperHud {
     private static final long REFRESH_NANOS = 1_000_000_000L;
     private final Map<UUID, View> players = new HashMap<>();
+    private HudMessages.Metrics queueMetrics = new HudMessages.Metrics();
+    private long actionSends, barUpdates, skillQueries, duplicateInputs;
+    void skillQueried() { skillQueries++; }
+    void duplicateInput() { duplicateInputs++; }
+    String metrics() {
+        var times = new java.util.StringJoiner(",");
+        for (Kind kind : Kind.values()) times.add(kind.name() + "=" + kind.visibleNanos/1_000_000 + "/"
+                + queueMetrics.visibleNanos(kind)/1_000_000 + "/" + queueMetrics.completed(kind));
+        return "action=" + actionSends + " skill_bar=" + barUpdates + " queries=" + skillQueries
+                + " duplicate_inputs=" + duplicateInputs + " peak_queue=" + queueMetrics.peak() + " merged=" + queueMetrics.merged()
+                + " expired=" + queueMetrics.expired() + " budget=" + queueMetrics.budget()
+                + " dwell_ms_plan_total_completed=" + times;
+    }
 
     private final io.github.augmentwild.domain.CombatHistory history = new io.github.augmentwild.domain.CombatHistory();
     private final Map<UUID,Double> healing = new HashMap<>();
@@ -38,7 +52,7 @@ final class PaperHud {
 
     void incoming(Player p, String text, long expiry) {
         if (PlayerUi.enabled(p,PlayerUi.Option.INCOMING))
-            players.computeIfAbsent(p.getUniqueId(), ignored -> new View()).layers.until(Layer.INCOMING,Component.text(text),expiry);
+            players.computeIfAbsent(p.getUniqueId(), ignored -> new View(queueMetrics)).layers.until(Layer.INCOMING,Component.text(text),expiry);
     }
 
     void crisis(Player p, long now) {
@@ -47,7 +61,7 @@ final class PaperHud {
         if (max == null || p.getHealth() > .25 * max.getValue() || !PlayerUi.enabled(p,PlayerUi.Option.CRISIS)) {
             if (low.remove(id)) remove(id,Layer.CRISIS);
         } else if (p.getHealth() > 0 && low.add(id)) {
-            players.computeIfAbsent(id, ignored -> new View()).layers.until(Layer.CRISIS,Component.text("생존 위기 · 체력 25% 이하",NamedTextColor.RED),now+1_000_000_000L);
+            players.computeIfAbsent(id, ignored -> new View(queueMetrics)).layers.until(Layer.CRISIS,Component.text("생존 위기 · 체력 25% 이하",NamedTextColor.RED),now+1_000_000_000L);
             if (PlayerUi.enabled(p,PlayerUi.Option.SOUND)) p.playSound(p.getLocation(),org.bukkit.Sound.BLOCK_NOTE_BLOCK_BASS,.5f,.7f);
         }
     }
@@ -57,11 +71,11 @@ final class PaperHud {
         double x = loc.getX(), z = loc.getZ();
         double distance = io.github.augmentwild.domain.CombatNavigation.edgeDistance(area,x,z);
         boolean inside = area.contains(x,z,0);
-        if (!PlayerUi.enabled(p,PlayerUi.Option.BORDER) || inside && distance > 15) {
+        if (inside && (!PlayerUi.enabled(p,PlayerUi.Option.BORDER) || distance > 15)) {
             remove(p.getUniqueId(),Layer.BORDER);
             return;
         }
-        players.computeIfAbsent(p.getUniqueId(),ignored -> new View()).outside = !inside;
+        players.computeIfAbsent(p.getUniqueId(),ignored -> new View(queueMetrics)).outside = !inside;
         String arrow = io.github.augmentwild.domain.CombatNavigation.bearing(area.x()-x,area.z()-z,loc.getYaw());
         set(p.getUniqueId(),Layer.BORDER,Component.text((inside ? "경계 접근" : "위험 · 경계 밖")
                 + (shrinking ? " · 축소 중" : " · 고정") + " · " + Math.round(distance) + "블록 · 안쪽 " + arrow));
@@ -95,28 +109,50 @@ final class PaperHud {
     }
 
     private static final class View {
-        final HudMessages<Component> layers = new HudMessages<>();
+        final HudMessages<Component> layers;
+        View(HudMessages.Metrics metrics) { layers = new HudMessages<>(metrics); }
         Component sent, skills, skillSent;
         BossBar skillBar;
-        String procName;
-        int procCount;
-        long procExpires;
+        long lastInputSound = Long.MIN_VALUE;
         boolean outside;
         long refresh;
     }
 
     void set(UUID id, Layer layer, Component message) {
-        var view = players.computeIfAbsent(id, ignored -> new View());
+        var view = players.computeIfAbsent(id, ignored -> new View(queueMetrics));
         if (layer == Layer.SKILL) view.skills = message;
         else view.layers.set(layer, message);
     }
 
-    void skillInput(Player p, String result) {
-        if (PlayerUi.enabled(p,PlayerUi.Option.SKILL))
-            players.computeIfAbsent(p.getUniqueId(),ignored -> new View()).layers.until(Layer.SKILL_INPUT,Component.text(result),System.nanoTime()+1_200_000_000L);
+    void skillInput(Player p,String result) { input(p,result,null); }
+
+    void input(Player p,String result,Boolean success) {
+        if (!PlayerUi.enabled(p,PlayerUi.Option.SKILL)) return;
+        var view = players.computeIfAbsent(p.getUniqueId(),ignored -> new View(queueMetrics));
+        long now = System.nanoTime();
+        view.layers.offer(Kind.INPUT,result,now,ignored -> Component.text(result,
+                Boolean.FALSE.equals(success) ? NamedTextColor.RED : NamedTextColor.AQUA));
+        if (success != null && PlayerUi.enabled(p,PlayerUi.Option.SOUND)
+                && (view.lastInputSound == Long.MIN_VALUE || now - view.lastInputSound >= 380_000_000L)) {
+            p.playSound(p.getLocation(),success ? org.bukkit.Sound.UI_BUTTON_CLICK : org.bukkit.Sound.BLOCK_NOTE_BLOCK_BASS,.28f,success ? 1.5f : .7f);
+            view.lastInputSound = now;
+        }
     }
+
+    void notification(Player p,Kind kind,String id,String label) {
+        var view = players.computeIfAbsent(p.getUniqueId(),ignored -> new View(queueMetrics));
+        view.layers.offer(kind,id,System.nanoTime(),count -> Component.text(label + (count > 1 ? " ×" + count : ""),
+                kind == Kind.SUPPLY ? NamedTextColor.GOLD : NamedTextColor.LIGHT_PURPLE));
+    }
+
+    void danger(Player p,long remainingMillis) {
+        if (remainingMillis > 0) players.computeIfAbsent(p.getUniqueId(),ignored -> new View(queueMetrics))
+                .layers.until(Layer.DANGER,Component.text("위험 · 폭발 범위를 벗어나세요",NamedTextColor.RED),
+                        System.nanoTime()+Math.min(remainingMillis,450)*1_000_000L);
+    }
+
     void rescued(Player p,String name) {
-        players.computeIfAbsent(p.getUniqueId(),ignored -> new View()).layers.until(Layer.RESCUE,Component.text("치명 피해 방지 · " + name),System.nanoTime()+1_200_000_000L);
+        players.computeIfAbsent(p.getUniqueId(),ignored -> new View(queueMetrics)).layers.until(Layer.RESCUE,Component.text("치명 피해 방지 · " + name),System.nanoTime()+1_200_000_000L);
     }
     void heal(Player player, double before, double after) {
         if (after <= before) return;
@@ -127,30 +163,29 @@ final class PaperHud {
     }
     void damage(Player p, String text) {
         if (PlayerUi.enabled(p, PlayerUi.Option.DAMAGE))
-            players.computeIfAbsent(p.getUniqueId(), ignored -> new View()).layers.until(Layer.DAMAGE,
-                    Component.text(text),System.nanoTime()+io.github.augmentwild.domain.CombatView.DAMAGE_VISIBLE);
+            players.computeIfAbsent(p.getUniqueId(), ignored -> new View(queueMetrics)).layers.offer(Kind.COMBAT,text,
+                    System.nanoTime(),ignored -> Component.text(text));
     }
 
-    void activated(Player player,String name) {
+    void activated(Player player,String id,String name,boolean activeCast) {
         record(player,"발동 · " + name);
-        proc(player,name);
+        if (!activeCast && PlayerUi.enabled(player,PlayerUi.Option.PROC))
+            notification(player,Kind.PROC,id,"증강 발동 · " + name);
     }
 
     void proc(Player player, String name) {
-        if (!PlayerUi.enabled(player,PlayerUi.Option.PROC)) return;
-        var view = players.computeIfAbsent(player.getUniqueId(),ignored -> new View());
-        long now = System.nanoTime();
-        boolean active = now < view.procExpires;
-        if (active && !name.equals(view.procName)) return;
-        if (!active) {
-            view.procName = name;
-            view.procCount = 0;
-            view.procExpires = now + 2 * REFRESH_NANOS;
-        }
-        int count = ++view.procCount;
-        view.layers.until(Layer.PROC,Component.text("증강 발동 · " + name + (count > 1 ? " ×" + count : ""),
-                NamedTextColor.LIGHT_PURPLE),view.procExpires);
+        if (PlayerUi.enabled(player,PlayerUi.Option.PROC)) notification(player,Kind.PROC,name,name);
+    }
 
+    void suspend(UUID id,boolean respawning) {
+        View view = players.get(id);
+        if (view == null) return;
+        for (var kind : Kind.values()) if (!respawning || kind != Kind.INPUT) view.layers.remove(kind);
+        for (var layer : java.util.List.of(Layer.BORDER,Layer.DANGER,Layer.CRISIS,Layer.INCOMING,
+                Layer.TRACK,Layer.AUTO,Layer.STATUS,Layer.SCOUT,Layer.SUPPLY,Layer.SELECTION,Layer.SHIELD))
+            view.layers.remove(layer);
+        view.outside = false;
+        low.remove(id);
     }
 
     void remove(UUID id, Layer layer) {
@@ -163,34 +198,37 @@ final class PaperHud {
     void render(Player player, long now) {
         View view = players.get(player.getUniqueId());
         if (view == null) return;
-        if (!PlayerUi.enabled(player,PlayerUi.Option.PROC)) view.layers.remove(Layer.PROC);
-        if (!PlayerUi.enabled(player,PlayerUi.Option.DAMAGE)) view.layers.remove(Layer.DAMAGE);
-        if (!PlayerUi.enabled(player,PlayerUi.Option.SKILL)) { view.layers.remove(Layer.SKILL); view.layers.remove(Layer.SKILL_INPUT); }
+        if (!PlayerUi.enabled(player,PlayerUi.Option.PROC)) view.layers.remove(Kind.PROC);
+        if (!PlayerUi.enabled(player,PlayerUi.Option.DAMAGE)) view.layers.remove(Kind.COMBAT);
+        if (!PlayerUi.enabled(player,PlayerUi.Option.SKILL)) view.layers.remove(Kind.INPUT);
+        if (!PlayerUi.enabled(player,PlayerUi.Option.GROWTH)) { view.layers.remove(Kind.GROWTH); view.layers.remove(Kind.MILESTONE); }
+        if (!PlayerUi.enabled(player,PlayerUi.Option.SUPPLY)) view.layers.remove(Kind.SUPPLY);
         if (!PlayerUi.enabled(player,PlayerUi.Option.INCOMING)) view.layers.remove(Layer.INCOMING);
         if (!PlayerUi.enabled(player,PlayerUi.Option.AUTO)) view.layers.remove(Layer.AUTO);
         renderSkills(player,view);
         Component warning = view.outside ? view.layers.layer(Layer.BORDER,now) : null;
-        Component next = view.layers.layer(Layer.SELECTION,now);
-        if (next == null) next = warning == null ? view.layers.current(now) : warning;
+        Component next = view.layers.current(now,warning);
         if (!Objects.equals(next, view.sent) || next != null && now - view.refresh >= REFRESH_NANOS) {
             player.sendActionBar(next == null ? Component.empty() : next);
+            actionSends++;
             view.sent = next;
             view.refresh = now;
         }
-        if (next == null && view.skills == null) players.remove(player.getUniqueId());
+        if (next == null && view.skills == null && view.layers.queued() == 0) players.remove(player.getUniqueId());
     }
 
     private void renderSkills(Player player, View view) {
         var skills = PlayerUi.enabled(player,PlayerUi.Option.SKILL) ? view.skills : null;
         if (skills == null) {
-            if (view.skillBar != null) player.hideBossBar(view.skillBar);
+            if (view.skillBar != null) { player.hideBossBar(view.skillBar); barUpdates++; }
             view.skillBar = null;
             view.skillSent = null;
         } else if (!skills.equals(view.skillSent)) {
             if (view.skillBar == null) {
-                view.skillBar = BossBar.bossBar(skills,1,BossBar.Color.PURPLE,BossBar.Overlay.NOTCHED_6);
+                view.skillBar = BossBar.bossBar(skills,1,BossBar.Color.YELLOW,BossBar.Overlay.PROGRESS);
                 player.showBossBar(view.skillBar);
             } else view.skillBar.name(skills);
+            barUpdates++;
             view.skillSent = skills;
         }
     }
@@ -208,5 +246,7 @@ final class PaperHud {
         healing.clear();
         low.clear();
         for (UUID id : java.util.List.copyOf(players.keySet())) clear(id, plugin.getServer().getPlayer(id));
+        queueMetrics = new HudMessages.Metrics();
+        actionSends = barUpdates = skillQueries = duplicateInputs = 0;
     }
 }

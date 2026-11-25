@@ -32,6 +32,13 @@ public final class PlayerUi implements Listener {
         MENU("메뉴 또는 명령어로 전환");
         final String label;
         SkillInput(String label) { this.label = label; }
+        String help() {
+            return switch (this) {
+                case HOTBAR -> label + "로 전환 · 웅크리기 + F로 발동";
+                case CYCLE -> label;
+                case MENU -> label + " · 웅크리기 + F 또는 /aw skill use로 발동";
+            };
+        }
     }
     private static final NamespacedKey SKILL_INPUT = new NamespacedKey("augmentwild","skill_input");
     static SkillInput skillInput(Player player) {
@@ -293,7 +300,9 @@ public final class PlayerUi implements Listener {
             var option = Option.values()[slot];
             if (option == Option.HOTBAR) {
                 var inputs = SkillInput.values();
-                skillInput(p,inputs[(skillInput(p).ordinal()+1) % inputs.length]);
+                var input = inputs[(skillInput(p).ordinal()+1) % inputs.length];
+                skillInput(p,input);
+                p.sendMessage(input.help());
             } else toggle(p, option);
             paint(p, menu, option);
         }

@@ -226,6 +226,14 @@ final class PaperAugments implements Listener {
         var profile = profiles.get(player.getUniqueId());
         return profile == null ? List.of() : profile.owned.stream().sorted().toList();
     }
+    List<String> skillDetails(Player player,String id) {
+        var definition = registry.get(id);
+        return List.of(official.describeSkill(player,id),definition.condition(),
+                "기본 쿨다운 " + definition.cooldown() + "초", "클릭 · 선택된 슬롯에 지정");
+    }
+
+    String previewSkill(Player player) { return official.previewSkill(player); }
+
     String skill(Player player, String[] args) { return official.skill(player, args); }
     String effectName(String id) { var def = id == null ? null : registry.get(id); return def == null ? "증강" : def.name(); }
     List<String> ownedNames(UUID id) { var p = profiles.get(id); return p == null ? List.of() : p.acquired.stream().map(this::effectName).toList(); }
@@ -1063,7 +1071,7 @@ final class PaperAugments implements Listener {
                 || protectedPlayer.test(attacker) || protectedPlayer.test(target)) return;
         var confirmed = observedProcs.remove(event);
         if (confirmed != null) confirmed.forEach((player, id) -> {
-            hud.activated(player,registry.get(id).name());
+            hud.activated(player,id,registry.get(id).name(),false);
             art.cue(player,id);
         });
         var attacking = profiles.get(attacker.getUniqueId());
@@ -1103,7 +1111,7 @@ final class PaperAugments implements Listener {
                     if (effect == Effect.REAR || effect == Effect.FALL || effect == Effect.DEFENSE) {
                         observedProcs.computeIfAbsent(hit, ignored -> new LinkedHashMap<>()).putIfAbsent(player, a.id());
                     } else {
-                        hud.activated(player, a.name());
+                        hud.activated(player,a.id(),a.name(),false);
                         art.cue(player,a.id());
                     }
                 } else art.cue(player,a.id());

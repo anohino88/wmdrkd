@@ -125,11 +125,14 @@ final class CombatFeedback implements Listener {
                     + (abs > 0 ? " 흡수 −" + fmt(abs) : "") + (s.shield > 0 ? " 보호막 −" + fmt(s.shield) : "");
             if (s.victim instanceof Player victim) {
                 hud.record(victim,"피격 · " + s.source + debit);
+                hud.damage(victim,"피격 · " + s.source + debit);
                 if (s.incoming != null) hud.incoming(victim,s.incoming,s.time+1_000_000_000L);
                 else hud.remove(id,io.github.augmentwild.domain.HudMessages.Layer.INCOMING);
             }
             if (s.owner != null) hud.record(s.owner,"공격 · " + s.victim.getName() + " · " + s.label + debit);
         }
+        if (s.blocked && health + abs + s.shield == 0 && s.victim instanceof Player victim)
+            hud.damage(victim,"방패 방어 · " + s.source);
         if (health > 0 && s.victim instanceof Player) received.merge(id,health,Double::sum);
         if (s.owner == null) return;
         if (health > 0) {
@@ -201,7 +204,13 @@ final class CombatFeedback implements Listener {
             }
         }
         ready.clear();
-        alerts.forEach((p,lines) -> hud.damage(p,String.join(" | ",lines.stream().limit(3).toList())));
+        alerts.forEach((p,lines) -> {
+            int shown = 0;
+            for (String line : lines) {
+                if (shown++ == 3) break;
+                hud.damage(p,line);
+            }
+        });
         numbers.entrySet().removeIf(entry -> {
             if (entry.getValue() > now) return false;
             entry.getKey().remove(); return true;

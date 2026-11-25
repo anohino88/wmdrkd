@@ -164,8 +164,11 @@ public final class PaperQuickMenu implements Listener {
         if (!player.hasPermission("augmentwild.play")) return "플레이어 권한이 없습니다.";
         if (matches.picking(player)) return matches.openAugments(player);
         Menu menu = new Menu(matches.art(),player, matches.menuSession(), true, matches.availableSkills(player));
-        item(menu,4,Material.CLOCK,"스킬 전환 입력",PlayerUi.skillInput(player).label,
-                "화면 설정 또는 /aw skill input 에서 변경");
+        item(menu,4,Material.CLOCK,"스킬 전환 입력",PlayerUi.skillInput(player).help(),"클릭 · 조작 설정");
+        item(menu,6,Material.COMPARATOR,"빈 슬롯 자동 등록 · " + (PlayerUi.enabled(player,PlayerUi.Option.AUTO_BIND) ? "켜짐" : "꺼짐"));
+        matches.art().button(player,menu.inventory,6,"settings");
+        item(menu,25,Material.SPYGLASS,"선택 스킬 연출 미리보기","본인에게만 표시 · 피해와 쿨다운 없음");
+        matches.art().button(player,menu.inventory,25,"showcase");
         item(menu, 10, Material.IRON_SWORD, "1번 스킬 슬롯 선택");
         item(menu, 11, Material.IRON_SWORD, "2번 스킬 슬롯 선택");
         item(menu, 12, Material.IRON_SWORD, "3번 스킬 슬롯 선택");
@@ -174,8 +177,10 @@ public final class PaperQuickMenu implements Listener {
         item(menu, 15, Material.BARRIER, "선택 슬롯 해제");
         int index = 0;
         for (String id : menu.available) {
-            if (index >= 9) break;
-            item(menu, 18 + index++, Material.ENCHANTED_BOOK, "지정 · " + matches.art().label("augment/" + id),id);
+            if (index >= 7) break;
+            var details = matches.skillDetails(player,id);
+            item(menu,18+index++,Material.ENCHANTED_BOOK,matches.art().label("augment/" + id),
+                    details.toArray(String[]::new));
         }
         item(menu, 26, Material.ARROW, "빠른 메뉴로 돌아가기");
         String status = matches.skill(player, new String[]{"skill", "status"});
@@ -184,7 +189,7 @@ public final class PaperQuickMenu implements Listener {
             item(menu,10+i,slots[i].startsWith("▶") ? Material.GOLDEN_SWORD : Material.IRON_SWORD,
                     slots[i],"클릭해서 이 슬롯 선택");
         }
-        for (int i = 0; i < Math.min(menu.available.size(),8); i++) {
+        for (int i = 0; i < Math.min(menu.available.size(),7); i++) {
             int slot = 18 + i;
             menu.inventory.setItem(slot,matches.art().icon(player,menu.inventory.getItem(slot),"augment/" + menu.available.get(i)));
         }
@@ -210,7 +215,8 @@ public final class PaperQuickMenu implements Listener {
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
             if (!player.isOnline()) return;
             player.sendMessage("§b[AugmentWild] §f웅크리기 + 빈손 우클릭(공중) = 게임 메뉴");
-            player.sendMessage("§7다이아 우클릭: 적 추적 · 나침반 공중 우클릭: 보급 안내 · 스킬: 웅크리기 + F");
+            player.sendMessage(net.kyori.adventure.text.Component.text("[경기와 스킬 조작 안내]").clickEvent(
+                    net.kyori.adventure.text.event.ClickEvent.runCommand("/aw guide")));
         }, 20L);
     }
 
@@ -299,6 +305,9 @@ public final class PaperQuickMenu implements Listener {
 
     private String skillClick(Player player, Menu menu, int slot) {
         String response = switch (slot) {
+            case 4 -> PlayerUi.open(player,matches.art(),PlayerUi.Tab.CONTROLS);
+            case 6 -> { PlayerUi.toggle(player,PlayerUi.Option.AUTO_BIND); openSkills(player); yield ""; }
+            case 25 -> matches.previewSkill(player);
             case 10, 11, 12 -> matches.skill(player, new String[]{"skill", "select", Integer.toString(slot - 9)});
             case 13 -> matches.skill(player, new String[]{"skill", "next"});
             case 14 -> matches.skill(player, new String[]{"skill", "use"});
@@ -308,7 +317,7 @@ public final class PaperQuickMenu implements Listener {
                     ? matches.skill(player, new String[]{"skill", "bind", menu.available.get(slot - 18)}) : "";
         };
         // Changes are applied using the same validated command path.
-        if (slot != 14 && slot != 26 && slot >= 10 && slot <= 25) {
+        if (slot != 14 && slot != 26 && slot >= 10 && slot <= 24) {
             openSkills(player);
         }
         return response;

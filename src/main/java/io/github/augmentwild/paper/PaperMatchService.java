@@ -128,7 +128,7 @@ public final class PaperMatchService implements Listener {
                 () -> session.state(), this::insideAugmentArena, this::insideAugmentBorder, this::move, placement::protect, settings.rules().procDepth(), telemetry, hud, art);
         feedback = new CombatFeedback(plugin,this::augmentActive,this::insideAugmentArena,augments,hud,art);
         supply = new PaperSupply(plugin, SupplySettings.load(config, settings.rules().gatheringSeconds()),
-                this::augmentActive, this::insideAugmentBorder, this::notice, telemetry, art);
+                this::augmentActive, this::insideAugmentBorder, this::supplyNotice, telemetry, art);
         intel = new PaperIntel(plugin, () -> clock, () -> session.participantIds(), this::augmentActive,
                 this::insideAugmentBorder, augments, telemetry, hud, supply::nearbyPvp, art);
     }
@@ -138,6 +138,16 @@ public final class PaperMatchService implements Listener {
             Player player = plugin.getServer().getPlayer(id);
             if (player != null) player.sendMessage(message);
         }
+    }
+
+    private void supplyNotice(String message) {
+        notice(message);
+        if (message.contains(" 예고 ") || message.contains(" 위치 ") || message.endsWith("도착했습니다."))
+            for (UUID id : session.participantIds()) {
+                Player player = plugin.getServer().getPlayer(id);
+                if (player != null && augmentActive(player) && PlayerUi.enabled(player,PlayerUi.Option.SUPPLY))
+                    hud.notification(player,io.github.augmentwild.domain.HudMessages.Kind.SUPPLY,message,message);
+            }
     }
 
     public Listener galleryListener() { return new ArtGallery.Input(plugin); }
@@ -258,6 +268,8 @@ public final class PaperMatchService implements Listener {
         var choice = clock.selection().map(round -> round.choices().get(player.getUniqueId())).orElse(null);
         return choice != null && choice.status() == io.github.augmentwild.domain.SelectionRound.Status.PENDING;
     }
+    public List<String> skillDetails(Player player,String id) { return augments.skillDetails(player,id); }
+    public String previewSkill(Player player) { return augments.previewSkill(player); }
     public List<String> availableSkills(Player player) { return augments.availableSkills(player); }
     public List<String> registeredAugments() { return augments.registeredIds(); }
     public List<String> ownedAugments(Player player) { return augments.ownedIds(player); }
@@ -401,17 +413,19 @@ public final class PaperMatchService implements Listener {
 
     public String newcomerGuide(Player player) {
         var rules = settings.rules();
-        var rows = List.of("참가 · /aw join · 메뉴에서 참가 상태 확인",
-                "파밍 " + rules.gatheringSeconds()/60 + "분 · 파밍 중 사망은 목숨 차감 없음",
-                "증강 선택 · " + rules.selectionInterval()/60 + "분 간격 · /aw augment",
-                "스킬 · " + PlayerUi.skillInput(player).label + " · /aw skill menu",
-                "진화·시너지 · /aw augments 도감에서 실제 조건 확인",
-                "보급 · /aw supply · 공개 뒤 방향과 거리 확인",
-                "적 탐지 · 다이아몬드 1개 · /aw track",
-                "자기장 · 목숨 제한 이후 경계 경고에 따라 안쪽으로 이동",
-                "리스폰 · " + rules.respawnSeconds() + "초와 보호 상태 확인",
-                "승리 · 마지막 생존자 · /aw result",
-                "연습 · 관리자에게 격리 실험실에서 시작을 요청하세요");
+        var rows = List.of("경기 참가 · /aw join · 정원 " + settings.maximumPlayers() + "명",
+                "파밍 · " + rules.gatheringSeconds() + "초 · 전투 가능, 파밍 사망 시 목숨 차감 없음",
+                "증강 선택 · " + rules.selectionInterval() + "초 간격 · 제한 " + settings.selectionSeconds() + "초 · /aw augment",
+                "스킬 조작 · " + PlayerUi.skillInput(player).help() + " · /aw skill menu",
+                "영구 성장 · 조건을 달성할 때마다 누적 · 보유 증강의 진행도를 확인",
+                "진화 · 증강마다 목표가 다름 · 도감에서 실제 조건 확인",
+                "시너지와 공명 · 기록관에서 필요한 구성원과 보유 상태 확인",
+                "보급 · /aw supply · 좌표 공개 후 방향과 거리 확인",
+                "적 탐지 · 다이아몬드 " + rules.trackerCost() + "개 · /aw track",
+                "자기장 · " + rules.pvpStartSeconds() + "초에 축소 시작 · 경고가 뜨면 안쪽으로 이동",
+                "부활 · " + rules.respawnSeconds() + "초 · 부활 보호 중에는 스킬 잠금",
+                "최종 생존 · 목숨 제한 이후 마지막 생존자가 승리 · /aw result",
+                "조작 연습 · 격리 실험실에서 스킬 메뉴·표적·쿨다운 확인 · 관리자에게 요청");
         ArtGallery.read(player,art,PaperArt.Screen.JOURNAL,"처음 하는 경기",rows);
         return "플레이어 가이드를 열었습니다.";
     }
@@ -860,6 +874,7 @@ public final class PaperMatchService implements Listener {
         causes.clear();
         intel.clear();
         augments.clear();
+        if (played) plugin.getLogger().info("AW_HUD_MATCH " + hud.metrics());
         hud.clear(plugin);
         regionCommitted = false;
         labWorld = null;
@@ -1018,10 +1033,22 @@ public final class PaperMatchService implements Listener {
                         }
                     }
                 });
-                if (player == null || !augmentActive(player)) {
-                    hud.clear(id, player);
+                if (player == null || departures.contains(id) || activeSession.player(id).life().status() == LifeState.Status.ELIMINATED) {
+                    hud.clear(id,player);
                     continue;
                 }
+                if (!augmentActive(player)) {
+                    boolean respawning = activeSession.player(id).life().status() == LifeState.Status.RESPAWNING;
+                    hud.suspend(id,respawning);
+                    if (respawning) {
+                        String countdown = activeSession.reservation(id).filter(r -> r.deadline() > now)
+                                .map(r -> " · " + Math.ceilDiv(r.deadline()-now,1_000_000_000L) + "초").orElse("");
+                        hud.set(id,Layer.RESPAWN,Component.text("부활 대기" + countdown));
+                    }
+                    hud.render(player,realTime);
+                    continue;
+                }
+                hud.remove(id,Layer.RESPAWN);
                 var choice = round == null ? null : round.choices().get(id);
                 if (choice != null && choice.status() == io.github.augmentwild.domain.SelectionRound.Status.PENDING) {
                     hud.set(id, Layer.SELECTION, Component.text("증강 선택 · 남은 시간 " + clock.selectionRemainingSeconds() + "초"));
@@ -1029,7 +1056,7 @@ public final class PaperMatchService implements Listener {
                 else hud.remove(id, Layer.SELECTION);
                 if (supply.isOpening(id)) hud.set(id, Layer.SUPPLY, Component.text("보급 개봉 중 · 이동하거나 피격되면 중단됩니다."));
                 else hud.remove(id, Layer.SUPPLY);
-                if (clock.isPaused()) hud.remove(id, Layer.PROC);
+
                 hud.crisis(player,realTime);
                 if (tickNumber % 5 == 1) {
                     hud.border(player,frame.area(),elapsed >= shrinkStart && elapsed < shrinkStart + settings.rules().shrinkSeconds());

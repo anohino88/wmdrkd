@@ -316,7 +316,7 @@ final class ArtProbe {
             var archive = inspect.invoke(null,fixture);
             var release = archive.getClass().getDeclaredMethod("release");
             release.setAccessible(true);
-            require("8.2.1-part1".equals(release.invoke(archive)));
+            require("8.2.1-part2".equals(release.invoke(archive)));
             var invalid = java.nio.file.Files.createTempFile("aw-invalid-pack-", ".zip");
             try {
                 java.nio.file.Files.writeString(invalid,"not a resource pack");

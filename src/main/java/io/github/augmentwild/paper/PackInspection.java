@@ -133,7 +133,7 @@ final class PackInspection {
                 release = JsonParser.parseString(smallText(zip,"augmentwild-pack.json")).getAsJsonObject().get("release").getAsString();
                 if (!release.matches("[a-zA-Z0-9._-]{1,32}")) throw new IOException("팩 릴리스 표식 오류");
             }
-            if (release.equals("8.2.1-part1")) {
+            if (release.equals("8.2.1-part1") || release.equals("8.2.1-part2")) {
                 String augments = ASSETS + "items/augment/";
                 String folios = ASSETS + "items/folio/";
                 var ids = names.stream().filter(name -> name.startsWith(augments) && name.endsWith(".json"))

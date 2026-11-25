@@ -40,7 +40,7 @@ SOURCE_SOUNDS = {"cast", "evolve", "supply"}
 SOUNDS = SOURCE_SOUNDS | SYNTH["CUES"].keys()
 RARITY_MARKS = dict(silver="#b7cbe0", gold="#ffd077", prismatic="#eab8ff")
 PACK_DIGEST = ROOT / "src/main/resources/art-pack.sha1"
-RELEASE_METADATA = {"release":"8.2.1-part1","minecraft":"26.3","inventory_title":"native"}
+RELEASE_METADATA = {"release":"8.2.1-part2","minecraft":"26.3","inventory_title":"native"}
 PACK_METADATA = {"pack": {"description": "AugmentWild • combat art for Java 26.3",
                           "min_format": [97, 1], "max_format": [97, 1]}}
 
@@ -52,23 +52,30 @@ def write_json(path, data):
 
 def skill_font():
     skills = ("bomb_alchemy","calamity_giant","duel_contract","earthquake_mage","shadow_dash","time_rewind","void_lord")
-    return {"providers":[{"type":"bitmap","file":f"augmentwild:item/augment/{skill}.png","height":8,
+    return {"providers":[{"type":"bitmap","file":f"augmentwild:item/folio/{skill}.png","height":8,
                           "ascent":7,"chars":[chr(0xe100 + i)]} for i,skill in enumerate(skills)] +
             [{"type":"bitmap","file":"augmentwild:gui/skill_state.png","height":7,"ascent":6,
-              "chars":["".join(chr(0xe110 + index) for index in range(4))]}]}
+              "chars":["".join(chr(0xe110 + index) for index in range(8))]}]}
 
 
 def skill_marks(output):
     from PIL import Image, ImageDraw
-    image = Image.new("RGBA",(64,16))
+    image = Image.new("RGBA",(128,16))
     ink = ImageDraw.Draw(image)
-    for offset,color,contour in ((0,"#aedecd",[(2,8),(8,2),(14,8),(8,14)]),
-                                 (16,"#ffe19d",[(4,2),(12,2),(10,6),(9,8),(12,13),(4,13),(7,8),(6,6)]),
-                                 (32,"#ffb3a7",[(3,7),(3,13),(13,13),(13,7)]),
-                                 (48,"#93abb3",[(3,8),(8,3),(13,8),(8,13)])):
-        ink.line([(x+offset,y) for x,y in contour+[contour[0]]],fill=color,width=2)
-    ink.line([(37,7),(37,4),(40,2),(43,4),(43,7)],fill="#ffb3a7",width=2)
-    ink.polygon([(6,8),(8,6),(10,8),(8,10)],fill="#e9fff1")
+    marks = [
+        ("#aedecd",[(2,8),(6,12),(14,3)]),
+        ("#ffe19d",[(4,2),(12,2),(10,6),(9,8),(12,13),(4,13),(7,8),(6,6),(4,2)]),
+        ("#ffb3a7",[(3,6),(3,13),(13,13),(13,6),(3,6),(5,6),(5,3),(8,1),(11,3),(11,6)]),
+        ("#93abb3",[(3,8),(13,8)]),
+        ("#f2d6a6",[(4,2),(12,8),(4,14),(4,2)]),
+        ("#bba5fd",[(8,1),(10,6),(15,8),(10,10),(8,15),(6,10),(1,8),(6,6),(8,1)]),
+        ("#ace7c6",[(8,2),(13,5),(13,11),(8,14),(3,11),(3,5),(8,2),(8,8),(12,8)]),
+        ("#ff987e",[(8,2),(8,9)]),
+    ]
+    for index,(color,contour) in enumerate(marks):
+        offset = 16*index
+        ink.line([(x+offset,y) for x,y in contour],fill=color,width=3,joint="curve")
+    ink.rectangle((119,12,121,14),fill="#ff987e")
     output.parent.mkdir(parents=True,exist_ok=True)
     image.save(output,optimize=True)
 
@@ -407,20 +414,22 @@ def package(output):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--bake",action="store_true",help="Rebuild baked files with Blender, Inkscape, Pillow and FFmpeg")
+    parser.add_argument("--bake-hud",action="store_true",help="Rebuild HUD font assets and release metadata")
     parser.add_argument("--output",type=Path,default=ROOT / "build/resource-pack/augmentwild-26.3.zip")
     args = parser.parse_args()
     data = inputs()
     if args.bake:
         bake(*data)
     font = ASSETS / "font/skills.json"
-    if args.bake:
+    if args.bake or args.bake_hud:
+        write_json(PACK / "augmentwild-pack.json", RELEASE_METADATA)
         write_json(font, skill_font())
         skill_marks(ASSETS / "textures/gui/skill_state.png")
     assert json.loads(font.read_text()) == skill_font()
     verify(*data)
     package(args.output)
     digest = hashlib.sha1(args.output.read_bytes()).hexdigest()
-    if args.bake:
+    if args.bake or args.bake_hud:
         PACK_DIGEST.write_text(digest+"\n",encoding="utf-8")
     assert PACK_DIGEST.read_text().strip() == digest, "JAR expected pack SHA-1 differs from checked pack ZIP"
 

@@ -97,12 +97,75 @@ final class InterfaceProbe {
                     click(player,10,ClickType.LEFT);
                     later(plugin,() -> {
                         require(top(player).getItem(1) != null && top(player).getItem(2) == null,"selected offer is owned");
-                        player.removeAttachment(permissions);
                         plugin.getLogger().info("AW_PREMIUM_SELECTION_PASS choice=true reroll=true comparison=true lab=true");
+                        skillControls(plugin,player,permissions);
                     });
                 });
             });
         });
+    }
+
+    private static void skillControls(JavaPlugin plugin,Player player,org.bukkit.permissions.PermissionAttachment permissions) {
+        for (String id : List.of("void_lord","bomb_alchemy","time_rewind"))
+            command(player,"aw admin test grant " + player.getName() + " " + id);
+        command(player,"aw skill bind 1 void_lord");
+        command(player,"aw skill bind 2 bomb_alchemy");
+        command(player,"aw skill bind 3 time_rewind");
+        command(player,"aw skill select 1");
+        open(player,"aw skill menu",27);
+        require(top(player).getItem(6) != null && top(player).getItem(25) != null,"auto-bind preference and preview");
+        player.closeInventory();
+        try {
+            var host = Bukkit.getPluginManager().getPlugin("AugmentWild");
+            var service = host.getClass().getDeclaredField("matches");
+            service.setAccessible(true);
+            var matches = (io.github.augmentwild.paper.PaperMatchService) service.get(host);
+            command(player,"aw skill input hotbar");
+            player.setSneaking(true);
+            var hotbar = new org.bukkit.event.player.PlayerItemHeldEvent(player,0,2);
+            Bukkit.getPluginManager().callEvent(hotbar);
+            require(!hotbar.isCancelled() && status(matches,player).contains("▶3"),"hotbar also keeps the vanilla selection");
+            command(player,"aw skill input cycle");
+            require(swap(player).isCancelled() && status(matches,player).contains("▶1"),"cycle switches from 3 to 1");
+            require(swap(player).isCancelled() && status(matches,player).contains("▶1"),"duplicate cycle does not skip a slot");
+            command(player,"aw skill input hotbar");
+            later(plugin,() -> {
+                require(swap(player).isCancelled(),"bound F consumed");
+                require(status(matches,player).contains("재사용 대기"),"real cast enters cooldown");
+                require(swap(player).isCancelled() && matches.castAugment(player,"void_lord").isEmpty(),"same tick cast deduplicated");
+                driverAfterCast(plugin,player,permissions,matches);
+            });
+        } catch (ReflectiveOperationException failure) {
+            throw new AssertionError("HUD test fixture access",failure);
+        }
+    }
+
+    private static void driverAfterCast(JavaPlugin plugin,Player player,org.bukkit.permissions.PermissionAttachment permissions,
+                                        io.github.augmentwild.paper.PaperMatchService matches) {
+        later(plugin,() -> {
+            require(matches.castAugment(player,"void_lord").contains("재사용 대기"),"cooldown rejection matches HUD");
+            command(player,"aw skill unbind");
+            require(matches.skill(player,new String[]{"skill","use"}).contains("비었습니다"),"empty slot failure");
+            require(!swap(player).isCancelled(),"empty slot leaves vanilla offhand action alone");
+            player.setSneaking(false);
+            var hotbar = new org.bukkit.event.player.PlayerItemHeldEvent(player,0,1);
+            Bukkit.getPluginManager().callEvent(hotbar);
+            require(!hotbar.isCancelled() && status(matches,player).contains("▶1"),"ordinary hotbar leaves skill selection alone");
+            require(!swap(player).isCancelled(),"unmodified vanilla F");
+            player.removeAttachment(permissions);
+            plugin.getLogger().info("AW_HUD_INPUT_PASS slots=3 successful_cast=true cooldown=true duplicate=true empty=true vanilla=true");
+        });
+    }
+
+    private static String status(io.github.augmentwild.paper.PaperMatchService matches,Player p) {
+        return matches.skill(p,new String[]{"skill","status"});
+    }
+
+    private static org.bukkit.event.player.PlayerSwapHandItemsEvent swap(Player player) {
+        var event = new org.bukkit.event.player.PlayerSwapHandItemsEvent(player,
+                new ItemStack(Material.STONE),new ItemStack(Material.AIR));
+        Bukkit.getPluginManager().callEvent(event);
+        return event;
     }
 
     private static void open(Player p,String command,int size) {

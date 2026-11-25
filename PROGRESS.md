@@ -404,3 +404,8 @@ PHASE 2B의 GitHub Actions #6에서 Java 버전 확인, `./gradlew clean build -
 - 기준 `da721ee0c1e265c3294378bee92780e6caf421d9`. 경기 관제, 증강 기록관, 전투, 개인 설정과 운영 구역을 연결했다. 후보별 등급 문장·효과·비교, 84종 도감, 실제 진화·시너지·공명, 조작·그래픽 탭과 운영 화면을 갱신했다.
 - 도감용 32px 텍스처 84종을 제작했고, 16종 실루엣을 다시 그렸다. 기본 인벤토리와 글꼴을 사용한다. [누적 진행 및 화면별 감사](docs/phase821-progress-ko.md) · [배포 에셋 오프라인 비교](docs/art821/part1).
 - Java 25 오프라인 Gradle, JUnit, 독립 회귀와 리소스팩 ZIP 비교를 실행했다. Paper 실행 결과는 동일 SHA의 CI 로그로 확인한다. `REAL_CLIENT_VERIFIED=NOT_RUN`이며 PART 2–5는 미착수다.
+
+## PHASE 8.2.1 PART 2 HUD & CONTROL
+
+- 기준 `4405a64a34220f88d2e49a459397bc9c273d141d`. 6개 한도의 알림 대기열, 긴급 우선순위, 3슬롯 상태, 중복 입력 억제와 실제 스킬 잠금, 설정 기반 안내 및 스킬 메뉴를 구현했다. [누적 진행표](docs/phase821-progress-ko.md) · [시간 도식과 계측](docs/art821/part2).
+- Java 25 로컬 빌드, 큐 JUnit, 기존 독립 회귀와 팩 재생성을 수행했다. Paper 실행과 16인 비교는 동일 SHA의 CI로 검증한다. `REAL_CLIENT_VERIFIED=NOT_RUN`. PART 3–5는 미착수다.

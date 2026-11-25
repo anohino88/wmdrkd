@@ -153,7 +153,7 @@ public final class PaperArt implements Listener {
         return Component.text(String.valueOf((char)(0xe100 + index))).font(Key.key("augmentwild:skills"));
     }
 
-    enum SlotMark { READY, COOLDOWN, LOCKED, EMPTY }
+    enum SlotMark { READY, COOLDOWN, LOCKED, EMPTY, SELECTED, ACTIVE, CHARGING, CANCELLED }
 
     Component slotMark(Player player, SlotMark state) {
         if (custom(player))
@@ -163,6 +163,10 @@ public final class PaperArt implements Listener {
             case COOLDOWN -> "⌛";
             case LOCKED -> "×";
             case EMPTY -> "–";
+            case SELECTED -> "▶";
+            case ACTIVE -> "◆";
+            case CHARGING -> "◔";
+            case CANCELLED -> "!";
         });
     }
 
@@ -170,6 +174,8 @@ public final class PaperArt implements Listener {
         // Inventory text uses the native baseline and layout. Large title glyphs can paint across slots.
         return Component.text(label).font(Key.key("minecraft:default"));
     }
+
+    boolean hudPack(Player player) { return custom(player); }
 
     private boolean custom(Player player) {
         return matchingPack && loaded.contains(player.getUniqueId()) && !safe(player);
