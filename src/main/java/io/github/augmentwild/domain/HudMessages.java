@@ -6,8 +6,8 @@ import java.util.function.IntFunction;
 
 /** Higher-priority layers hide lower layers until cleared or expired. */
 public final class HudMessages<T> {
-    public enum Layer { RESPAWN, SELECTION, DANGER, RESCUE, SHIELD, CRISIS, SUPPLY, SCOUT, PROC, INCOMING, DAMAGE, TRACK, SKILL_INPUT, BORDER, STATUS, SKILL, AUTO }
-    private static final Layer[] URGENT = {Layer.RESPAWN,Layer.SELECTION,Layer.DANGER,Layer.RESCUE,Layer.CRISIS};
+    public enum Layer { RESPAWN, SELECTION, DANGER, RESCUE, PHASE, SHIELD, CRISIS, SUPPLY, SCOUT, PROC, INCOMING, DAMAGE, TRACK, SKILL_INPUT, BORDER, STATUS, SKILL, AUTO }
+    private static final Layer[] URGENT = {Layer.RESPAWN,Layer.SELECTION,Layer.DANGER,Layer.RESCUE,Layer.CRISIS,Layer.PHASE};
     private record Entry<T>(T message, long expiry) { }
     private final EnumMap<Layer, Entry<T>> entries = new EnumMap<>(Layer.class);
 

@@ -144,17 +144,53 @@ final class InterfaceProbe {
                                         io.github.augmentwild.paper.PaperMatchService matches) {
         later(plugin,() -> {
             require(matches.castAugment(player,"void_lord").contains("재사용 대기"),"cooldown rejection matches HUD");
+            require(matches.castAugment(player,"bomb_alchemy").endsWith("발동"),"second skill casts independently");
+            require(matches.castAugment(player,"time_rewind").contains("복귀 기록 대기"),"rewind awaits a real snapshot");
+            player.setSneaking(false);
+            plugin.getServer().getScheduler().runTaskLater(plugin,() -> {
+                require(matches.castAugment(player,"time_rewind").endsWith("발동"),"third skill uses a safe historical position");
+                require(status(matches,player).split("재사용 대기",-1).length == 4,"all three cooldowns are independent");
+                releaseControls(plugin,player,permissions,matches);
+            },105L);
+        });
+    }
+
+    private static void releaseControls(JavaPlugin plugin,Player player,org.bukkit.permissions.PermissionAttachment permissions,
+                                        io.github.augmentwild.paper.PaperMatchService matches) {
+        try {
+            var field = matches.getClass().getDeclaredField("placement");
+            field.setAccessible(true);
+            Object placement = field.get(matches);
+            var protect = placement.getClass().getDeclaredMethod("protect",java.util.UUID.class,int.class);
+            protect.setAccessible(true);
+            protect.invoke(placement,player.getUniqueId(),1);
+            require(status(matches,player).contains("부활 보호")
+                    && matches.castAugment(player,"void_lord").contains("부활 보호"),"resurrection protection takes precedence over cooldown");
             command(player,"aw skill unbind");
             require(matches.skill(player,new String[]{"skill","use"}).contains("비었습니다"),"empty slot failure");
+            player.setSneaking(true);
             require(!swap(player).isCancelled(),"empty slot leaves vanilla offhand action alone");
             player.setSneaking(false);
             var hotbar = new org.bukkit.event.player.PlayerItemHeldEvent(player,0,1);
             Bukkit.getPluginManager().callEvent(hotbar);
             require(!hotbar.isCancelled() && status(matches,player).contains("▶1"),"ordinary hotbar leaves skill selection alone");
             require(!swap(player).isCancelled(),"unmodified vanilla F");
+            command(player,"aw skill input cycle");
             player.removeAttachment(permissions);
-            plugin.getLogger().info("AW_HUD_INPUT_PASS slots=3 successful_cast=true cooldown=true duplicate=true empty=true vanilla=true");
-        });
+            plugin.getLogger().info("AW_HUD_INPUT_PASS slots=3 successful_casts=3 cooldown=true duplicate=true protection=true empty=true vanilla=true");
+        } catch (ReflectiveOperationException failure) {
+            throw new AssertionError("Protection fixture access",failure);
+        }
+    }
+
+    static void reconnected(JavaPlugin plugin,Player player) {
+        String mode = player.getPersistentDataContainer().get(
+                new org.bukkit.NamespacedKey("augmentwild","skill_input"),org.bukkit.persistence.PersistentDataType.STRING);
+        require("CYCLE".equals(mode),"input mode survives reconnect and snapshot restoration");
+        open(player,"aw skill menu",27);
+        require(top(player).getItem(18) == null,"finished match skill bindings do not survive");
+        player.closeInventory();
+        plugin.getLogger().info("AW_HUD_RECONNECT_PASS preference=true transient_slots_cleared=true");
     }
 
     private static String status(io.github.augmentwild.paper.PaperMatchService matches,Player p) {

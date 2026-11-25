@@ -127,13 +127,14 @@ final class PackInspection {
             var metadata = JsonParser.parseString(smallText(zip,"pack.mcmeta")).getAsJsonObject().getAsJsonObject("pack");
             if (!metadata.get("min_format").toString().equals("[97,1]") || !metadata.get("max_format").toString().equals("[97,1]"))
                 throw new IOException("Paper 26.3용 pack format 97.1이 아닙니다.");
-            inspectReferences(zip,names);
             String release = "레거시 ZIP · 릴리스 표식 없음";
             if (names.contains("augmentwild-pack.json")) {
                 release = JsonParser.parseString(smallText(zip,"augmentwild-pack.json")).getAsJsonObject().get("release").getAsString();
                 if (!release.matches("[a-zA-Z0-9._-]{1,32}")) throw new IOException("팩 릴리스 표식 오류");
             }
-            if (release.equals("8.2.1-part1") || release.equals("8.2.1-part2")) {
+            boolean expandedHud = release.equals("8.2.1-part2");
+            inspectReferences(zip,names,expandedHud);
+            if (release.equals("8.2.1-part1") || expandedHud) {
                 String augments = ASSETS + "items/augment/";
                 String folios = ASSETS + "items/folio/";
                 var ids = names.stream().filter(name -> name.startsWith(augments) && name.endsWith(".json"))
@@ -148,7 +149,7 @@ final class PackInspection {
         }
     }
 
-    private static void inspectReferences(ZipFile zip,Set<String> names) throws IOException {
+    private static void inspectReferences(ZipFile zip,Set<String> names,boolean expandedHud) throws IOException {
         int augments = 0;
         for (String name : names) {
             if (!name.startsWith(ASSETS + "items/") || !name.endsWith(".json")) continue;
@@ -165,7 +166,8 @@ final class PackInspection {
         }
         if (augments != 84) throw new IOException("84개 증강 아이템 정의가 필요합니다.");
         var font = JsonParser.parseString(smallText(zip,ASSETS + "font/skills.json")).getAsJsonObject().getAsJsonArray("providers");
-        if (font.size() < 7 || font.size() > 8) throw new IOException("스킬 글리프와 상태 표식 정의 수 오류");
+        int marks = expandedHud ? 8 : 4;
+        if (font.size() < (expandedHud ? 8 : 7) || font.size() > 8) throw new IOException("스킬 글리프와 상태 표식 정의 수 오류");
         var glyphs = new java.util.HashSet<Integer>();
         for (var entry : font) {
             var provider = entry.getAsJsonObject();
@@ -177,14 +179,14 @@ final class PackInspection {
             String file = provider.get("file").getAsString();
             boolean status = file.equals("augmentwild:gui/skill_state.png");
             var rows = provider.getAsJsonArray("chars");
-            if (rows.size() != 1 || rows.get(0).getAsString().length() != (status ? 4 : 1))
+            if (rows.size() != 1 || rows.get(0).getAsString().length() != (status ? marks : 1))
                 throw new IOException("스킬 글리프 행 크기 오류");
             for (int code : rows.get(0).getAsString().chars().toArray()) {
-                if ((status ? code < 0xe110 || code > 0xe113 : code < 0xe100 || code > 0xe106) || !glyphs.add(code))
+                if ((status ? code < 0xe110 || code >= 0xe110 + marks : code < 0xe100 || code > 0xe106) || !glyphs.add(code))
                     throw new IOException("스킬 글리프 누락 또는 중복");
             }
         }
-        if (glyphs.size() != (font.size() == 8 ? 11 : 7)) throw new IOException("스킬 글리프 집합 불일치");
+        if (glyphs.size() != (font.size() == 8 ? 7 + marks : 7)) throw new IOException("스킬 글리프 집합 불일치");
         var sounds = JsonParser.parseString(smallText(zip,ASSETS + "sounds.json")).getAsJsonObject();
         if (!sounds.keySet().containsAll(Set.of("cast","evolve","supply"))) throw new IOException("기본 효과음 정의 누락");
         for (String effect : sounds.keySet()) {

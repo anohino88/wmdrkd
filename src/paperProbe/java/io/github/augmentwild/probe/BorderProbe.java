@@ -60,6 +60,7 @@ public final class BorderProbe extends JavaPlugin implements Listener {
                 switch (args[0]) {
                     case "lobby" -> getServer().getScheduler().runTask(this,() -> InterfaceProbe.lobby(this,player));
                     case "selection" -> getServer().getScheduler().runTask(this,() -> InterfaceProbe.selection(this,player));
+                    case "reconnect" -> getServer().getScheduler().runTask(this,() -> InterfaceProbe.reconnected(this,player));
                     case "cleanup" -> {
                         if (io.github.augmentwild.paper.PaperMenu.protectedInventory(player.getOpenInventory().getTopInventory())
                                 && !net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText()

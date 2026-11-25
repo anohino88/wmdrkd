@@ -905,7 +905,15 @@ public final class PaperMatchService implements Listener {
             clock.tick();
             var events = clock.events();
             while (loggedEvents < events.size()) {
-                plugin.getLogger().info("Match " + session.matchId() + " timeline event " + events.get(loggedEvents++));
+                String event = events.get(loggedEvents++);
+                plugin.getLogger().info("Match " + session.matchId() + " timeline event " + event);
+                String phaseNotice = switch (event) {
+                    case "pvp" -> "목숨 제한 · 자기장 축소 시작";
+                    case "sudden-death" -> "서든데스 · 이제 부활할 수 없습니다";
+                    default -> null;
+                };
+                if (phaseNotice != null) for (UUID id : session.participantIds())
+                    if (plugin.getServer().getPlayer(id) != null) hud.phase(id,phaseNotice);
             }
             long now = clock.elapsedNanos();
             awaitingNativeRespawn.removeAll(departures);

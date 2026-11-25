@@ -145,6 +145,11 @@ final class PaperHud {
                 kind == Kind.SUPPLY ? NamedTextColor.GOLD : NamedTextColor.LIGHT_PURPLE));
     }
 
+    void phase(UUID id,String text) {
+        players.computeIfAbsent(id,ignored -> new View(queueMetrics)).layers.until(Layer.PHASE,
+                Component.text(text,NamedTextColor.GOLD),System.nanoTime()+2_500_000_000L);
+    }
+
     void danger(Player p,long remainingMillis) {
         if (remainingMillis > 0) players.computeIfAbsent(p.getUniqueId(),ignored -> new View(queueMetrics))
                 .layers.until(Layer.DANGER,Component.text("위험 · 폭발 범위를 벗어나세요",NamedTextColor.RED),

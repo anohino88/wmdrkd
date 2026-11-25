@@ -189,7 +189,7 @@ def exercise(command, log):
     wait("AW_START_FIXTURE_READY")
     try:
         command("setworldspawn 0 -60 0")
-        connect(0)
+        solo = connect(0)
         expect("aw821probe lobby AW00","AW_PREMIUM_LOBBY_PASS")
         expect("tp AW00 0.5 -60 0.5","Teleported AW00")
         expect("item replace entity AW00 hotbar.0 with minecraft:diamond","AW00")
@@ -206,6 +206,11 @@ def exercise(command, log):
         expect("execute if items entity AW00 hotbar.0 minecraft:diamond run say AW_RESTORED_ITEM","AW_RESTORED_ITEM")
         if (log.parent / "plugins/AugmentWild/used-regions.yml").exists():
             raise AssertionError("Solo practice wrote the production region ledger")
+        position = log.stat().st_size
+        solo.close()
+        wait("AW00 left the game",position)
+        connect(0)
+        expect("aw821probe reconnect AW00","AW_HUD_RECONNECT_PASS")
 
         second = connect(1)
         optout = log.stat().st_size
