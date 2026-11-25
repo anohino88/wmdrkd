@@ -133,6 +133,15 @@ final class PackInspection {
                 release = JsonParser.parseString(smallText(zip,"augmentwild-pack.json")).getAsJsonObject().get("release").getAsString();
                 if (!release.matches("[a-zA-Z0-9._-]{1,32}")) throw new IOException("팩 릴리스 표식 오류");
             }
+            if (release.equals("8.2.1-part1")) {
+                String augments = ASSETS + "items/augment/";
+                String folios = ASSETS + "items/folio/";
+                var ids = names.stream().filter(name -> name.startsWith(augments) && name.endsWith(".json"))
+                        .map(name -> name.substring(augments.length())).collect(java.util.stream.Collectors.toSet());
+                var newIds = names.stream().filter(name -> name.startsWith(folios) && name.endsWith(".json"))
+                        .map(name -> name.substring(folios.length())).collect(java.util.stream.Collectors.toSet());
+                if (!ids.equals(newIds)) throw new IOException("도감 아이템 모델이 증강 목록과 일치하지 않습니다.");
+            }
             return new Archive(release,zip.size());
         } catch (RuntimeException invalid) {
             throw new IOException("팩 메타데이터 읽기 실패",invalid);

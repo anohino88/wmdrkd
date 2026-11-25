@@ -314,7 +314,9 @@ final class ArtProbe {
             inspect.setAccessible(true);
             var fixture = java.nio.file.Path.of(System.getProperty("augmentwild.pack.fixture"));
             var archive = inspect.invoke(null,fixture);
-            require(archive.toString().startsWith("Archive[release=8.2,"));
+            var release = archive.getClass().getDeclaredMethod("release");
+            release.setAccessible(true);
+            require("8.2.1-part1".equals(release.invoke(archive)));
             var invalid = java.nio.file.Files.createTempFile("aw-invalid-pack-", ".zip");
             try {
                 java.nio.file.Files.writeString(invalid,"not a resource pack");
@@ -327,7 +329,8 @@ final class ArtProbe {
             } finally {
                 java.nio.file.Files.deleteIfExists(invalid);
             }
-            Bukkit.getLogger().info("AW_PACK_RECOVERY_PASS native_titles=12 safe_mode=true zip_refs=true corrupt_zip_rejected=true");
+            Bukkit.getLogger().info("AW_PACK_RECOVERY_PASS native_titles=" + screen.getEnumConstants().length
+                    + " safe_mode=true zip_refs=true corrupt_zip_rejected=true");
         } catch (ReflectiveOperationException | java.io.IOException failure) {
             throw new AssertionError("Pack fallback fixture",failure);
         }
