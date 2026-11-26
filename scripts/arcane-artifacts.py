@@ -19,17 +19,24 @@ def stable_uuid(name):
     return str(uuid.uuid5(uuid.NAMESPACE_URL, "https://github.com/anohino88/wmdrkd/art/" + name))
 
 
-def blockbench(assets, output):
+def blockbench(assets, output, supply=False):
     output.mkdir(parents=True,exist_ok=True)
-    for root in ART["CORES"]:
-        root_model = "sig_" + root
-        branches = [root_model] + [part for part in ART["components"](PROJECT) if part.startswith("rig_" + root + "_")]
+    rigs = ART["components"](PROJECT)
+    assemblies = {root: ["sig_" + root] + [part for part in rigs if part.startswith("rig_" + root + "_")]
+                  for root in ART["CORES"]}
+    if supply:
+        assemblies.update({root: [root, root + "_lid"] for root in ("supply", "premium")})
+    for root, branches in assemblies.items():
         elements,textures,outliner = [],[],[]
         for branch in branches:
             data = json.loads((assets/f"models/fx/{branch}.json").read_text())
             indices = {}
             for alias, reference in data["textures"].items():
                 name = reference.split(":")[1]
+                existing = next((i for i, tex in enumerate(textures) if tex["name"] == name+".png"), None)
+                if existing is not None:
+                    indices[alias] = existing
+                    continue
                 file = assets/f"textures/{name}.png"
                 with Image.open(file) as image:
                     width,height = image.size
@@ -50,6 +57,13 @@ def blockbench(assets, output):
                     faces[face] = {"uv":surface.get("uv",[u1,16-v2,u2,16-v1]),"texture":indices[surface["texture"][1:]]}
                 elements.append({"name":branch+" "+str(index),"type":"cube","from":part["from"],"to":part["to"],
                                  "origin":[8,8,8],"uuid":ident,"faces":faces,"box_uv":False,"rescale":False,"export":True})
+                rotation = part.get("rotation")
+                if rotation:
+                    elements[-1]["origin"] = rotation["origin"]
+                    angles = rotation.get("euler") or [rotation.get(axis, 0) for axis in "xyz"]
+                    if "axis" in rotation:
+                        angles["xyz".index(rotation["axis"])] = rotation["angle"]
+                    elements[-1]["rotation"] = angles
                 group["children"].append(ident)
             outliner.append(group)
         (output/(root+".bbmodel")).write_text(json.dumps({"meta":{"format_version":"4.10","model_format":"free","box_uv":False},
@@ -87,11 +101,15 @@ def inventory_sheet(baseline, output):
     (output/"icons-ko.md").write_text("\n".join(table)+"\n")
 
 
-parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument("baseline",type=Path)
-parser.add_argument("sheets",type=Path)
-parser.add_argument("projects",type=Path)
-args = parser.parse_args()
-args.sheets.mkdir(parents=True,exist_ok=True)
-inventory_sheet(args.baseline,args.sheets)
-blockbench(PROJECT/"resource-pack/pack/assets/augmentwild",args.projects)
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("baseline",type=Path)
+    parser.add_argument("sheets",type=Path)
+    parser.add_argument("projects",type=Path)
+    args = parser.parse_args()
+    args.sheets.mkdir(parents=True,exist_ok=True)
+    inventory_sheet(args.baseline,args.sheets)
+    blockbench(PROJECT/"resource-pack/pack/assets/augmentwild",args.projects)
+
+if __name__ == "__main__":
+    main()

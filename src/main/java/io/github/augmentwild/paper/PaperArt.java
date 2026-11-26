@@ -51,6 +51,7 @@ public final class PaperArt implements Listener {
     private record PrivateCue(UUID owner, String model) {}
     private final Map<PrivateCue, Animation> cues = new HashMap<>();
     private final Map<Location, Marker> supply = new HashMap<>();
+    private final Map<UUID,Marker> supplyPreviews = new HashMap<>();
     private final Map<PrivateCue, Long> nextCue = new HashMap<>();
     private final CombatCinematics combat;
     private final Set<String> quiet = new HashSet<>(), noVisual = new HashSet<>();
@@ -97,7 +98,30 @@ public final class PaperArt implements Listener {
             ornaments.forEach(layer -> layer.display().remove());
         }
     }
-    private record Marker(ItemDisplay entity, Set<UUID> viewers) {}
+    private static final class Marker {
+        final ItemDisplay entity;
+        final ItemDisplay lid;
+        final boolean premium;
+        final Set<UUID> viewers = new HashSet<>();
+        int step;
+        Marker(ItemDisplay entity, ItemDisplay lid, boolean premium) {
+            this.entity = entity;
+            this.lid = lid;
+            this.premium = premium;
+        }
+        void show(JavaPlugin plugin,Player p) {
+            p.showEntity(plugin,entity);
+            if (lid != null) p.showEntity(plugin,lid);
+        }
+        void hide(JavaPlugin plugin,Player p) {
+            p.hideEntity(plugin,entity);
+            if (lid != null) p.hideEntity(plugin,lid);
+        }
+        void remove() {
+            entity.remove();
+            if (lid != null) lid.remove();
+        }
+    }
     private record Motion(float[] scales, float rise, float spin, float travel) {
         int attack() { return scales == SWEEP ? 3 : scales == HOLD ? 5 : 4; }
         int release() { return scales == SWEEP ? 5 : scales == HOLD ? 10 : 7; }
@@ -511,9 +535,25 @@ public final class PaperArt implements Listener {
         showProc(player,id,motif,simple,near(player));
     }
 
+    private record FamilyEffect(String key, Motion motion, Particle particle) {}
+    private static final Map<String,FamilyEffect> FAMILY_EFFECTS = Map.ofEntries(
+            Map.entry("검술",new FamilyEffect("sword",new Motion(SWEEP,.16f,2.05f,.80f),Particle.CRIT)),
+            Map.entry("공허",new FamilyEffect("void",new Motion(HOLD,.25f,-1.3f,-.3f),Particle.REVERSE_PORTAL)),
+            Map.entry("그림자",new FamilyEffect("shadow",new Motion(SWEEP,.15f,-2.2f,.82f),Particle.SMOKE)),
+            Map.entry("금속",new FamilyEffect("metal",new Motion(HOLD,-.17f,.72f,0),Particle.CRIT)),
+            Map.entry("기계",new FamilyEffect("machine",new Motion(GROW,.19f,3.6f,.13f),Particle.ELECTRIC_SPARK)),
+            Map.entry("대지",new FamilyEffect("earth",new Motion(HOLD,-.34f,.36f,.08f),Particle.CLOUD)),
+            Map.entry("마법",new FamilyEffect("arcane",new Motion(GROW,.35f,1.65f,.1f),Particle.ENCHANT)),
+            Map.entry("생명",new FamilyEffect("life",new Motion(HOLD,.42f,.28f,0),Particle.HAPPY_VILLAGER)),
+            Map.entry("성장",new FamilyEffect("growth",new Motion(GROW,.58f,.63f,0),Particle.END_ROD)),
+            Map.entry("시간",new FamilyEffect("time",new Motion(HOLD,.21f,-2.8f,0),Particle.SNOWFLAKE)),
+            Map.entry("이동",new FamilyEffect("motion",new Motion(SWEEP,.08f,.3f,1.15f),Particle.CLOUD)),
+            Map.entry("화염",new FamilyEffect("flame",new Motion(GROW,.76f,1.25f,.15f),Particle.FLAME)));
     private void showProc(Player player,String id,String motif,boolean simple,Location at) {
-        if (!noVisual.contains(id) && !simple && PlayerUi.quality(player) != PlayerUi.Quality.LOW && custom(player) && displaysAvailable) {
-            render(player,at,"proc/" + id,CASTS.getOrDefault(id,MOTIONS.getOrDefault(motif,PULSE)));
+        var family = FAMILY_EFFECTS.get(family(id));
+        if (!noVisual.contains(id) && !simple && !PlayerUi.reducedFlash(player) && PlayerUi.quality(player) != PlayerUi.Quality.LOW
+                && custom(player) && displaysAvailable && displayCount() < MAX_DISPLAYS) {
+            render(player,at,"proc/" + id,CASTS.getOrDefault(id,family == null ? MOTIONS.getOrDefault(motif,PULSE) : family.motion()));
         } else if (!noVisual.contains(id) && PlayerUi.enabled(player,PlayerUi.Option.PARTICLES)) {
             Particle particle = switch (motif) {
                 case "fire" -> Particle.FLAME;
@@ -523,7 +563,7 @@ public final class PaperArt implements Listener {
                 case "growth", "blood" -> Particle.HAPPY_VILLAGER;
                 default -> Particle.ELECTRIC_SPARK;
             };
-            player.spawnParticle(particle,at,4,.17,.16,.17,.01);
+            player.spawnParticle(family == null ? particle : family.particle(),at,4,.17,.16,.17,.01);
             privateParticles++;
         }
         if (quiet.contains(id) || !PlayerUi.enabled(player,PlayerUi.Option.SOUND)) return;
@@ -543,10 +583,9 @@ public final class PaperArt implements Listener {
             case "bolt" -> Sound.BLOCK_COPPER_BULB_TURN_ON;
             default -> Sound.BLOCK_ENCHANTMENT_TABLE_USE;
         };
-        player.playSound(at,cue,.28f,1f);
-        if (!simple && custom(player) && used == 0
-                && PlayerUi.quality(player).ordinal() >= PlayerUi.Quality.HIGH.ordinal())
-            player.playSound(at,"augmentwild:cast",.13f,1.15f);
+        if (family != null && !simple && custom(player) && PlayerUi.quality(player) != PlayerUi.Quality.LOW)
+            player.playSound(at,"augmentwild:family_" + family.key(),.27f,1f);
+        else player.playSound(at,cue,.28f,1f);
 
     }
 
@@ -832,11 +871,17 @@ public final class PaperArt implements Listener {
         var entries = new ArrayList<String>();
         motifs.stringPropertyNames().stream().sorted().map(id -> "augment/" + id).forEach(entries::add);
         new TreeSet<>(MOTIONS.keySet()).forEach(id -> entries.add("model/" + id));
-        entries.addAll(List.of("model/supply","model/premium","model/tier_growth_1","model/tier_growth_2","model/tier_growth_3","model/helix","model/fracture","model/crescent"));
+        entries.addAll(List.of("model/supply_closed","model/premium_closed","model/supply_lid","model/premium_lid","model/tier_growth_4","model/tier_growth_1","model/tier_growth_2","model/tier_growth_3","model/helix","model/fracture","model/crescent"));
         new TreeSet<>(signatures.values().stream().map(s -> "sig_" + s.shape()).toList()).forEach(id -> entries.add("model/" + id));
         new TreeSet<>(signatures.keySet()).forEach(id -> entries.add("cinema/" + id));
         entries.addAll(List.of("cinema/arc","cinema/blast","cinema/guard","cinema/danger"));
         new TreeSet<>(GROWTH.keySet()).forEach(id -> entries.add("growth/" + id));
+        for (var key : new TreeSet<>(GROWTH_FORMS))
+            for (int stage = 1; stage <= 4; stage++) entries.add("model/growth_"+key+"_"+stage);
+        for (var key : new TreeSet<>(FAMILY_EFFECTS.values().stream().map(FamilyEffect::key).toList())) {
+            entries.add("model/family_"+key);
+            entries.add("sound/family_"+key);
+        }
         entries.addAll(List.of("rarity/silver","rarity/gold","rarity/prismatic","sound/cast","sound/evolve","sound/supply","sound/focus","sound/stone_break","sound/rewind",
                 "sound/ignite","sound/detonate","sound/rift","sound/seal","sound/sweep","sound/shield_form",
                 "sound/shield_break","sound/evolution","sound/synergy","sound/prism"));
@@ -869,7 +914,8 @@ public final class PaperArt implements Listener {
 
     void stacking(Player player, int members) {
         var signature = signatures.get("stacking");
-        signatureAt(player,"stacking",near(player),false,signature.height(.65f + .16f * Math.clamp(members,1,5)));
+        signatureAt(player,"stacking",near(player),false,signature);
+        if (members > 1) growthStage(player,"stack_dinosaur",Math.clamp(members-1,1,4));
     }
 
     void repeatGrowth(Player player,String id) {
@@ -887,13 +933,19 @@ public final class PaperArt implements Listener {
         if (animation != null) removeAnimation(animation,"effect_end");
     }
 
+    private static final Set<String> GROWTH_FORMS = Set.of("metal","machine","sword","arcane","life");
+
     void growthStage(Player player,String id,int stage) {
         if (!playable.test(player) || PlayerUi.quality(player) == PlayerUi.Quality.LOW || PlayerUi.reducedFlash(player)) return;
         if (!custom(player)) {
             spark(player,near(player),Particle.END_ROD);
             return;
         }
-        render(player,near(player),"tier_growth_" + stage,GROWTH.getOrDefault(id,PULSE));
+        var at = near(player);
+        var family = FAMILY_EFFECTS.get(family(id));
+        String model = family != null && GROWTH_FORMS.contains(family.key()) ? "growth_"+family.key()+"_"+stage : "tier_growth_"+stage;
+        render(player,at,model,family == null ? GROWTH.getOrDefault(id,PULSE) : family.motion());
+        if (family != null) locationSound(player,at,"family_"+family.key(),Sound.BLOCK_AMETHYST_BLOCK_CHIME);
     }
 
     void growth(Player player, String id, boolean visible) {
@@ -910,47 +962,83 @@ public final class PaperArt implements Listener {
     }
 
     void supply(Location at, boolean premium) {
-        for (Player player : at.getNearbyPlayers(32)) {
-            if (custom(player) && playable.test(player)) {
-                if (PlayerUi.enabled(player,PlayerUi.Option.SOUND)) player.playSound(at,"augmentwild:supply",.65f,1f);
-                render(player,supplyCenter(at,1.75),premium ? "premium" : "supply",ARRIVE);
-            } else if (playable.test(player) && PlayerUi.enabled(player,PlayerUi.Option.SOUND)) {
-                player.playSound(at,Sound.BLOCK_CHEST_OPEN,1,.8f);
-            }
-        }
+        supplyMarker(at,premium);
+        for (Player player : at.getNearbyPlayers(24))
+            if (playable.test(player)) locationSound(player,at,premium ? "family_arcane" : "family_metal",Sound.BLOCK_CHEST_OPEN);
+    }
+
+    private static org.bukkit.util.Transformation lidPose(int step,boolean premium) {
+        var rotation = new Quaternionf().rotationX((float)Math.toRadians(-io.github.augmentwild.domain.SupplyVisual.degrees(step,premium)));
+        var hinge = new Vector3f(0,0,-5 * .9f / 16);
+        return new Transformation(new Vector3f(hinge).sub(rotation.transform(new Vector3f(hinge))),
+                rotation,new Vector3f(.9f),new Quaternionf());
+    }
+
+    void supplyOpening(Location at,int step) {
+        var marker = supply.get(at);
+        if (marker == null || marker.lid == null || !marker.lid.isValid() || marker.step == step) return;
+        moveLid(marker,step);
+    }
+
+    private void moveLid(Marker marker,int step) {
+        marker.step = step;
+        marker.lid.setInterpolationDelay(0);
+        marker.lid.setInterpolationDuration(step == 0 ? 5 : 4);
+        marker.lid.setTransformation(lidPose(step,marker.premium));
+        displayUpdates++;
+    }
+
+    void supplyClaimed(Player winner,Location at,boolean premium) {
+        if (!playable.test(winner)) return;
+        var point = supplyCenter(at,1.12);
+        if (custom(winner) && PlayerUi.quality(winner) != PlayerUi.Quality.LOW && !PlayerUi.reducedFlash(winner))
+            render(winner,point,premium ? "family_arcane" : "family_growth",PULSE);
+        locationSound(winner,point,premium ? "prism" : "family_growth",Sound.ENTITY_PLAYER_LEVELUP);
     }
 
     void supplyMarker(Location at, boolean premium) {
         if (pack == null || !displaysAvailable) return;
+        supplyMarker(at,premium,at.getNearbyPlayers(24));
+    }
+
+    private void supplyMarker(Location at, boolean premium, java.util.Collection<? extends Player> candidates) {
         var eligible = new HashMap<UUID,Player>();
-        for (Player p : at.getNearbyPlayers(24)) {
-            UUID id = p.getUniqueId();
-            if (custom(p) && playable.test(p) && PlayerUi.enabled(p,PlayerUi.Option.PARTICLES)) eligible.put(id,p);
+        var center = supplyCenter(at,1.05);
+        for (Player p : candidates) {
+            if (custom(p) && playable.test(p) && PlayerUi.enabled(p,PlayerUi.Option.PARTICLES)
+                    && PlayerUi.quality(p) != PlayerUi.Quality.LOW
+                    && CombatCinematics.loadedCorridor(p.getEyeLocation(),center) && p.hasLineOfSight(center))
+                eligible.put(p.getUniqueId(),p);
         }
-        if (eligible.isEmpty()) {
-            removeSupply(at);
-            return;
-        }
+        if (eligible.isEmpty()) { removeSupply(at); return; }
+        ItemDisplay untracked = null;
         try {
             Marker marker = supply.get(at);
-            if (marker == null || !marker.entity().isValid()) {
+            if (marker == null || !marker.entity.isValid() || marker.lid != null && !marker.lid.isValid()) {
                 removeSupply(at);
-                if (displayCount() >= MAX_DISPLAYS) return;
-                var center = supplyCenter(at,1.15);
-                marker = new Marker(spawn(center,premium ? "premium" : "supply",
-                        new Transformation(new Vector3f(),new Quaternionf(),new Vector3f(.7f),new Quaternionf())),new HashSet<>());
+                int room = MAX_DISPLAYS-displayCount();
+                if (room <= 0) return;
+                String model = premium ? "premium" : "supply";
+                var fixed = lidPose(0,premium);
+                untracked = spawn(center,room >= 2 ? model : model+"_closed",fixed);
+                var lid = room >= 2 ? spawn(center,model+"_lid",fixed) : null;
+                marker = new Marker(untracked,lid,premium);
                 supply.put(at,marker);
+                untracked = null;
+                peakDisplays = Math.max(peakDisplays,displayCount());
             }
-            for (UUID previous : Set.copyOf(marker.viewers())) {
+            for (var iterator = marker.viewers.iterator(); iterator.hasNext();) {
+                var previous = iterator.next();
                 if (eligible.containsKey(previous)) continue;
                 Player p = plugin.getServer().getPlayer(previous);
-                if (p != null) p.hideEntity(plugin,marker.entity());
-                marker.viewers().remove(previous);
+                if (p != null) marker.hide(plugin,p);
+                iterator.remove();
             }
             for (var entry : eligible.entrySet()) {
-                if (marker.viewers().add(entry.getKey())) entry.getValue().showEntity(plugin,marker.entity());
+                if (marker.viewers.add(entry.getKey())) marker.show(plugin,entry.getValue());
             }
         } catch (RuntimeException failure) {
+            if (untracked != null) untracked.remove();
             disableDisplays(failure);
         }
     }
@@ -961,7 +1049,7 @@ public final class PaperArt implements Listener {
 
     void removeSupply(Location at) {
         var marker = supply.remove(at);
-        if (marker != null) marker.entity().remove();
+        if (marker != null) marker.remove();
     }
 
     void confirmedSweep(Player player,Location impact,String augment) {
@@ -1094,7 +1182,9 @@ public final class PaperArt implements Listener {
     }
 
     private int displayCount() {
-        int count = supply.size() + fields.size() + combat.size();
+        int count = fields.size() + combat.size();
+        for (var marker : supply.values()) count += marker.lid == null ? 1 : 2;
+        count += 2 * supplyPreviews.size();
         for (var animation : cues.values()) count += 1 + animation.ornaments().size();
         return count;
     }
@@ -1202,6 +1292,7 @@ public final class PaperArt implements Listener {
     private final Map<UUID,Preview> previews = new HashMap<>();
 
     void demo(Player player,String demo,java.util.function.BooleanSupplier allowed) {
+        clearSupplyPreview(player.getUniqueId());
         var location = near(player);
         previews.put(player.getUniqueId(),new Preview(player,demo,allowed,location,tick,1,false,ArtPacing.BALANCED,36));
     }
@@ -1223,6 +1314,7 @@ public final class PaperArt implements Listener {
         Location point = eye.clone().add(ahead.multiply(range - .01));
         if (!CombatCinematics.loadedCorridor(eye,point) || !player.hasLineOfSight(point)) return false;
         removeCinema(player.getUniqueId());
+        clearSupplyPreview(player.getUniqueId());
         var signature = (pacing == ArtPacing.LEGACY ? legacySignatures : signatures).get(id);
         int duration = signature == null ? CombatCinematics.Form.valueOf(id.toUpperCase(Locale.ROOT)).duration
                 : signature.paced(pacing,true).duration();
@@ -1235,6 +1327,7 @@ public final class PaperArt implements Listener {
         Player p = preview.player;
         if (!preview.allowed.getAsBoolean() || !p.isOnline() || !p.getWorld().equals(preview.at.getWorld())) {
             if (preview.demo.startsWith("cinema/")) removeCinema(p.getUniqueId());
+            clearSupplyPreview(p.getUniqueId());
             return false;
         }
         long age = tick - preview.began;
@@ -1260,6 +1353,7 @@ public final class PaperArt implements Listener {
             }
             return true;
         }
+        if (preview.demo.startsWith("supply_")) return advanceSupplyPreview(preview,age);
         switch (preview.demo) {
             case "compare" -> {
                 if (age == 1) render(p,preview.at,"proc/sword_wind",MOTIONS.get("blade"));
@@ -1288,7 +1382,49 @@ public final class PaperArt implements Listener {
         return age < 36;
     }
 
+    private boolean advanceSupplyPreview(Preview preview,long age) {
+        Player p = preview.player;
+        UUID id = p.getUniqueId();
+        boolean premium = preview.demo.contains("premium");
+        if (age == 1) {
+            clearSupplyPreview(id);
+            if (!custom(p) || !displaysAvailable || !preview.at.isChunkLoaded()
+                    || !PlayerUi.enabled(p,PlayerUi.Option.PARTICLES)
+                    || PlayerUi.quality(p) == PlayerUi.Quality.LOW || displayCount() > MAX_DISPLAYS-2) {
+                spark(p,preview.at,Particle.END_ROD);
+                return false;
+            }
+            String model = premium ? "premium" : "supply";
+            var fixed = lidPose(0,premium);
+            ItemDisplay shell = spawn(preview.at,model,fixed);
+            try {
+                var marker = new Marker(shell,spawn(preview.at,model+"_lid",fixed),premium);
+                supplyPreviews.put(id,marker);
+                marker.show(plugin,p);
+            } catch (RuntimeException failure) {
+                shell.remove();
+                throw failure;
+            }
+        }
+        var marker = supplyPreviews.get(id);
+        if (marker == null) return false;
+        if (age >= 45 || !preview.at.isChunkLoaded() || !custom(p) || !PlayerUi.enabled(p,PlayerUi.Option.PARTICLES)) {
+            clearSupplyPreview(id);
+            return false;
+        }
+        boolean cancelled = preview.demo.endsWith("cancel");
+        int stage = cancelled && age >= 25 ? 0 : (int)Math.min(6,age/5);
+        if (marker.step != stage) moveLid(marker,stage);
+        return true;
+    }
+
+    private void clearSupplyPreview(UUID id) {
+        var marker = supplyPreviews.remove(id);
+        if (marker != null) marker.remove();
+    }
+
     void stopPreview(Player player) {
+        clearSupplyPreview(player.getUniqueId());
         previews.remove(player.getUniqueId());
         combat.cancelPreview(player.getUniqueId());
         removeCue(player.getUniqueId());
@@ -1310,6 +1446,7 @@ public final class PaperArt implements Listener {
     }
 
     void forget(UUID id) {
+        clearSupplyPreview(id);
         combat.forget(id);
         previews.remove(id);
         auras.remove(id);
@@ -1319,7 +1456,7 @@ public final class PaperArt implements Listener {
         if (supply.isEmpty()) return;
         Player viewer = plugin.getServer().getPlayer(id);
         for (Marker marker : supply.values()) {
-            if (marker.viewers().remove(id) && viewer != null) viewer.hideEntity(plugin,marker.entity());
+            if (marker.viewers.remove(id) && viewer != null) marker.hide(plugin,viewer);
         }
     }
 
@@ -1335,8 +1472,10 @@ public final class PaperArt implements Listener {
         particleUnits.clear();
         cueSounds.clear();
         nextCue.clear();
-        supply.values().forEach(marker -> marker.entity().remove());
+        supply.values().forEach(Marker::remove);
         supply.clear();
+        supplyPreviews.values().forEach(Marker::remove);
+        supplyPreviews.clear();
         displaySpawns = displayUpdates = privateParticles = 0;
         peakDisplays = 0;
         plannedTicks = playedTicks = plannedHoldTicks = completedRoots = earlyRoots = missingParts = 0;

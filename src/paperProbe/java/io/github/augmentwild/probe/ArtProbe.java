@@ -7,6 +7,7 @@ import java.util.UUID;
 import java.util.Properties;
 import org.bukkit.entity.ItemDisplay;
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.entity.Pig;
 import org.bukkit.entity.Player;
@@ -201,6 +202,25 @@ final class ArtProbe {
             }
             require(signatureDurations.size() >= 6);
             Bukkit.getLogger().info("AW_ART_SIGNATURE_PASS active=7 multiple_transforms=true owner_only=true remaining=0");
+            var supplyMarker = PaperArt.class.getDeclaredMethod("supplyMarker",Location.class,boolean.class,java.util.Collection.class);
+            var supplyOpening = PaperArt.class.getDeclaredMethod("supplyOpening",Location.class,int.class);
+            var removeSupply = PaperArt.class.getDeclaredMethod("removeSupply",Location.class);
+            for (var method : java.util.List.of(supplyMarker,supplyOpening,removeSupply)) method.setAccessible(true);
+            var chest = pig.getLocation();
+            for (boolean premium : new boolean[]{false,true}) {
+                observed.clear();
+                supplyMarker.invoke(art,chest,premium,java.util.List.of(p));
+                require(observed.size() == 2 && observed.getLast().getItemStack().getItemMeta().getItemModel().getKey().endsWith("_lid"));
+                var lid = observed.getLast();
+                var closed = new org.joml.Quaternionf(lid.getTransformation().getLeftRotation());
+                supplyOpening.invoke(art,chest,4);
+                require(!closed.equals(lid.getTransformation().getLeftRotation()));
+                supplyOpening.invoke(art,chest,0);
+                require(closed.equals(lid.getTransformation().getLeftRotation()));
+                removeSupply.invoke(art,chest);
+                require(observed.stream().noneMatch(ItemDisplay::isValid));
+            }
+            Bukkit.getLogger().info("AW_ART_SUPPLY_RIG_PASS shells=2 hinge=true cancel=true removed=true");
             var cinema = PaperArt.class.getDeclaredMethod("cinema",Player.class,String.class,java.util.function.BooleanSupplier.class,
                     int.class,int.class,boolean.class);
             cinema.setAccessible(true);
@@ -316,7 +336,7 @@ final class ArtProbe {
             var archive = inspect.invoke(null,fixture);
             var release = archive.getClass().getDeclaredMethod("release");
             release.setAccessible(true);
-            require("8.2.1-part2".equals(release.invoke(archive)));
+            require("8.2.1-part3".equals(release.invoke(archive)));
             var invalid = java.nio.file.Files.createTempFile("aw-invalid-pack-", ".zip");
             try {
                 java.nio.file.Files.writeString(invalid,"not a resource pack");

@@ -197,6 +197,111 @@ def animate(pivot,frames,root=None):
             point.interpolation = "LINEAR"
 
 
+if "--phase821-part3" in args[3:]:
+    materials = {}
+    scene.cycles.samples = 3
+    scene.render.resolution_x = scene.render.resolution_y = 128
+    eye.location = (20,-30,18)
+    eye.rotation_euler = (-eye.location).to_track_quat("-Z","Y").to_euler()
+
+    def tracks(filename):
+        return {row.split("|")[0]: [tuple(map(float,point.split(","))) for point in row.split("|")[-1].split(";")]
+                for row in (project / "src/main/resources" / filename).read_text().splitlines()
+                if row and not row.startswith("#")}
+
+    live = tracks("art-signatures.tsv")
+    rigs = tracks("arcane-parts.tsv")
+    active = list(live)[:7]
+    evolves = list(live)[-6:]
+    main = [key for key in live if key not in ("bomb_impact","void_collapse")]
+    extras = ["supply_closed","premium_closed"] + [f"tier_growth_{i}" for i in range(1,5)]
+    extras += [f"growth_{family}_{stage}" for family in ("metal","machine","sword","life","arcane") for stage in range(1,5)]
+    extras += ["family_"+key for key in ("sword","void","shadow","metal","machine","earth","arcane","life","growth","time","motion","flame")]
+
+    def start(root,key):
+        return create(root,key,model(root,"fx/"+key))
+
+    camera.ortho_scale = 22
+    for key in ["sig_"+key for key in main] + extras:
+        for label,root in (("before",previous),("after",current)):
+            if not (root/"models/fx"/(key+".json")).exists():
+                if label == "before" and key.endswith("_closed"):
+                    group,anchor=start(root,key.removesuffix("_closed"))
+                else:
+                    continue
+            else: group,anchor=start(root,key)
+            render(label+"-"+key)
+            group.hide_render = True
+    camera.ortho_scale = 63
+    eye.location = (25,-37,25)
+    eye.rotation_euler = (Vector((0,-6,8))-eye.location).to_track_quat("-Z","Y").to_euler()
+    for key in main:
+        track = live[key]
+        groups = []
+        group,anchor = start(current,"sig_"+key)
+        groups.append(group)
+        animate(anchor,track)
+        for suffix in ("a","b"):
+            part = "rig_"+key+"_"+suffix
+            if part in rigs:
+                group,anchor = start(current,part)
+                groups.append(group)
+                animate(anchor,rigs[part],track)
+        duration = int(track[-1][0])
+        points = range(0,duration+1,2) if key in active else sorted({int(t[0]) for t in track})
+        for tick in points:
+            scene.frame_set(tick+1)
+            render(f"move-{key}-{tick:03}")
+        if key in ("calamity_giant","time_rewind","calamity_train","thousand_swords"):
+            scene.frame_set(int(track[-3][0])+1)
+            groups[-1].hide_render = True
+            if len(groups) > 1: groups[1].hide_render = True
+            render("standard-"+key)
+            for group in groups: group.hide_render = False
+            camera.type = "PERSP"
+            camera.angle = math.radians(70)
+            for distance in (3,8,16,24):
+                eye.location = (0,-distance*16,23)
+                eye.rotation_euler = (Vector((0,0,10))-eye.location).to_track_quat("-Z","Y").to_euler()
+                render(f"distance-{key}-{distance}")
+            camera.type = "ORTHO"
+            eye.location = (25,-37,25)
+            eye.rotation_euler = (Vector((0,-6,8))-eye.location).to_track_quat("-Z","Y").to_euler()
+        for group in groups: group.hide_render = True
+    # Use the Java step angles and the exact model-unit hinge in the Paper adapter.
+    angles = []
+    for line in (project/"src/main/java/io/github/augmentwild/domain/SupplyVisual.java").read_text().splitlines():
+        if "case " in line and "->" in line:
+            value = line.split("->")[1].strip().rstrip(";")
+            angles.append(tuple(map(int,value.removeprefix("premium ? ").split(" : "))))
+    camera.ortho_scale = 24
+    eye.location = (19,-26,18)
+    eye.rotation_euler = (-eye.location).to_track_quat("-Z","Y").to_euler()
+    for key in ("supply","premium"):
+        body,_=start(current,key)
+        cover,anchor=start(current,key+"_lid")
+        anchor.rotation_mode="QUATERNION"
+        hinge=coord(8,8,3)
+        for index,angle in enumerate(angles):
+            a = -angle[0 if key=="premium" else -1]
+            rotation=Quaternion((1,0,0),math.radians(a))
+            anchor.rotation_quaternion=rotation
+            anchor.location=hinge-rotation@hinge
+            anchor.keyframe_insert(data_path="location",frame=index*10+1)
+            anchor.keyframe_insert(data_path="rotation_quaternion",frame=index*10+1)
+            scene.frame_set(index*10+1)
+            render(f"crate-{key}-{index:02}")
+        body.hide_render=cover.hide_render=True
+    # Reveal one assembly by default in the editable project.
+    for collection in bpy.data.collections:
+        if collection.name.startswith(("sig_calamity_giant","rig_calamity_giant_")):
+            if any(obj.animation_data for obj in collection.objects): collection.hide_render=False
+        collection.hide_viewport = collection.hide_render
+    scene.frame_set(4)
+    bpy.ops.file.pack_all()
+    bpy.ops.wm.save_as_mainfile(filepath=str(output/"visual-evolution.blend"),compress=True)
+    sys.exit(0)
+
 if "--phase82" in args[3:]:
     materials = {}
     camera.ortho_scale = 19

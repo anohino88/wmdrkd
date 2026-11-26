@@ -132,7 +132,7 @@ final class PackInspection {
                 release = JsonParser.parseString(smallText(zip,"augmentwild-pack.json")).getAsJsonObject().get("release").getAsString();
                 if (!release.matches("[a-zA-Z0-9._-]{1,32}")) throw new IOException("팩 릴리스 표식 오류");
             }
-            boolean expandedHud = release.equals("8.2.1-part2");
+            boolean expandedHud = release.equals("8.2.1-part2") || release.equals("8.2.1-part3");
             inspectReferences(zip,names,expandedHud);
             if (release.equals("8.2.1-part1") || expandedHud) {
                 String augments = ASSETS + "items/augment/";

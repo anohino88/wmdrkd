@@ -35,14 +35,18 @@ PALETTE.update(FORMS)
 ARCANE = runpy.run_path(str(SOURCE / "arcane.py"))
 MENU_MARKS = runpy.run_path(str(SOURCE / "menu-marks.py"))
 PREMIUM = runpy.run_path(str(SOURCE / "premium-interface.py"))
+EVOLUTION = runpy.run_path(str(SOURCE / "visual-evolution.py"))
 SYNTH = runpy.run_path(str(SOURCE / "sound-design.py"))
 SOURCE_SOUNDS = {"cast", "evolve", "supply"}
 SOUNDS = SOURCE_SOUNDS | SYNTH["CUES"].keys()
 RARITY_MARKS = dict(silver="#b7cbe0", gold="#ffd077", prismatic="#eab8ff")
 PACK_DIGEST = ROOT / "src/main/resources/art-pack.sha1"
-RELEASE_METADATA = {"release":"8.2.1-part2","minecraft":"26.3","inventory_title":"native"}
+RELEASE_METADATA = {"release":"8.2.1-part3","minecraft":"26.3","inventory_title":"native"}
 PACK_METADATA = {"pack": {"description": "AugmentWild • combat art for Java 26.3",
                           "min_format": [97, 1], "max_format": [97, 1]}}
+
+FAMILY_MODELS = {key: EVOLUTION["FAMILIES"][label] for key,label in
+                 (line.split("=",1) for line in (ROOT / "src/main/resources/art-families.properties").read_text().splitlines())}
 
 
 def write_json(path, data):
@@ -286,20 +290,33 @@ def bake(rarities, motifs, sources):
                    {"parent":"minecraft:item/generated","textures":{"layer0":f"augmentwild:item/{key}"}})
         item(key,f"item/{key}")
     ARCANE["bake"](ROOT,ASSETS)
-    for key in rarities:
-        motif = motifs[key]
-        model = json.loads((ASSETS / f"models/fx/{f'sig_{key}' if key in SIGNATURES['ACTIVE'] else motif}.json").read_text())
-        model["textures"]["sigil"] = f"augmentwild:item/augment/{key}"
-        front = min(part["from"][2] for part in model["elements"]) - .25
-        model["elements"].append({"from":[5,5,front],"to":[11,11,front+.05],
-            "faces":{side:{"texture":"#sigil","uv":[0,0,16,16]} for side in ("north","south")}})
-        write_json(ASSETS / f"models/proc/{key}.json",model)
-        item(f"proc/{key}",f"proc/{key}")
+    bake_evolution(rarities)
     import runpy
     runpy.run_path(str(SOURCE / "panels.py"))["bake"](PACK)
     (PACK / "pack.png").write_bytes((ASSETS / "textures/item/gui/menu.png").read_bytes())
     (ROOT / "src/main/resources/art-motifs.properties").write_text(
         "".join(f"{key}={value}\n" for key,value in sorted(motifs.items()) if key in rarities))
+
+
+def proc_body(key):
+    if key in SIGNATURES["ACTIVE"]:
+        return "sig_" + key
+    return "family_" + FAMILY_MODELS[key]
+
+
+def bake_evolution(rarities):
+    EVOLUTION["bake"](ASSETS,write_json,item)
+    with tempfile.TemporaryDirectory() as audio:
+        SYNTH["bake"](ASSETS/"sounds",Path(audio)/"cue.wav")
+    write_json(ASSETS / "sounds.json",{key: {"sounds":[f"augmentwild:{key}"]} for key in sorted(SOUNDS)})
+    for key in rarities:
+        model = json.loads((ASSETS/f"models/fx/{proc_body(key)}.json").read_text())
+        model["textures"]["sigil"] = f"augmentwild:item/augment/{key}"
+        front = min(part["from"][2] for part in model["elements"]) - .25
+        model["elements"].append({"from":[5,5,front],"to":[11,11,front+.05],
+            "faces":{side:{"texture":"#sigil","uv":[0,0,16,16]} for side in ("north","south")}})
+        write_json(ASSETS/f"models/proc/{key}.json",model)
+        item(f"proc/{key}",f"proc/{key}")
 
 
 def verify(rarities, motifs, sources):
@@ -311,6 +328,8 @@ def verify(rarities, motifs, sources):
     keys |= {f"gui/{kind}_{tier}" for tier in RARITY_MARKS for kind in ("tier","seat")}
     keys |= {f"gui/{mark}" for mark in PREMIUM["SEALS"]} | {f"folio/{key}" for key in rarities}
     keys |= {f"gui/{key}" for key in ARCANE["GUI"]} | {f"fx/{key}" for key in ARCANE["components"](ROOT)}
+    keys |= {f"fx/{key}" for key in EVOLUTION["pieces"]()}
+    assert set(FAMILY_MODELS) == set(rarities)
     models = {p.relative_to(ASSETS / "items").with_suffix("").as_posix() for p in (ASSETS / "items").rglob("*.json")}
     assert models == keys, models ^ keys
     for key in keys:
@@ -321,7 +340,7 @@ def verify(rarities, motifs, sources):
             assert (ASSETS / f"textures/{texture.removeprefix('augmentwild:')}.png").read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
         if key.startswith("proc/"):
             augment = key.split("/")[1]
-            shape = f"sig_{augment}" if augment in SIGNATURES["ACTIVE"] else motifs[augment]
+            shape = proc_body(augment)
             family = json.loads((ASSETS / f"models/fx/{shape}.json").read_text())
             assert model["elements"][:-1] == family["elements"]
             assert model["textures"]["sigil"] == f"augmentwild:item/augment/{augment}"
@@ -414,12 +433,16 @@ def package(output):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--bake",action="store_true",help="Rebuild baked files with Blender, Inkscape, Pillow and FFmpeg")
+    parser.add_argument("--bake-visual",action="store_true",help="Rebuild Part 3 models, materials and sounds")
     parser.add_argument("--bake-hud",action="store_true",help="Rebuild HUD font assets and release metadata")
     parser.add_argument("--output",type=Path,default=ROOT / "build/resource-pack/augmentwild-26.3.zip")
     args = parser.parse_args()
     data = inputs()
     if args.bake:
         bake(*data)
+    if args.bake_visual:
+        bake_evolution(data[0])
+        write_json(PACK / "augmentwild-pack.json", RELEASE_METADATA)
     font = ASSETS / "font/skills.json"
     if args.bake or args.bake_hud:
         write_json(PACK / "augmentwild-pack.json", RELEASE_METADATA)
@@ -429,7 +452,7 @@ def main():
     verify(*data)
     package(args.output)
     digest = hashlib.sha1(args.output.read_bytes()).hexdigest()
-    if args.bake or args.bake_hud:
+    if args.bake or args.bake_hud or args.bake_visual:
         PACK_DIGEST.write_text(digest+"\n",encoding="utf-8")
     assert PACK_DIGEST.read_text().strip() == digest, "JAR expected pack SHA-1 differs from checked pack ZIP"
 

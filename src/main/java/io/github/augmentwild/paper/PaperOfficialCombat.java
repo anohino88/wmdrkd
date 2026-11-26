@@ -2590,6 +2590,17 @@ final class PaperOfficialCombat implements Listener {
     }
 
     private void checkGrowth(Player player, Fighter state) {
+        for (String id : owned.apply(player.getUniqueId())) {
+            if (!AugmentResonance.PERMANENT.contains(id) || AugmentEvolution.of(id) != null) continue;
+            int progress = state.progress.value(id);
+            int cap = rule(id).cap();
+            int stage = io.github.augmentwild.domain.GrowthVisual.stage(progress,cap);
+            String notice = id + ":stack_stage:" + stage;
+            if (stage == 0 || !state.growthNotices.add(notice) || !PlayerUi.enabled(player,PlayerUi.Option.GROWTH)) continue;
+            hud.notification(player,io.github.augmentwild.domain.HudMessages.Kind.GROWTH,notice,
+                    rule(id).definition().name() + " · 영구 중첩 " + progress + "/" + cap);
+            art.growthStage(player,id,stage);
+        }
         for (var evo : AugmentEvolution.values()) {
             if (!owns(player,evo.augment) || state.growthNotices.contains(evo.augment)) continue;
             double goal = evolutionThreshold(evo);

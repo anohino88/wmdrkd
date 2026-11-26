@@ -59,7 +59,7 @@ final class ArtGallery implements PaperMenu {
         for (String control : List.of("gear","heal","shield","advance","cooldowns")) keys.add("control/" + control);
         for (var evolution : io.github.augmentwild.augment.AugmentEvolution.values()) keys.add("evolve/" + evolution.augment);
         keys.add("control/stopfx");
-        for (String demo : List.of("compare","simultaneous","lifetime","repeat","metrics")) keys.add("demo/" + demo);
+        for (String demo : List.of("compare","simultaneous","lifetime","repeat","metrics","supply_normal_open","supply_premium_open","supply_normal_cancel","supply_premium_cancel")) keys.add("demo/" + demo);
         if (!filter.isBlank()) keys.removeIf(key -> !key.contains(filter) && !art.label(key).contains(filter));
         if (keys.isEmpty()) { p.sendMessage("일치하는 실험 항목이 없습니다."); return; }
         var view = new ArtGallery(p,art,PaperArt.Screen.LAB,"전투 실험실",6,keys,allowed);

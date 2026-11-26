@@ -146,6 +146,7 @@ with log.open("wb") as output:
                     wait_for("AW_HUD_CHANNELS_PASS",15)
                     wait_for("AW_ART_CINEMA_PASS",15)
                     wait_for("AW_ART_RIG_PASS",15)
+                    wait_for("AW_ART_SUPPLY_RIG_PASS",15)
                 wait_for("AW_PUBLIC_ART_PASS", 15)
                 wait_for("AW_PACK_RECOVERY_PASS", 15)
                 wait_for("AW_ART_SUSTAIN ticks=1200 created=1 remaining=0", 20)

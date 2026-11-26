@@ -409,3 +409,10 @@ PHASE 2B의 GitHub Actions #6에서 Java 버전 확인, `./gradlew clean build -
 
 - 기준 `4405a64a34220f88d2e49a459397bc9c273d141d`. 6개 한도의 알림 대기열, 긴급 우선순위, 3슬롯 상태, 중복 입력 억제와 실제 스킬 잠금, 설정 기반 안내 및 스킬 메뉴를 구현했다. [누적 진행표](docs/phase821-progress-ko.md) · [시간 도식과 계측](docs/art821/part2).
 - Java 25 로컬 빌드, 큐 JUnit, 기존 독립 회귀와 팩 재생성을 수행했다. Paper 실행과 16인 비교는 동일 SHA의 CI로 검증한다. `REAL_CLIENT_VERIFIED=NOT_RUN`. PART 3–5는 미착수다.
+
+### PHASE 8.2.1 PART 3 · VISUAL EVOLUTION
+
+- 기준 `70ab670`. PART 1의 메뉴와 PART 2의 HUD·조작을 보존하고 전투 모델 20종, 계열 12종, 성장 구조와 보급 개봉 리그를 배포 팩에 연결했다.
+- 보급의 상자 블록과 복구 원장은 그대로 사용한다. 개봉 자세는 기존 경기 시계의 개봉 진행도를 구독한다. 공용 Display 상한 24개와 개인 시야 정책을 유지한다.
+- Java 25 Gradle 및 JUnit, 독립 회귀, ZIP 재현, Blender 배치 렌더와 Blockbench 내보내기 구조를 로컬에서 검사했다. Paper 서버 프로브와 동일 환경 16인 합성 비교는 같은 SHA의 GitHub Actions 결과를 참조한다. `REAL_CLIENT_VERIFIED=NOT_RUN`.
+- [비교 시트·GIF·편집 원본](docs/art821/part3/) · [구현 및 미검증 범위](docs/phase821-progress-ko.md#part-3--visual-evolution)

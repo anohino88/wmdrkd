@@ -141,6 +141,7 @@ final class PaperSupply implements Listener {
         }
         var pending = opening.entrySet().stream().sorted(Comparator
                 .<Map.Entry<UUID, Opening>>comparingLong(entry -> entry.getValue().deadline()).thenComparing(Map.Entry::getKey)).toList();
+        var progress = new HashMap<Delivery,Integer>();
         for (var entry : pending) {
             UUID id = entry.getKey();
             Opening work = entry.getValue();
@@ -151,8 +152,13 @@ final class PaperSupply implements Listener {
             } else if (work.deadline() <= gameNanos) {
                 opening.remove(id);
                 claim(player, work.delivery());
+            } else {
+                int step = io.github.augmentwild.domain.SupplyVisual.step(work.deadline()-gameNanos,settings.openingNanos());
+                progress.merge(work.delivery(),step,Math::max);
             }
         }
+        for (var delivery : spawned.values())
+            art.supplyOpening(delivery.position,progress.getOrDefault(delivery,0));
     }
 
     private void validateReservation(Delivery delivery) {
@@ -285,7 +291,7 @@ final class PaperSupply implements Listener {
         stats.supplyClaim(delivery.plan.id(), (elapsed - delivery.arrived) / 1_000_000L,player.getUniqueId());
         remove(delivery);
         notice.accept(player.getName() + " 님이 " + label(delivery) + "을 획득했습니다.");
-        if (PlayerUi.enabled(player,PlayerUi.Option.SOUND)) player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1, 1.2f);
+        art.supplyClaimed(player,delivery.position,delivery.plan.premium());
         PlayerUi.audience(delivery.position,PlayerUi.Option.PARTICLES,p -> p.spawnParticle(Particle.HAPPY_VILLAGER,delivery.position.clone().add(0,.8,0),12,.4,.3,.4,.02));
     }
 
