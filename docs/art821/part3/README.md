@@ -5,11 +5,12 @@
 | 자료 | 확인할 내용 |
 | --- | --- |
 | [액티브 7종 전후](active-models.png) · [진화 6종 전후](evolution-models.png) · [시너지 5종·공명 2종 전후](synergy-models.png) | 같은 배율에서 중심 실루엣과 재질 비교 |
+| [모델별 검토](models-ko.md) | 20개 코어와 두 보급의 실루엣·배치·모션·클라이언트 확인 지점 |
 | [진화 키프레임](evolution-frames.png) · [시너지·공명 키프레임](synergy-frames.png) | 배포 시퀀스에서 뽑은 프레임과 틱 번호 |
-| [그림자 질주](shadow_dash.gif) · [지진술사](earthquake_mage.gif) · [시간 역행](time_rewind.gif) · [공허 군주](void_lord.gif) · [폭탄 연금술](bomb_alchemy.gif) · [결투 계약](duel_contract.gif) · [재앙의 거인](calamity_giant.gif) | 2틱마다 표본을 잡고 20 TPS 기준 속도로 재생 |
-| [거리·품질 비교](readability.png) · [계열 12종](families.png) | 70° 카메라에서 3·8·16·24블록 투영과 독립 부품을 제외한 근접 실루엣 |
+| [그림자 도약](shadow_dash.gif) · [지진술사](earthquake_mage.gif) · [시간 역행](time_rewind.gif) · [공허 군주](void_lord.gif) · [폭탄 연금술](bomb_alchemy.gif) · [결투의 계약](duel_contract.gif) · [재앙의 거인](calamity_giant.gif) | 2틱마다 표본을 잡고 20 TPS 기준 속도로 재생 |
+| [거리·품질 비교](readability.png) · [계열 12종](families.png) · [가시 시간 추산](timing-ko.md) | 70° 카메라에서 3·8·16·24블록 투영과 독립 부품을 제외한 근접 실루엣 |
 | [성장 단계](growth.png) · [성장 원장 감사](growth-ko.md) | 기본 공용 모델과 금속·기계·검·생명·비전의 단계별 구조 |
-| [일반·고급 보급 전후](supply.png) · [일반 개봉](supply.gif) · [고급 개봉](premium.gif) | 기본 3초 진행 중 실제 힌지 표본과 완료 위치. 중단하면 서버가 닫힌 자세로 복구한다. |
+| [일반·고급 보급 전후](supply.png) · [일반 개봉](supply.gif) · [고급 개봉](premium.gif) | 기본 3초 진행 중 실제 힌지 표본과 완료 위치. 중단하면 서버가 닫힌 자세로 복구한다. 보상 지급이 확정되면 최종 자세를 최대 10틱 표시한다. |
 | [음원 A/B](sounds.ogg) | 검술→공허→그림자→금속→기계→대지→마법→생명→성장→시간→이동→화염. 각 계열은 기존 대표 큐 다음에 새 계열 음원 순서다. |
 | [증강 84종 발동 감사](augments-ko.md) | 실제 소스 경로, 발동 조건, 아이콘과 모델, 계열 음원 연결 |
 | [Blender 원본](visual-evolution.blend) · [Blockbench 원본 22개](blockbench/) | Blender에 텍스처와 키프레임을 포함했다. Blockbench에서는 코어와 보급의 모델 그룹·피벗을 편집하고 시간표는 서버 TSV에서 관리한다. |

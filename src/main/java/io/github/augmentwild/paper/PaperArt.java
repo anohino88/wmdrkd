@@ -104,6 +104,7 @@ public final class PaperArt implements Listener {
         final boolean premium;
         final Set<UUID> viewers = new HashSet<>();
         int step;
+        long removeAt = Long.MAX_VALUE;
         Marker(ItemDisplay entity, ItemDisplay lid, boolean premium) {
             this.entity = entity;
             this.lid = lid;
@@ -963,8 +964,10 @@ public final class PaperArt implements Listener {
 
     void supply(Location at, boolean premium) {
         supplyMarker(at,premium);
+        var center = supplyCenter(at,1.05);
         for (Player player : at.getNearbyPlayers(24))
-            if (playable.test(player)) locationSound(player,at,premium ? "family_arcane" : "family_metal",Sound.BLOCK_CHEST_OPEN);
+            if (playable.test(player) && canSeeSupply(player,center))
+                locationSound(player,at,premium ? "family_arcane" : "family_metal",Sound.BLOCK_CHEST_OPEN);
     }
 
     private static org.bukkit.util.Transformation lidPose(int step,boolean premium) {
@@ -989,6 +992,14 @@ public final class PaperArt implements Listener {
     }
 
     void supplyClaimed(Player winner,Location at,boolean premium) {
+        var marker = supply.get(at);
+        if (marker != null) {
+            if (marker.lid == null || !marker.lid.isValid()) removeSupply(at);
+            else {
+                moveLid(marker,6);
+                marker.removeAt = tick + 10;
+            }
+        }
         if (!playable.test(winner)) return;
         var point = supplyCenter(at,1.12);
         if (custom(winner) && PlayerUi.quality(winner) != PlayerUi.Quality.LOW && !PlayerUi.reducedFlash(winner))
@@ -1007,7 +1018,7 @@ public final class PaperArt implements Listener {
         for (Player p : candidates) {
             if (custom(p) && playable.test(p) && PlayerUi.enabled(p,PlayerUi.Option.PARTICLES)
                     && PlayerUi.quality(p) != PlayerUi.Quality.LOW
-                    && CombatCinematics.loadedCorridor(p.getEyeLocation(),center) && p.hasLineOfSight(center))
+                    && canSeeSupply(p,center))
                 eligible.put(p.getUniqueId(),p);
         }
         if (eligible.isEmpty()) { removeSupply(at); return; }
@@ -1041,6 +1052,10 @@ public final class PaperArt implements Listener {
             if (untracked != null) untracked.remove();
             disableDisplays(failure);
         }
+    }
+
+    private static boolean canSeeSupply(Player player,Location center) {
+        return CombatCinematics.loadedCorridor(player.getEyeLocation(),center) && player.hasLineOfSight(center);
     }
 
     private static Location supplyCenter(Location at, double height) {
@@ -1215,6 +1230,13 @@ public final class PaperArt implements Listener {
         nextCue.values().removeIf(expiry -> expiry <= tick);
         try {
             previews.values().removeIf(preview -> !advancePreview(preview));
+            supply.entrySet().removeIf(entry -> {
+                var marker = entry.getValue();
+                if (marker.removeAt == Long.MAX_VALUE) return false;
+                if (tick < marker.removeAt && entry.getKey().isChunkLoaded()) return false;
+                marker.remove();
+                return true;
+            });
             combat.tick();
             peakDisplays = Math.max(peakDisplays,displayCount());
             cues.entrySet().removeIf(entry -> {
@@ -1389,7 +1411,7 @@ public final class PaperArt implements Listener {
         if (age == 1) {
             clearSupplyPreview(id);
             if (!custom(p) || !displaysAvailable || !preview.at.isChunkLoaded()
-                    || !PlayerUi.enabled(p,PlayerUi.Option.PARTICLES)
+                    || !canSeeSupply(p,preview.at) || !PlayerUi.enabled(p,PlayerUi.Option.PARTICLES)
                     || PlayerUi.quality(p) == PlayerUi.Quality.LOW || displayCount() > MAX_DISPLAYS-2) {
                 spark(p,preview.at,Particle.END_ROD);
                 return false;
@@ -1397,18 +1419,21 @@ public final class PaperArt implements Listener {
             String model = premium ? "premium" : "supply";
             var fixed = lidPose(0,premium);
             ItemDisplay shell = spawn(preview.at,model,fixed);
+            ItemDisplay lid;
             try {
-                var marker = new Marker(shell,spawn(preview.at,model+"_lid",fixed),premium);
-                supplyPreviews.put(id,marker);
-                marker.show(plugin,p);
+                lid = spawn(preview.at,model+"_lid",fixed);
             } catch (RuntimeException failure) {
                 shell.remove();
                 throw failure;
             }
+            var marker = new Marker(shell,lid,premium);
+            supplyPreviews.put(id,marker);
+            marker.show(plugin,p);
         }
         var marker = supplyPreviews.get(id);
         if (marker == null) return false;
-        if (age >= 45 || !preview.at.isChunkLoaded() || !custom(p) || !PlayerUi.enabled(p,PlayerUi.Option.PARTICLES)) {
+        if (age >= 45 || !preview.at.isChunkLoaded() || !custom(p) || !canSeeSupply(p,preview.at)
+                || !PlayerUi.enabled(p,PlayerUi.Option.PARTICLES)) {
             clearSupplyPreview(id);
             return false;
         }

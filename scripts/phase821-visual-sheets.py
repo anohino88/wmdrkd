@@ -23,8 +23,13 @@ GROUPS = ("steel_king", "infinite_barrage", "calamity_train", "hell_lord",
 EVOLUTIONS = ("steel_heart", "sword_wind", "berserk_engine", "tank_engine",
               "magic_missile", "infernal_conductor")
 PRIORITY = ("calamity_giant", "calamity_train", "thousand_swords", "time_rewind")
-NAMES = dict(re.findall(r"^  (\w+):\n    group: \w+\n    rarity: \w+\n    name: '([^']+)'",
-                        (ROOT/"src/main/resources/official-augments.yml").read_text(), re.M))
+OFFICIAL = (ROOT/"src/main/resources/official-augments.yml").read_text()
+CATALOG = (ROOT/"src/main/java/io/github/augmentwild/paper/AugmentCatalog.java").read_text()
+DEFINITIONS = {key:(label,rarity,amount) for key,rarity,label,amount in re.findall(
+    r"^  (\w+):\n    group: \w+\n    rarity: (\w+)\n    name: '([^']+)'[\s\S]*?    amount: ([^\n]+)", OFFICIAL,re.M)}
+DEFINITIONS.update({key:(label,rarity,unit.strip()) for key,rarity,label,unit in re.findall(
+    r'config, "(\w+)", AugmentRarity\.(\w+), "([^"]+)", .*", "([^"]+)", Effect\.', CATALOG)})
+NAMES = {key:value[0] for key,value in DEFINITIONS.items()}
 NAMES.update(zip(GROUPS, ("강철의 왕", "무한 포격", "재앙의 기관차", "지옥의 군주",
                           "천 개의 검", "누적의 공명", "생명의 잔향"), strict=True))
 
@@ -64,7 +69,30 @@ def audio(baseline, output):
     streams = ";".join(f"[{i}:a]aresample=44100,aformat=channel_layouts=mono,apad=pad_dur=0.25[a{i}]"
                        for i in range(24))
     join = "".join(f"[a{i}]" for i in range(24)) + "concat=n=24:v=0:a=1[out]"
-    subprocess.run(command+["-filter_complex",streams+";"+join,"-map","[out]",str(output)],check=True)
+    subprocess.run(command+["-filter_complex",streams+";"+join,"-map","[out]","-map_metadata","-1","-fflags","+bitexact","-flags:a","+bitexact",str(output)],check=True)
+
+
+def timing(output, frames):
+    files = sorted((ROOT/"src/main/resources").glob("art-signatures.tsv"))
+    entries = {parts[0]:[tuple(map(float,pose.split(","))) for pose in parts[-1].split(";")]
+               for file in files for line in file.read_text().splitlines()
+               if line and not line.startswith("#") for parts in [line.split("|")]}
+    rows = ["# 시간표와 오프라인 가시 범위", "",
+            "각 샘플은 실루엣 알파의 반 이상인 픽셀을 센다. 2틱마다 촬영한 프레임 중 "
+            "최대 투영 픽셀의 70% 이상인 표본이 차지하는 시간을 추산했다. "
+            "장애물, 파티클, 카메라 움직임과 클라이언트 FPS는 이 측정에 포함되지 않는다.", "",
+            "| 연출 | 기준 및 현재 키프레임 종료 | 투영 유지 추산 |",
+            "| --- | ---: | ---: |"]
+    for key in ACTIVE+("bomb_impact",):
+        duration = int(entries[key][-1][0])
+        counts = []
+        for frame in sorted(frames.glob(f"move-{key}-*.png"))[:-1]:
+            with Image.open(frame) as image:
+                counts.append(sum(image.convert("RGBA").getchannel("A").histogram()[128:]))
+        assert counts and max(counts) > 0
+        visible = 2*sum(count >= .7*max(counts) for count in counts)
+        rows.append(f"| {NAMES.get(key,'폭탄 충돌')} | {duration}틱 | {visible}틱 |")
+    output.write_text("\n".join(rows)+"\n")
 
 
 def main():
@@ -118,18 +146,28 @@ def main():
     audit = AUDIT["report"]()
     motifs = dict(line.split("=") for line in (ROOT/"src/main/resources/art-families.properties").read_text().splitlines())
     rows = ["# 증강 84종 발동 연결", "",
-            "고유 문양을 계열 모델 또는 7종 액티브 모델에 결합했다. 조건과 호출 경로는 소스 검사로 대조했다.",
-            "일반 발동은 종료 시 제거되며 간소 모드는 바닐라 파티클을 사용한다. 클라이언트 검증은 84종 모두 NOT_RUN이다.", "",
-            "| ID | 발동 조건 | 실제 코드 | 계열 | 모델 · 음원 |","| --- | --- | --- | --- | --- |"]
+            "이름·등급·효과는 배포 카탈로그를 따르고 주요 실제 호출 간선을 감사했다. 일반 발동은 계열 모델에 고유 문양을 결합한다.",
+            "간소 모드는 바닐라 파티클을 사용한다. 지속·공개 항목은 확인된 대표 경로다. 그래픽 클라이언트 검증은 84종 모두 NOT_RUN이다.", "",
+            "| ID · 이름 · 희귀도 | 조건과 효과 · 기본 설정 | 실제 코드 | 계열 · 모델 | 모션 · 지속/종료 | 파티클 대체 · 가시성 | 음원 |",
+            "| --- | --- | --- | --- | --- | --- | --- |"]
     for line in audit.splitlines():
         if line.startswith("| `"):
-            cols = line.split("|")
-            key=cols[1].strip(" `")
+            cols = [col.strip() for col in line.split("|")]
+            key=cols[1].strip("`")
             family=motifs[key]
-            rows.append(f"| `{key}` |{cols[2]}|{cols[3]}| {family} | `proc/{key}` · `family_{FAMILY[family]}` |")
-    assert len(rows)==91
+            label,rarity,amount=DEFINITIONS[key]
+            motion = cols[5] if key in ACTIVE else cols[5].rsplit(" · ",1)[-1]
+            sound = f"family_{FAMILY[family]}"
+            model = f"proc/{key}"
+            if key in ACTIVE:
+                model += f" / fx/sig_{key}"
+                sound += " / " + motion.split(" · ")[2]
+            rows.append(f"| `{key}` · {label} · {rarity} | {cols[2]} · {amount} | {cols[3]} | "
+                        f"{family} · `{model}` | {motion} | {cols[7]} · {cols[8]} | `{sound}` |")
+    assert len(rows) == 91 and len(DEFINITIONS) == 84
     (out/"augments-ko.md").write_text("\n".join(rows)+"\n")
     audio(args.baseline,out/"sounds.ogg")
+    timing(out/"timing-ko.md",frames)
 
 
 if __name__ == "__main__":

@@ -212,7 +212,6 @@ if "--phase821-part3" in args[3:]:
     live = tracks("art-signatures.tsv")
     rigs = tracks("arcane-parts.tsv")
     active = list(live)[:7]
-    evolves = list(live)[-6:]
     main = [key for key in live if key not in ("bomb_impact","void_collapse")]
     extras = ["supply_closed","premium_closed"] + [f"tier_growth_{i}" for i in range(1,5)]
     extras += [f"growth_{family}_{stage}" for family in ("metal","machine","sword","life","arcane") for stage in range(1,5)]
@@ -235,10 +234,10 @@ if "--phase821-part3" in args[3:]:
     camera.ortho_scale = 63
     eye.location = (25,-37,25)
     eye.rotation_euler = (Vector((0,-6,8))-eye.location).to_track_quat("-Z","Y").to_euler()
-    for key in main:
+    for key in main + ["bomb_impact"]:
         track = live[key]
         groups = []
-        group,anchor = start(current,"sig_"+key)
+        group,anchor = start(current,"sig_"+("bomb_alchemy" if key == "bomb_impact" else key))
         groups.append(group)
         animate(anchor,track)
         for suffix in ("a","b"):
@@ -248,7 +247,7 @@ if "--phase821-part3" in args[3:]:
                 groups.append(group)
                 animate(anchor,rigs[part],track)
         duration = int(track[-1][0])
-        points = range(0,duration+1,2) if key in active else sorted({int(t[0]) for t in track})
+        points = range(0,duration+1,2) if key in active or key == "bomb_impact" else sorted({int(t[0]) for t in track})
         for tick in points:
             scene.frame_set(tick+1)
             render(f"move-{key}-{tick:03}")

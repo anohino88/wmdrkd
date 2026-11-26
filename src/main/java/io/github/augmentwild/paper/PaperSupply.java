@@ -298,7 +298,7 @@ final class PaperSupply implements Listener {
     private void remove(Delivery delivery) {
         var location = delivery.position;
         spawned.remove(Site.at(location));
-        art.removeSupply(location);
+        if (!delivery.claimed) art.removeSupply(location);
         if (plugin.getServer().getWorld(location.getWorld().getUID()) == location.getWorld()) delivery.block.remove();
         release(location);
         opening.values().removeIf(value -> value.delivery() == delivery);

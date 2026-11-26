@@ -204,8 +204,8 @@ final class ArtProbe {
             Bukkit.getLogger().info("AW_ART_SIGNATURE_PASS active=7 multiple_transforms=true owner_only=true remaining=0");
             var supplyMarker = PaperArt.class.getDeclaredMethod("supplyMarker",Location.class,boolean.class,java.util.Collection.class);
             var supplyOpening = PaperArt.class.getDeclaredMethod("supplyOpening",Location.class,int.class);
-            var removeSupply = PaperArt.class.getDeclaredMethod("removeSupply",Location.class);
-            for (var method : java.util.List.of(supplyMarker,supplyOpening,removeSupply)) method.setAccessible(true);
+            var supplyClaimed = PaperArt.class.getDeclaredMethod("supplyClaimed",Player.class,Location.class,boolean.class);
+            for (var method : java.util.List.of(supplyMarker,supplyOpening,supplyClaimed)) method.setAccessible(true);
             var chest = pig.getLocation();
             for (boolean premium : new boolean[]{false,true}) {
                 observed.clear();
@@ -217,10 +217,15 @@ final class ArtProbe {
                 require(!closed.equals(lid.getTransformation().getLeftRotation()));
                 supplyOpening.invoke(art,chest,0);
                 require(closed.equals(lid.getTransformation().getLeftRotation()));
-                removeSupply.invoke(art,chest);
-                require(observed.stream().noneMatch(ItemDisplay::isValid));
+                supplyClaimed.invoke(art,p,chest,premium);
+                require(!closed.equals(lid.getTransformation().getLeftRotation()));
+                var shell = observed.getFirst();
+                require(shell.isValid() && lid.isValid());
+                for (int i = 0; i < 10; i++) tick.invoke(art);
+                require(!shell.isValid() && !lid.isValid());
+                for (int i = 0; i < 30; i++) tick.invoke(art);
             }
-            Bukkit.getLogger().info("AW_ART_SUPPLY_RIG_PASS shells=2 hinge=true cancel=true removed=true");
+            Bukkit.getLogger().info("AW_ART_SUPPLY_RIG_PASS shells=2 hinge=true cancel=true claimed=true removed=true");
             var cinema = PaperArt.class.getDeclaredMethod("cinema",Player.class,String.class,java.util.function.BooleanSupplier.class,
                     int.class,int.class,boolean.class);
             cinema.setAccessible(true);
