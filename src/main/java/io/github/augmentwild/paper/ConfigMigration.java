@@ -1,6 +1,7 @@
 package io.github.augmentwild.paper;
 
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -35,6 +36,7 @@ final class ConfigMigration {
         var yaml = new YamlConfiguration();
         yaml.loadFromString(original);
         if (yaml.getKeys(false).isEmpty()) throw new InvalidConfigurationException("설정 맵이 비었습니다.");
+        validateSettings(yaml);
         var additions = new LinkedHashMap<String,Integer>();
         for (var setting : DEFAULTS.entrySet()) {
             Object value = yaml.get(setting.getKey());
@@ -53,6 +55,33 @@ final class ConfigMigration {
             if (!setting.getValue().equals(verified.get(setting.getKey())))
                 throw new InvalidConfigurationException("신규 설정 검증 실패 · " + setting.getKey());
         return new Plan(original,output.toString(),Map.copyOf(additions));
+    }
+
+    private static void validateSettings(YamlConfiguration yaml) throws InvalidConfigurationException {
+        try (var source = ConfigMigration.class.getClassLoader().getResourceAsStream("config.yml")) {
+            if (source == null) throw new InvalidConfigurationException("배포 기본 설정을 읽을 수 없습니다.");
+            var defaults = new YamlConfiguration();
+            try (var reader = new InputStreamReader(source,StandardCharsets.UTF_8)) {
+                defaults.load(reader);
+            }
+            for (var entry : defaults.getValues(true).entrySet()) {
+                String key = entry.getKey();
+                Object expected = entry.getValue();
+                Object value = yaml.get(key);
+                if (value != null && !(expected instanceof Number && value instanceof Number)
+                        && !expected.getClass().isInstance(value)) {
+                    throw new InvalidConfigurationException("설정 자료형 충돌 · " + key);
+                }
+            }
+            // Missing fields use the same packaged defaults the plugin applies when loading.
+            yaml.setDefaults(defaults);
+            var rules = PaperMatchSettings.load(yaml).rules();
+            SupplySettings.load(yaml,rules.gatheringSeconds());
+        } catch (IOException | IllegalArgumentException failure) {
+            throw new InvalidConfigurationException("설정 충돌 · " + failure.getMessage());
+        } finally {
+            yaml.setDefaults(new YamlConfiguration());
+        }
     }
 
     static String run(Path file,String[] args) {

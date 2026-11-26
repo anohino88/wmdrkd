@@ -348,12 +348,17 @@ final class PaperIntel implements Listener {
                 "체력 피해 기여 " + points(contributorDamage.get(source)))));
         for (String effect : effects) cards.add(card(Material.AMETHYST_SHARD, augments.augmentName(effect), effect));
         long deathAt = clock.get().elapsedNanos();
-        var extra = hud.events(id).stream().filter(event -> match.equals(event.match()) && event.target().equals(id)
-                && deathAt - event.elapsed() <= settings.historyWindow()
-                && (event.kind() == CombatEvent.Kind.HEAL || event.kind() == CombatEvent.Kind.RESCUE
+        var recent = hud.events(id).stream().filter(event -> match.equals(event.match()) && event.target().equals(id)
+                && !event.cancelled() && deathAt - event.elapsed() <= settings.historyWindow()).toList();
+        var extra = recent.stream().filter(event -> (event.kind() == CombatEvent.Kind.HEAL || event.kind() == CombatEvent.Kind.RESCUE
                     || event.kind() == CombatEvent.Kind.PROC || event.blocked() || event.unclassified())).toList();
         double recovery = extra.stream().mapToDouble(CombatEvent::healed).sum();
         cards.add(card(Material.GOLDEN_APPLE,"확인된 회복",points(recovery) + " HP · 최근 사건 표본"));
+        double armor = recent.stream().filter(event -> event.armor() > 0).mapToDouble(CombatEvent::armor).sum();
+        double blocking = recent.stream().filter(event -> event.blocking() > 0).mapToDouble(CombatEvent::blocking).sum();
+        if (armor > 0 || blocking > 0) cards.add(card(Material.SHIELD,"별도 방어 판정",
+                "갑옷 " + points(armor) + " · 방패 " + points(blocking),"Paper 감산 항목 · 실제 HP 감소량과 별개"));
+
         var timeCards = new java.util.TreeMap<Long,List<Card>>();
         for (CombatEvent event : extra) {
             String detail = event.healed() > 0 ? "회복 +" + points(event.healed()) : event.blocked() ? "방패 방어"

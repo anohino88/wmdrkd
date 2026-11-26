@@ -413,6 +413,9 @@ final class ArtProbe {
         var duplicate = config.resolveSibling("duplicate-test.yml");
         java.nio.file.Files.writeString(duplicate,"settings-version: 1\nsettings-version: 1\n");
         require(((String)run.invoke(null,duplicate,new String[]{"check"})).startsWith("FAIL"));
+        var invalidGame = config.resolveSibling("conflicting-game.yml");
+        java.nio.file.Files.writeString(invalidGame,"game:\n  min-players: 9\n  max-players: 4\n");
+        require(((String)run.invoke(null,invalidGame,new String[]{"check"})).startsWith("FAIL"));
         String conflicting = original + "settings-version: invalid\n";
         java.nio.file.Files.writeString(config,conflicting);
         require(((String)run.invoke(null,config,new String[]{"migrate","--apply"})).startsWith("FAIL")
