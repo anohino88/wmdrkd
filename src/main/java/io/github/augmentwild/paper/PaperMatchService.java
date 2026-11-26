@@ -477,7 +477,7 @@ public final class PaperMatchService implements Listener {
                         "설정 검사 · /aw admin config check",
                         "연출 · " + art.metrics(),
                         "최근 평균 틱 " + String.format(java.util.Locale.ROOT,"%.2fms",org.bukkit.Bukkit.getAverageTickTime()));
-                if (sender instanceof Player player) ArtGallery.read(player,art,PaperArt.Screen.JOURNAL,"관리자 진단",rows);
+                if (sender instanceof Player player) ArtGallery.diagnostics(player,art,rows);
                 yield String.join("\n",rows);
             }
             default -> "지원하지 않는 운영 명령입니다.";
@@ -516,7 +516,7 @@ public final class PaperMatchService implements Listener {
                     scheduler.runTask(plugin,() -> {
                         if (!sender.hasPermission("augmentwild.admin")) return;
                         if (sender instanceof Player player) {
-                            if (player.isOnline()) ArtGallery.read(player,art,PaperArt.Screen.ADMIN,"증강 통계",data);
+                            if (player.isOnline()) ArtGallery.statistics(player,art,data,0);
                         } else sender.sendMessage(String.join("\n",data));
                     });
                 } catch (org.bukkit.plugin.IllegalPluginAccessException stopping) {
@@ -941,7 +941,11 @@ public final class PaperMatchService implements Listener {
         causes.clear();
         intel.clear();
         augments.clear();
-        if (played) plugin.getLogger().info("AW_HUD_MATCH " + hud.metrics());
+        if (played) {
+            plugin.getLogger().info("AW_HUD_MATCH " + hud.metrics());
+            plugin.getLogger().info("AW_MATCH_ANALYTICS match=" + session.matchId() + " snapshot_ns=" + archiveSnapshotNanos
+                    + " journal=" + feedback.metrics());
+        }
         hud.clear(plugin);
         regionCommitted = false;
         labWorld = null;
@@ -1456,7 +1460,7 @@ public final class PaperMatchService implements Listener {
             var journalKiller = creditedKillers.get(id);
             var damage = event.getDamageSource().getDamageType().getKey().toString();
             hud.record(event.getEntity(),hud.event(journalKiller,id,null,io.github.augmentwild.domain.CombatEvent.Kind.DEATH,damage,
-                    null,null,null,Double.NaN,Double.NaN,0,0,0,0,false,true,false,false,false),"사망 · " + damage);
+                    null,null,null,Double.NaN,Double.NaN,Double.NaN,Double.NaN,0,0,0,0,false,true,false,false,false),"사망 · " + damage);
         }
     }
 

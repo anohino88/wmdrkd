@@ -416,3 +416,10 @@ PHASE 2B의 GitHub Actions #6에서 Java 버전 확인, `./gradlew clean build -
 - 보급의 상자 블록과 복구 원장은 그대로 사용한다. 개봉 자세는 기존 경기 시계의 개봉 진행도를 구독한다. 공용 Display 상한 24개와 개인 시야 정책을 유지한다.
 - Java 25 Gradle 및 JUnit, 독립 회귀, ZIP 재현, Blender 배치 렌더와 Blockbench 내보내기 구조를 로컬에서 검사했다. Paper 서버 프로브와 동일 환경 16인 합성 비교는 같은 SHA의 GitHub Actions 결과를 참조한다. `REAL_CLIENT_VERIFIED=NOT_RUN`.
 - [비교 시트·GIF·편집 원본](docs/art821/part3/) · [구현 및 미검증 범위](docs/phase821-progress-ko.md#part-3--visual-evolution)
+
+### PHASE 8.2.1 PART 4 · ANALYTICS & OPERATIONS
+
+- 기준 `e4e8f2c`. 확인된 전투 사건, 사망 타임라인, 비동기 경기 원장 및 본인 조회, 익명 운영 통계 필터와 복구 진단을 연결했다.
+- 보급의 기존 보상과 월드 복구 규칙, 기존 증강·GUI·HUD·VFX를 유지했다. 출처를 확정하지 못한 보급 소비는 UNCLASSIFIED다.
+- 결과 원장의 중복·권한·재시도·손상 격리를 검사했다. Paper 재시작 조회와 16인 측정은 최종 SHA의 Actions에서 확인한다. `REAL_CLIENT_VERIFIED=NOT_RUN`.
+- [진행 기록](docs/phase821-progress-ko.md#part-4--analytics--operations) · [화면·스키마·복구](docs/art821/part4/)

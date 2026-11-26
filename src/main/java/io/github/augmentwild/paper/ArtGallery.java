@@ -21,6 +21,7 @@ final class ArtGallery implements PaperMenu {
     private final UUID owner;
     private final Inventory inventory;
     private final PaperArt art;
+    private final PaperArt.Screen screen;
     private final BooleanSupplier allowed;
     private final List<String> entries;
     private static final java.util.Map<Integer,String> SECTIONS = java.util.Map.of(
@@ -44,6 +45,7 @@ final class ArtGallery implements PaperMenu {
                        List<String> entries, BooleanSupplier allowed) {
         this.owner = p.getUniqueId();
         this.art = art;
+        this.screen = screen;
         this.entries = entries;
         this.allowed = allowed;
         this.inventory = Bukkit.createInventory(this,rows * 9,art.title(p,screen,title));
@@ -88,23 +90,53 @@ final class ArtGallery implements PaperMenu {
         p.openInventory(view.inventory);
     }
 
+    static void diagnostics(Player player,PaperArt art,List<String> rows) {
+        var view = new ArtGallery(player,art,PaperArt.Screen.ADMIN,"관리자 진단",6,List.of(),() -> false);
+        view.put(player,4,Material.COMPASS,"gui/diagnostics","관리자 진단");
+        view.updateRows(player,"diagnostics",rows);
+        var commands = List.of("arena check","test check","art report","stats","config check");
+        var names = List.of("경기장 검사","실험실 검사","팩 상태","운영 통계","설정 검사");
+        for (int i=0;i<commands.size();i++) {
+            String command = commands.get(i);
+            view.put(player,45+i,Material.PAPER,"gui/diagnostics",names.get(i),"/aw admin " + command);
+            view.navigation.put(45+i,() -> player.performCommand("aw admin " + command));
+        }
+        view.returnTo(player,() -> player.performCommand("aw menu"));
+        player.openInventory(view.inventory);
+    }
+
     private final java.util.Map<Integer,Runnable> navigation = new java.util.HashMap<>();
+
+    static void statistics(Player p,PaperArt art,List<String> rows,int page) {
+        var view = new ArtGallery(p,art,PaperArt.Screen.ADMIN,"증강 통계",6,List.of(),() -> false);
+        view.put(p,4,Material.WRITABLE_BOOK,"gui/diagnostics","증강 통계",rows.getFirst());
+        int start = 1+page*36, end = Math.min(rows.size(),start+36);
+        view.updateRows(p,"journal",start >= end ? rows : rows.subList(start,end));
+        view.pageControls(p,page > 0 ? () -> statistics(p,art,rows,page-1) : null,
+                end < rows.size() ? () -> statistics(p,art,rows,page+1) : null);
+        view.returnTo(p,() -> p.performCommand("aw menu"));
+        p.openInventory(view.inventory);
+    }
 
     static void history(Player p,PaperArt art,List<String> lines,List<Runnable> details,Runnable previous,Runnable next) {
         var view = new ArtGallery(p,art,PaperArt.Screen.JOURNAL,"나의 경기 기록",6,List.of(),() -> false);
         view.put(p,4,Material.WRITABLE_BOOK,"gui/journal","나의 경기 기록");
         view.updateRows(p,"journal",lines.isEmpty() ? List.of("조회 가능한 경기 기록 없음") : lines);
         for (int i=0;i<details.size();i++) view.navigation.put(9+i,details.get(i));
-        if (previous != null) {
-            view.put(p,45,Material.ARROW,"gui/previous","이전 페이지");
-            view.navigation.put(45,previous);
-        }
-        if (next != null) {
-            view.put(p,51,Material.ARROW,"gui/next","다음 페이지");
-            view.navigation.put(51,next);
-        }
+        view.pageControls(p,previous,next);
         view.returnTo(p,() -> p.performCommand("aw menu"));
         p.openInventory(view.inventory);
+    }
+
+    private void pageControls(Player p,Runnable previous,Runnable next) {
+        if (previous != null) {
+            put(p,45,Material.ARROW,"gui/previous","이전 페이지");
+            navigation.put(45,previous);
+        }
+        if (next != null) {
+            put(p,51,Material.ARROW,"gui/next","다음 페이지");
+            navigation.put(51,next);
+        }
     }
 
     boolean isStatusFor(Player viewer) { return liveStatus && owner.equals(viewer.getUniqueId()); }
@@ -225,6 +257,7 @@ final class ArtGallery implements PaperMenu {
 
     private void activate(Player p, int slot) {
         if (entries.isEmpty()) {
+            if (screen == PaperArt.Screen.ADMIN && !p.hasPermission("augmentwild.admin")) return;
             var navigate = navigation.get(slot);
             if (navigate != null) { navigate.run(); return; }
             if (slot == 13 && primary != null) { primary.run(); return; }

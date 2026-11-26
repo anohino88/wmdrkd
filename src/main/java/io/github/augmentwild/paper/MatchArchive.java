@@ -136,6 +136,12 @@ final class MatchArchive implements AutoCloseable {
                 if (!Files.exists(file,LinkOption.NOFOLLOW_LINKS)) AugmentHistory.write(file,encode(result));
                 Result saved = read(file);
                 addIndex(new Header(saved));
+                for (var row : index.values()) {
+                    if (expired(row.ended)) {
+                        Files.deleteIfExists(path(row.id));
+                        index.remove(row.id,row);
+                    }
+                }
                 synchronized (this) { pending.remove(result.id()); }
                 writes++;
                 diskNanos = System.nanoTime()-started;

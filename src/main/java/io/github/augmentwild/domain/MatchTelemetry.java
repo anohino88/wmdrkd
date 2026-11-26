@@ -54,6 +54,7 @@ public final class MatchTelemetry {
         for (UUID id : participants.stream().sorted().toList()) players.put(id, players.size());
         augments.start(players.keySet());
         playerClaims.clear();
+        casts.clear();
         kills = new int[players.size()];
         deaths = new int[players.size()];
         lastCombat.clear();
@@ -115,6 +116,11 @@ public final class MatchTelemetry {
         add(Counter.CLAIM_DELAY_MS, millis);
     }
 
+    private final Map<UUID,Map<String,Integer>> casts = new HashMap<>();
+    public void cast(UUID player,String id) {
+        if (active && players.containsKey(player)) casts.computeIfAbsent(player,ignored -> new TreeMap<>()).merge(id,1,Integer::sum);
+    }
+
     public int kills(UUID id) { return players.containsKey(id) ? kills[players.get(id)] : 0; }
     public int deaths(UUID id) { return players.containsKey(id) ? deaths[players.get(id)] : 0; }
     public List<String> attained(UUID id) {
@@ -126,6 +132,7 @@ public final class MatchTelemetry {
         completedSynergies.stream().filter(k -> k.startsWith(member)).forEach(k -> lines.add("시너지 · " + k.substring(member.length())));
         resonances.stream().filter(k -> k.startsWith(member)).sorted()
                 .forEach(k -> lines.add("공명 · " + k.substring(member.length())));
+        casts.getOrDefault(id,Map.of()).forEach((skill,count) -> lines.add("스킬 사용 · " + skill + " ×" + count));
         return List.copyOf(lines);
     }
 

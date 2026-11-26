@@ -15,7 +15,7 @@ final class CombatFeedback implements Listener {
     private record Sample(EntityDamageEvent event, Player owner, LivingEntity victim, UUID root, String label,
                           CombatView.Receipt receipt, double shield,
                           boolean critical, boolean blocked, Location impact, long time, String incoming, String source,
-                          double original, double finalDamage, PaperOfficialCombat.DamageTrace trace) {}
+                          double original, double finalDamage, double armor, double blocking, PaperOfficialCombat.DamageTrace trace) {}
 
     private static final class Hit {
         final long start;
@@ -103,8 +103,8 @@ final class CombatFeedback implements Listener {
                 || !hud.beginObservation(e)) return;
         var raw = originals.remove(e);
         var trace = augments.trace(e);
-        boolean blocked = e.isApplicable(EntityDamageEvent.DamageModifier.BLOCKING)
-                && e.getDamage(EntityDamageEvent.DamageModifier.BLOCKING) < 0;
+        double blocking = modifier(e,EntityDamageEvent.DamageModifier.BLOCKING);
+        boolean blocked = blocking > 0;
         boolean crit = trace.critical() || e instanceof EntityDamageByEntityEvent attack && attack.isCritical();
         String label = trace.synthetic() ? "연쇄 · " + augments.effectName(trace.augment())
                 : trace.augment() != null ? "증강 포함" : e.getCause()==EntityDamageEvent.DamageCause.PROJECTILE ? "원거리" : "공격";
@@ -119,10 +119,15 @@ final class CombatFeedback implements Listener {
         String sourceName = source instanceof LivingEntity ? source.getName() : environmental ? "환경 · " + e.getCause().name() : "출처 미확인";
         var sample = new Sample(e,p,v,trace.origin()==null ? UUID.randomUUID() : trace.origin(),label,
                 DamageObservation.capture(e,v),trace.shield(),crit,blocked,v.getEyeLocation(),System.nanoTime(),incoming,sourceName,
-                raw == null ? Double.NaN : raw,e.getFinalDamage(),trace);
+                raw == null ? Double.NaN : raw,e.getFinalDamage(),modifier(e,EntityDamageEvent.DamageModifier.ARMOR),blocking,trace);
         if (e.isCancelled()) record(sample,0,0,0,false);
         else pending.put(v.getUniqueId(),sample);
     }
+    @SuppressWarnings("deprecation")
+    private static double modifier(EntityDamageEvent event,EntityDamageEvent.DamageModifier modifier) {
+        return event.isApplicable(modifier) ? Math.max(0,-event.getDamage(modifier)) : Double.NaN;
+    }
+
     void settle(UUID id) {
         Heal h = heals.remove(id);
         if (h != null && !h.event.isCancelled()) {
@@ -190,7 +195,7 @@ final class CombatFeedback implements Listener {
         var kind = kind(e,augment,trace.synthetic(),active);
         var event = hud.event(source == null ? null : source.getUniqueId(),sample.victim.getUniqueId(),
                 sample.source,kind,e.getCause().name(),augment,active ? augment : null,sample.root,
-                sample.original,sample.finalDamage,hp,absorption,shield,0,e.isCancelled(),false,sample.critical,sample.blocked,unknown);
+                sample.original,sample.finalDamage,sample.armor,sample.blocking,hp,absorption,shield,0,e.isCancelled(),false,sample.critical,sample.blocked,unknown);
         String amounts = " · 체력 " + fmt(hp) + " · 흡수 " + fmt(absorption) + " · 보호막 " + fmt(shield)
                 + (event.cancelled() ? " · 취소" : unknown ? " · UNCLASSIFIED" : "");
         if (sample.victim instanceof Player victim) {

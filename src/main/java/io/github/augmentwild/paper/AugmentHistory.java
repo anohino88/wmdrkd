@@ -215,8 +215,18 @@ final class AugmentHistory implements AutoCloseable {
         for (String id : augments) {
             var totals = new EnumMap<Metric,Double>(Metric.class);
             for (var match : selected) match.stats().rows().getOrDefault(id,Map.of()).forEach((k,v) -> totals.merge(k,v,Double::sum));
-            result.add(id + " · 선택 " + ratio(totals,Metric.PICKED,Metric.OFFERED)
-                    + " · 보유 시 승리 " + ratio(totals,Metric.WON,Metric.OWNED));
+            String selection = ratio(totals,Metric.PICKED,Metric.OFFERED);
+            if (filter.round() > 0) {
+                String suffix = "/" + filter.round();
+                long offered = 0, picked = 0;
+                for (var match : selected) for (var row : match.stats().offersByRound().entrySet()) {
+                    String key = row.getKey();
+                    if (key.endsWith(suffix) && key.startsWith(id+"/")) offered += row.getValue();
+                    if (key.endsWith(suffix) && key.startsWith("pick/"+id+"/")) picked += row.getValue();
+                }
+                selection = filter.version().equals(VERSION) ? "이전 형식에 회차별 선택 없음" : ratio(picked,offered);
+            }
+            result.add(id + " · 선택 " + selection + " · 보유 시 승리 " + ratio(totals,Metric.WON,Metric.OWNED));
         }
         return result;
     }
@@ -270,12 +280,29 @@ final class AugmentHistory implements AutoCloseable {
         if (!async(() -> {
             try {
                 Files.createDirectories(directory);
-                var lines = new ArrayList<>(List.of("schema,match_id,game_version,ended_utc,participants,augment,metric,value"));
-                matches.values().stream().sorted(java.util.Comparator.comparing(Match::ended))
-                        .forEach(match -> new TreeMap<>(match.stats().rows()).forEach((id,row) -> new TreeMap<>(row).forEach((metric,n) ->
-                                lines.add(SCHEMA + "," + match.id()+","+match.version()+","+match.ended()+","
-                                        + match.participants()+","+id+","+metric+","+n))));
-                write(directory.resolve("export.csv"),lines);
+                Path target = directory.resolve("export.csv");
+                Path temp = Files.createTempFile(directory,".export-",".csv");
+                try {
+                    try (var output = Files.newBufferedWriter(temp)) {
+                        output.write("schema,match_id,game_version,ended_utc,participants,augment,metric,value");
+                        output.newLine();
+                        for (var match : matches.values().stream().sorted(java.util.Comparator.comparing(Match::ended)).toList()) {
+                            String prefix = SCHEMA + "," + match.id()+","+match.version()+","+match.ended()+","+match.participants()+",";
+                            for (var row : new TreeMap<>(match.stats().rows()).entrySet()) for (var metric : new TreeMap<>(row.getValue()).entrySet()) {
+                                output.write(prefix+row.getKey()+","+metric.getKey()+","+metric.getValue());
+                                output.newLine();
+                            }
+                            for (var row : new TreeMap<>(match.stats().offersByRound()).entrySet()) {
+                                String[] fields = row.getKey().split("/");
+                                int position = fields.length-3;
+                                output.write(prefix+fields[position]+","+(position==0 ? "OFFER_" : "PICK_")
+                                        +fields[position+1]+"_"+fields[position+2]+","+row.getValue());
+                                output.newLine();
+                            }
+                        }
+                    }
+                    Files.move(temp,target,StandardCopyOption.ATOMIC_MOVE,StandardCopyOption.REPLACE_EXISTING);
+                } finally { Files.deleteIfExists(temp); }
                 logger.info("Augment statistics exported to " + directory.resolve("export.csv"));
             } catch (IOException | RuntimeException failure) { warn("CSV 내보내기 실패",failure); }
         })) return status();

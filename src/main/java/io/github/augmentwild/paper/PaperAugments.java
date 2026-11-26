@@ -914,7 +914,9 @@ final class PaperAugments implements Listener {
                         var growth = official.details(codex.owner,id).stream().map(Component::text).<Component>map(line -> line).toList();
                         var relations = new ArrayList<>(official.candidateRelations(codex.owner,id,profile.owned));
                         relations.addAll(official.resonanceDetails(codex.owner,id));
-                        ArtGallery.detail(player,art,id,def.name(),item,lore.subList(0,6),growth,
+                        var effects = new ArrayList<>(lore.subList(0,6));
+                        official.configuredFollowup(id).forEach(line -> effects.add(Component.text(line)));
+                        ArtGallery.detail(player,art,id,def.name(),item,effects,growth,
                                 relations.stream().<Component>map(Component::text).toList(),() -> {
                             if (!Objects.equals(codex.match,match)) return;
                             renderCodex(player,codex);

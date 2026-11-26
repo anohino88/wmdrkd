@@ -579,6 +579,18 @@ final class PaperOfficialCombat implements Listener {
                 * Math.min(rule.cap(), player.getLevel() / rule.threshold()))));
     }
 
+    List<String> configuredFollowup(String id) {
+        var values = catalog.config.getConfigurationSection("followups." + id);
+        if (values == null || !values.getBoolean("enabled")) return List.of();
+        var lines = new ArrayList<String>();
+        lines.add("추가 발동 · " + values.getString("description",""));
+        for (String key : new java.util.TreeSet<>(values.getKeys(false))) {
+            Object value = values.get(key);
+            if (value instanceof Number) lines.add(key.replace('-',' ') + " " + value);
+        }
+        return lines;
+    }
+
     List<String> candidateRelations(UUID player, String augment, Set<String> owned) {
         var lines = new ArrayList<String>();
         AugmentCombinations.UNIQUE.forEach((key, members) -> {
@@ -1807,6 +1819,7 @@ final class PaperOfficialCombat implements Listener {
         telemetry.augments().add(player.getUniqueId(),id,applied
                 ? io.github.augmentwild.domain.AugmentTelemetry.Metric.CAST_OK
                 : io.github.augmentwild.domain.AugmentTelemetry.Metric.CAST_FAILED,1);
+        if (applied) telemetry.cast(player.getUniqueId(),id);
         if (!applied) return castFeedback(player,state,id,false,switch (id) {
             case "duel_contract" -> "조준한 유효 상대가 없습니다.";
             case "bomb_alchemy" -> "폭탄이 이미 비행 중이거나 발사할 수 없습니다.";
