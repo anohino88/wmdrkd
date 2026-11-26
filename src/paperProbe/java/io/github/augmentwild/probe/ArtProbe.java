@@ -55,16 +55,22 @@ final class ArtProbe {
         int[] hudBars = {0,0};
         var hudAlerts = new java.util.ArrayList<net.kyori.adventure.text.Component>();
         var observed = new java.util.ArrayList<ItemDisplay>();
+        // Keep the 3-block cinema path in the pig's loaded chunk for every world spawn and seed.
+        var camera = pig.getLocation();
+        camera.setX((camera.getBlockX() & ~15) + 8.5);
+        camera.setZ((camera.getBlockZ() & ~15) + 8.5);
+        camera.setYaw(0);
+        camera.setPitch(0);
         var p = (Player) Proxy.newProxyInstance(Player.class.getClassLoader(),new Class<?>[]{Player.class},(proxy,method,args) -> {
             return switch (method.getName()) {
                 case "getUniqueId" -> pig.getUniqueId();
                 case "getWorld" -> pig.getWorld();
-                case "getLocation" -> pig.getLocation();
+                case "getLocation" -> camera.clone();
                 case "sendMessage" -> null;
                 case "showBossBar" -> { hudBars[0]++; yield null; }
                 case "hideBossBar" -> { hudBars[1]++; yield null; }
                 case "sendActionBar" -> { hudAlerts.add((net.kyori.adventure.text.Component)args[0]); yield null; }
-                case "getEyeLocation" -> pig.getEyeLocation();
+                case "getEyeLocation" -> camera.clone().add(0,1.62,0);
                 case "hasLineOfSight" -> true;
                 case "getPersistentDataContainer" -> pig.getPersistentDataContainer();
                 case "getOpenInventory" -> null;
