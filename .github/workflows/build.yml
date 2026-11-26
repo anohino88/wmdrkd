@@ -78,7 +78,7 @@ jobs:
   paper-smoke:
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 18
+    timeout-minutes: 32
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -225,7 +225,7 @@ jobs:
           if-no-files-found: ignore
   paper-version-compare:
     runs-on: ubuntu-latest
-    timeout-minutes: 18
+    timeout-minutes: 32
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -233,10 +233,10 @@ jobs:
           distribution: temurin
           java-version: '25'
       - uses: gradle/actions/setup-gradle@v4
-      - name: Compare 8.2.1 Parts 3 and 4 on pinned Paper, one host and seed
+      - name: Compare 8.2 and Parts 4 and 5 with repeated Paper samples
         run: bash scripts/compare-paper-versions.sh
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: paper-version-comparison
-          path: build/version-comparison/*.log
+          path: build/version-comparison/

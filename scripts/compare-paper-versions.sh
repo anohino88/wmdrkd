@@ -7,10 +7,12 @@ out="$root/build/version-comparison"
 mkdir -p "$out"
 trap 'rm -rf "$fixture"' EXIT
 
-for version in part3 part4; do
+for version in ${AW_COMPARE_VERSIONS:-phase82 part4 part5}; do
     case "$version" in
-        part3) commit=e4e8f2c3146f3deb8fdf8235a6e01aa41727a6b1 ;;
-        part4) commit=$(git -C "$root" rev-parse HEAD) ;;
+        phase82) commit=099a6d668fcbca9f357a49953c2fc49738160b31 ;;
+        part4) commit=0ef1c55f9f85fc09c9991239c63e64c5585a093f ;;
+        part5) commit=$(git -C "$root" rev-parse HEAD) ;;
+        *) exit 2 ;;
     esac
     if ! git -C "$root" cat-file -e "$commit^{commit}"; then
         git -C "$root" fetch --no-tags --depth=1 origin "$commit"
@@ -18,60 +20,36 @@ for version in part3 part4; do
     checkout="$fixture/$version"
     mkdir -p "$checkout"
     git -C "$root" archive "$commit" | tar -x -C "$checkout"
-    # Change only the disposable test harness parameters, never the plugin sources.
-    python3 - "$checkout" <<'PY'
+    # Use the same VFX measurement fixture for all versions. Leave all production Java sources intact.
+    cp "$root/src/paperProbe/java/io/github/augmentwild/probe/PublicArtProbe.java" \
+        "$checkout/src/paperProbe/java/io/github/augmentwild/probe/"
+    python3 - "$checkout" "$out/$version.jfr" <<'PY'
 import sys
 from pathlib import Path
-
-root = Path(sys.argv[1])
-# Match the API dependency to the server binary in both disposable builds.
+root, recording = Path(sys.argv[1]), sys.argv[2]
 gradle = root / "build.gradle.kts"
-text = gradle.read_text()
-assert "paper-api:26.3.build.+" in text
-gradle.write_text(text.replace("paper-api:26.3.build.+","paper-api:26.3.build.257-stable"))
-
-probe = root / "src/paperProbe/java/io/github/augmentwild/probe/SyntheticCombatLoad.java"
-text = probe.read_text()
-for original, replacement in (
-    ("warmup = extended ? 50 : 0", "warmup = 20"),
-    ("samples = extended ? 300 : 30", "samples = 100"),
-):
-    if original not in text:
-        raise SystemExit(f"Fixture contract changed for {probe.name}")
-    text = text.replace(original, replacement)
-probe.write_text(text)
-vfx = root / "src/paperProbe/java/io/github/augmentwild/probe/PublicArtProbe.java"
-text = vfx.read_text()
-assert "WARMUP = 12, MEASURED = 48" in text
-text = text.replace("WARMUP = 12, MEASURED = 48", "WARMUP = 32, MEASURED = 96")
-text = text.replace("total_ticks=960","total_ticks=1920")
-marker = "            java.util.Arrays.sort(timing);"
-assert marker in text
-text = text.replace(marker, """
-            if (size == 16) {
-                for (int window = 0; window < 2; window++) {
-                    var half = java.util.Arrays.copyOfRange(timing,window * 48,(window + 1) * 48);
-                    java.util.Arrays.sort(half);
-                    probe.getLogger().info(String.format(java.util.Locale.ROOT,
-                            "AW_VFX_WINDOW mode=%s viewers=16 window=%d p95=%.3f",
-                            MODES.get(mode),window + 1,half[45]));
-                }
-            }
-""" + marker)
-vfx.write_text(text)
-smoke = root / "scripts/test-paper-smoke.sh"
-text = smoke.read_text().replace("pause-when-empty-seconds=-1", "pause-when-empty-seconds=-1\\nlevel-seed=67026")
-text = text.replace("total_ticks=960\", 150", "total_ticks=1920\", 220")
-text = text.replace('select(.channel == "STABLE")', 'select(.channel == "STABLE" and .id == 257)')
-# Independent servers still use one pinned Paper binary.
-text = text.replace('else 30)', 'else 65)')
-smoke.write_text(text)
+gradle.write_text(gradle.read_text().replace("paper-api:26.3.build.+","paper-api:26.3.build.257-stable"))
+path = root / "scripts/test-paper-smoke.sh"
+src = path.read_text().replace("pause-when-empty-seconds=-1","pause-when-empty-seconds=-1\\nlevel-seed=67026")
+src = src.replace('select(.channel == "STABLE")','select(.channel == "STABLE" and .id == 257)')
+src = src.replace('["java", f"-Daugmentwild.pack.fixture=','["java", '
+                  +repr("-XX:StartFlightRecording=settings=profile,dumponexit=true,filename="+recording)
+                  +', f"-Daugmentwild.pack.fixture=')
+src = src.replace('AW_VFX_LOAD_PASS stages=20 total_ticks=960", 150','AW_VFX_REPEAT_PASS stages=25 total_ticks=1200", 420')
+src = src.replace('else 30)', 'else 65)')
+path.write_text(src)
 PY
+    status=0
     (
         cd "$checkout"
-        ./gradlew --no-daemon assemble paperProbeJar
-        AW_BORDER_PROBE=1 AW_EXTENDED_LOAD=1 RUNNER_TEMP="$checkout" bash scripts/test-paper-smoke.sh
-    )
-    cp "$checkout/augmentwild-paper-smoke/server.log" "$out/$version.log"
-    grep -E 'SYNTHETIC_LOAD_TEST|AW_VFX_WINDOW|AW_VFX_LOAD mode=.*viewers=16' "$out/$version.log"
+        ./gradlew --no-daemon assemble paperProbeJar &&
+        AW_REPEAT_VFX=1 AW_BORDER_PROBE=1 AW_EXTENDED_LOAD=1 RUNNER_TEMP="$checkout" bash scripts/test-paper-smoke.sh
+    ) || status=$?
+    if [[ -f "$checkout/augmentwild-paper-smoke/server.log" ]]; then
+        cp "$checkout/augmentwild-paper-smoke/server.log" "$out/$version.log"
+    fi
+    if (( status != 0 )); then exit "$status"; fi
+    grep -E 'AW_VFX_REPEAT |AW_VFX_LOAD mode=.*viewers=16' "$out/$version.log"
+    jfr summary "$out/$version.jfr" > "$out/$version-jfr.txt"
+    jfr print --events jdk.ExecutionSample,jdk.ObjectAllocationSample --stack-depth 10 --json "$out/$version.jfr" > "$out/$version-profile.json"
 done

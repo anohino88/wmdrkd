@@ -152,7 +152,12 @@ final class PublicArtProbe {
 
     /** Same JVM, seed, work cadence, terrain and tick counts across graphics settings. */
     private static final class Load implements org.bukkit.event.Listener {
-        static final int WARMUP = 12, MEASURED = 48;
+        static final boolean COMPARE = "1".equals(System.getenv("AW_REPEAT_VFX"));
+        static final int WARMUP = COMPARE ? 48 : 12, MEASURED = 48;
+        static final int REPEATS = COMPARE ? 5 : 1;
+        static final com.sun.management.ThreadMXBean ALLOCATION =
+                java.lang.management.ManagementFactory.getThreadMXBean() instanceof com.sun.management.ThreadMXBean bean
+                        && bean.isThreadAllocatedMemoryEnabled() ? bean : null;
         static final List<String> MODES = List.of("OFF","LOW","STANDARD","HIGH","ULTRA");
         final JavaPlugin probe;
         final Location site;
@@ -160,13 +165,15 @@ final class PublicArtProbe {
         final org.bukkit.Chunk chunk;
         final List<Viewer> all = new ArrayList<>();
         final double[] timing = new double[MEASURED];
+        final double[] vfx = new double[MEASURED];
+        final long[] bytes = new long[MEASURED];
         final java.util.Random random = new java.util.Random();
         PaperArt art;
         UUID packId;
         java.lang.reflect.Method combat,cue,tick,clear,metrics;
         Object hit,guard,danger,trail;
         org.bukkit.scheduler.BukkitTask task;
-        int mode, size = 2, frame;
+        int mode, size = COMPARE ? 16 : 2, frame, repeat;
         long gcAtStart;
         long heapAtStart, peakHeap;
         boolean recorded;
@@ -249,6 +256,8 @@ final class PublicArtProbe {
                     heapAtStart = heap();
                     peakHeap = heapAtStart;
                 }
+                long allocation = COMPARE && ALLOCATION != null ? ALLOCATION.getCurrentThreadAllocatedBytes() : -1;
+                long start = COMPARE ? System.nanoTime() : 0;
                 if (frame++ % 6 == 0) {
                     for (int index = 0; index < size; index++) {
                         Viewer source = all.get(index);
@@ -263,6 +272,11 @@ final class PublicArtProbe {
                     }
                 }
                 tick.invoke(art);
+                if (COMPARE && frame > WARMUP) {
+                    int index = frame-WARMUP-1;
+                    vfx[index] = (System.nanoTime()-start)/1e6;
+                    bytes[index] = allocation < 0 ? -1 : ALLOCATION.getCurrentThreadAllocatedBytes()-allocation;
+                }
                 recorded = true;
             } catch (ReflectiveOperationException failure) {
                 stop();
@@ -278,6 +292,17 @@ final class PublicArtProbe {
             if (frame < WARMUP+MEASURED) return;
             double mean = java.util.Arrays.stream(timing).average().orElseThrow();
             long over = java.util.Arrays.stream(timing).filter(t -> t > 50).count();
+            if (COMPARE) {
+                var ordered = vfx.clone();
+                java.util.Arrays.sort(ordered);
+                probe.getLogger().info(String.format(java.util.Locale.ROOT,
+                        "AW_VFX_REPEAT mode=%s viewers=%d repeat=%d vfx_mean=%.3f vfx_p50=%.3f vfx_p95=%.3f vfx_p99=%.3f vfx_max=%.3f alloc_bytes=%d",
+                        MODES.get(mode),size,repeat+1,java.util.Arrays.stream(vfx).average().orElseThrow(),
+                        ordered[MEASURED/2-1],ordered[(int)Math.ceil(MEASURED*.95)-1],ordered[MEASURED-1],
+                        ordered[MEASURED-1],bytes[0]<0 ? -1 : java.util.Arrays.stream(bytes).sum()));
+                probe.getLogger().info("AW_VFX_RAW mode="+MODES.get(mode)+" repeat="+(repeat+1)+" ms="
+                        +java.util.Arrays.toString(timing)+" vfx_ms="+java.util.Arrays.toString(vfx)+" bytes="+java.util.Arrays.toString(bytes));
+            }
             java.util.Arrays.sort(timing);
             String metricsLine = (String) metrics.invoke(art);
             int cap = Integer.parseInt(java.util.regex.Pattern.compile("peak_displays=(\\d+)").matcher(metricsLine)
@@ -293,14 +318,18 @@ final class PublicArtProbe {
                     "AW_VFX_LOAD mode=%s viewers=%d ticks=%d seed=67026 mean=%.3f p50=%.3f p95=%.3f p99=%.3f max=%.3f over50=%d heap_start=%d heap_peak=%d gc_ms=%d %s",
                     MODES.get(mode),size,MEASURED,mean,percentile(.5),percentile(.95),percentile(.99),timing[MEASURED-1],over,
                     heapAtStart,peakHeap,gc()-gcAtStart,metricsLine));
-            if (++mode == MODES.size()) {
-                mode = 0;
-                size *= 2;
+            if (++repeat == REPEATS) {
+                repeat = 0;
+                if (++mode == MODES.size()) {
+                    mode = 0;
+                    size *= 2;
+                }
             }
             if (size <= 16) next();
             else {
                 stop();
-                probe.getLogger().info("AW_VFX_LOAD_PASS stages=20 total_ticks=960");
+                probe.getLogger().info(COMPARE ? "AW_VFX_REPEAT_PASS stages=25 total_ticks=1200"
+                        : "AW_VFX_LOAD_PASS stages=20 total_ticks=960");
             }
         }
 
