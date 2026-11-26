@@ -48,6 +48,7 @@ final class PaperSupply implements Listener {
         boolean announced, published, attempted;
 
         Delivery(SupplyPlan.Drop plan) { this.plan = plan; }
+        boolean approached;
     }
     private record Opening(Delivery delivery, Location origin, long deadline) { }
 
@@ -83,7 +84,13 @@ final class PaperSupply implements Listener {
         recovery = new SupplyRecovery(plugin);
     }
 
-    boolean recover() { return recovery.recover(); }
+    private String recoveryStatus = "NOT_RUN";
+    String recoveryStatus() { return recoveryStatus; }
+    boolean recover() {
+        boolean ok = recovery.recover();
+        recoveryStatus = (ok ? "PASS" : "WARN · 작업 또는 소유권 확인 필요") + " · " + java.time.Instant.now();
+        return ok;
+    }
 
     List<Timeline.Event> start(UUID id, List<Location> positions) {
         match = id;
@@ -122,6 +129,7 @@ final class PaperSupply implements Listener {
                     continue;
                 }
                 var p = delivery.position;
+                stats.supplyFirst(delivery.plan.id(),"public",elapsed);
                 notice.accept(label(delivery) + " 위치 · " + p.getBlockX() + ", " + p.getBlockY() + ", " + p.getBlockZ());
             }
             if (second >= opensAt) spawn(delivery);
@@ -131,6 +139,11 @@ final class PaperSupply implements Listener {
             lastMarkerCheck = second;
             for (var delivery : List.copyOf(spawned.values())) {
                 if (claimable(delivery)) {
+                    if (!delivery.approached && delivery.position.getNearbyPlayers(settings.range()).stream()
+                            .anyMatch(player -> eligible(player,delivery))) {
+                        delivery.approached = true;
+                        stats.supplyFirst(delivery.plan.id(),"approach",elapsed);
+                    }
                     art.supplyMarker(delivery.position,delivery.plan.premium());
                     continue;
                 }
@@ -228,6 +241,7 @@ final class PaperSupply implements Listener {
         }
         spawned.put(Site.at(location), delivery);
         delivery.arrived = elapsed;
+        stats.supplyFirst(delivery.plan.id(),"spawn",elapsed);
         stats.count(Counter.CREATED);
         notice.accept(label(delivery) + "이 도착했습니다.");
         art.supply(location,delivery.plan.premium());
@@ -271,6 +285,7 @@ final class PaperSupply implements Listener {
             ItemStack[] after = MatchInventory.fit(before, inventory.getMaxStackSize(), delivery.loot);
             if (after == null) {
                 stats.count(Counter.PAYOUT_FAILURES);
+                stats.supplyCount(delivery.plan.id(),"payout_failure");
                 player.sendMessage("보급을 받을 인벤토리 공간이 필요합니다.");
                 return;
             }
@@ -281,6 +296,7 @@ final class PaperSupply implements Listener {
         }
         if (result != MatchInventory.Write.DELIVERED) {
             stats.count(Counter.PAYOUT_FAILURES);
+            stats.supplyCount(delivery.plan.id(),"payout_failure");
             if (result == MatchInventory.Write.UNCERTAIN) {
                 remove(delivery);
                 notice.accept(label(delivery) + " 지급 상태를 확인할 수 없어 회수했습니다. 관리자에게 알려 주세요.");
@@ -288,6 +304,7 @@ final class PaperSupply implements Listener {
             return;
         }
         delivery.claimed = true;
+        stats.supplyFirst(delivery.plan.id(),"claim",elapsed);
         stats.supplyClaim(delivery.plan.id(), (elapsed - delivery.arrived) / 1_000_000L,player.getUniqueId());
         remove(delivery);
         notice.accept(player.getName() + " 님이 " + label(delivery) + "을 획득했습니다.");
@@ -332,7 +349,7 @@ final class PaperSupply implements Listener {
         lastMarkerCheck = -1;
         paused = false;
         prepared = false;
-        if (match != null) recovery.recover();
+        if (match != null) recover();
         match = null;
     }
 
@@ -343,15 +360,25 @@ final class PaperSupply implements Listener {
             if (victim.getWorld().equals(delivery.position.getWorld())
                     && victim.distanceSquared(delivery.position) <= square(settings.pvpRadius())) {
                 stats.count(Counter.SUPPLY_PVP);
+                stats.supplyCount(delivery.plan.id(),"pvp");
                 return;
             }
         }
     }
 
-    void disconnect(UUID id) { opening.remove(id); }
+    void disconnect(UUID id) {
+        var work = opening.remove(id);
+        if (work != null) stats.supplyCount(work.delivery().plan.id(),"opening_cancelled");
+    }
+
+    void snapshotAvailability() {
+        for (var delivery : spawned.values()) stats.supplyUnclaimed(delivery.plan.id());
+    }
 
     private void interrupt(UUID id, String reason) {
-        if (opening.remove(id) != null) {
+        var work = opening.remove(id);
+        if (work != null) {
+            stats.supplyCount(work.delivery().plan.id(),"opening_cancelled");
             Player player = plugin.getServer().getPlayer(id);
             if (player != null) player.sendMessage("보급 개봉 중단 · " + reason);
         }
@@ -379,6 +406,12 @@ final class PaperSupply implements Listener {
         var id = player.getUniqueId();
         if (opening.containsKey(id)) return;
         stats.count(Counter.OPEN_ATTEMPTS);
+        stats.supplyCount(delivery.plan.id(),"opening_attempt");
+        stats.supplyFirst(delivery.plan.id(),"opening",elapsed);
+        if (!delivery.approached) {
+            delivery.approached = true;
+            stats.supplyFirst(delivery.plan.id(),"approach",elapsed);
+        }
         opening.put(id, new Opening(delivery, player.getLocation(), elapsed + settings.openingNanos()));
     }
 

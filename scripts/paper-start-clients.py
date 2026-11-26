@@ -253,3 +253,34 @@ def exercise(command, log):
     finally:
         for client in clients:
             client.close()
+
+
+def verify_archive(command, log):
+    def wait(marker, timeout=25):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if marker.encode() in log.read_bytes():
+                return
+            time.sleep(.1)
+        raise RuntimeError("Missing archive restart marker: " + marker)
+
+    folders = log.parent / "plugins/AugmentWild"
+    saves = sorted((folders / "match-history").glob("*.tsv"))
+    if len(saves) != 4:
+        raise AssertionError(f"Expected four actual stopped match snapshots, found {len(saves)}")
+    headers = [path.read_text().splitlines()[0].split("\t") for path in saves]
+    if {row[6] for row in headers} != {"PRACTICE", "NORMAL"} or any(row[7] != "CANCELLED" for row in headers):
+        raise AssertionError(f"Unexpected saved mode or outcome: {headers}")
+    if list((folders / "analytics").glob("*.tsv")):
+        raise AssertionError("Practice or stopped matches polluted production analytics")
+    command(f"aw admin history {saves[0].stem}")
+    wait("규칙 지문")
+    client = Client(0)
+    try:
+        if not client.ready.wait(25) or client.failure:
+            raise RuntimeError(f"Archive client did not reconnect: {client.failure}")
+        wait("AW00 joined the game")
+        command("aw821probe history AW00")
+        wait("AW_MATCH_ARCHIVE_RESTART_PASS")
+    finally:
+        client.close()

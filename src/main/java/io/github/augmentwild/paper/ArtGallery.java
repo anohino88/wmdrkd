@@ -88,6 +88,25 @@ final class ArtGallery implements PaperMenu {
         p.openInventory(view.inventory);
     }
 
+    private final java.util.Map<Integer,Runnable> navigation = new java.util.HashMap<>();
+
+    static void history(Player p,PaperArt art,List<String> lines,List<Runnable> details,Runnable previous,Runnable next) {
+        var view = new ArtGallery(p,art,PaperArt.Screen.JOURNAL,"나의 경기 기록",6,List.of(),() -> false);
+        view.put(p,4,Material.WRITABLE_BOOK,"gui/journal","나의 경기 기록");
+        view.updateRows(p,"journal",lines.isEmpty() ? List.of("조회 가능한 경기 기록 없음") : lines);
+        for (int i=0;i<details.size();i++) view.navigation.put(9+i,details.get(i));
+        if (previous != null) {
+            view.put(p,45,Material.ARROW,"gui/previous","이전 페이지");
+            view.navigation.put(45,previous);
+        }
+        if (next != null) {
+            view.put(p,51,Material.ARROW,"gui/next","다음 페이지");
+            view.navigation.put(51,next);
+        }
+        view.returnTo(p,() -> p.performCommand("aw menu"));
+        p.openInventory(view.inventory);
+    }
+
     boolean isStatusFor(Player viewer) { return liveStatus && owner.equals(viewer.getUniqueId()); }
 
     void updateRows(Player p,String symbol,List<String> rows) {
@@ -206,6 +225,8 @@ final class ArtGallery implements PaperMenu {
 
     private void activate(Player p, int slot) {
         if (entries.isEmpty()) {
+            var navigate = navigation.get(slot);
+            if (navigate != null) { navigate.run(); return; }
             if (slot == 13 && primary != null) { primary.run(); return; }
             if (slot == 7 && detailPreview != null) {
                 if (!art.canPreview(p)) p.sendMessage("활성 경기에서 발동 연출을 미리 볼 수 있습니다.");

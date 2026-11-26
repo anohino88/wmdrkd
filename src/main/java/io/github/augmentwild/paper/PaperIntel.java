@@ -1,6 +1,7 @@
 package io.github.augmentwild.paper;
 
 import io.github.augmentwild.domain.CombatIntel;
+import io.github.augmentwild.domain.CombatEvent;
 import io.github.augmentwild.domain.CombatIntel.Damage;
 import io.github.augmentwild.domain.CombatIntel.Kind;
 import io.github.augmentwild.domain.MatchSimulationClock;
@@ -20,11 +21,9 @@ import org.bukkit.Location;
 import org.bukkit.Material;
 import io.github.augmentwild.domain.HudMessages.Layer;
 import org.bukkit.entity.Player;
-import org.bukkit.entity.Projectile;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
-import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
@@ -32,7 +31,6 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 final class PaperIntel implements Listener {
     private static final int PAGE_SIZE = 27;
-    private static final Set<String> PERIODIC = Set.of("infernal_conductor", "venom_swarm", "void_lord");
     private static final Set<String> AREA = Set.of("steel_king", "chain_impact", "explosive_arrow", "earthquake_mage",
             "final_judgment", "bomb_alchemy", "falling_shockwave", "calamity_giant");
     private final JavaPlugin plugin;
@@ -55,7 +53,6 @@ final class PaperIntel implements Listener {
     private final Map<UUID, Report> deaths = new HashMap<>();
     private final Map<UUID, Long> lateDeathViews = new HashMap<>();
     private final Map<UUID, CombatIntel.History> histories = new HashMap<>();
-    private final Set<EntityDamageEvent> recorded = Collections.newSetFromMap(new WeakHashMap<>());
     private UUID match;
 
     record Card(Material icon, Component name, List<Component> lore) {
@@ -297,43 +294,25 @@ final class PaperIntel implements Listener {
         return show(player, deaths.get(player.getUniqueId()), "최근 사망 분석이 없습니다.");
     }
 
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    @SuppressWarnings("deprecation")
-    public void damage(EntityDamageEvent event) {
-        if (match == null || !(event.getEntity() instanceof Player player)
-                || !playable(player) || !recorded.add(event)) return;
-        var trace = augments.trace(event);
-        double health = Math.min(player.getHealth(), Math.max(0, event.getFinalDamage()));
-        double absorption = event.isApplicable(EntityDamageEvent.DamageModifier.ABSORPTION)
-                ? Math.max(0, -event.getDamage(EntityDamageEvent.DamageModifier.ABSORPTION)) : 0;
-        double shield = trace.shield();
-        if (!Double.isFinite(health) || !Double.isFinite(shield) || !Double.isFinite(absorption)
-                || health == 0 && shield == 0 && absorption == 0) return;
-        var source = event.getDamageSource().getCausingEntity();
-        Player attacker = source instanceof Player p ? p : source instanceof Projectile projectile
-                && projectile.getShooter() instanceof Player p ? p : null;
-        if (attacker != null && !attacker.equals(player) && playable(attacker)) {
-            stats.engage(attacker.getUniqueId(), player.getUniqueId(), clock.get().elapsedNanos());
-            nearbyPvp.accept(player.getLocation());
+    void confirmed(CombatEvent event,Location impact) {
+        if (match == null || !match.equals(event.match()) || !event.applied()) return;
+        Player attacker = event.actor() == null ? null : plugin.getServer().getPlayer(event.actor());
+        if (attacker != null && !event.actor().equals(event.target()) && playable(attacker)) {
+            stats.engage(event.actor(),event.target(),event.elapsed());
+            nearbyPvp.accept(impact);
         }
-        Kind kind = classify(event, trace.synthetic(), trace.augment());
-        histories.computeIfAbsent(player.getUniqueId(), id -> new CombatIntel.History(settings.historySize(), settings.historyWindow()))
-                .add(new Damage(clock.get().elapsedNanos(), attacker == null ? null : attacker.getUniqueId(),
-                        attacker == null ? null : attacker.getName(), kind, event.getCause().name(),
-                        trace.augment(), trace.origin(), health, shield, absorption));
-    }
-
-    private static Kind classify(EntityDamageEvent event, boolean synthetic, String augment) {
-        if (synthetic && PERIODIC.contains(augment)) return Kind.PERIODIC;
-        if (synthetic && AREA.contains(augment)) return Kind.AREA;
-        if (synthetic) return Kind.AUGMENT;
-        return switch (event.getCause()) {
+        Kind kind = switch (event.kind()) {
+            case MELEE -> Kind.MELEE;
             case PROJECTILE -> Kind.PROJECTILE;
-            case ENTITY_ATTACK, ENTITY_SWEEP_ATTACK -> Kind.MELEE;
-            case ENTITY_EXPLOSION, BLOCK_EXPLOSION -> Kind.AREA;
-            case FIRE_TICK, POISON, WITHER -> Kind.PERIODIC;
+            case PERIODIC, DELAYED -> Kind.PERIODIC;
+            case ACTIVE, CHAIN, AUGMENT -> AREA.contains(event.augment()) ? Kind.AREA : Kind.AUGMENT;
+            case UNCLASSIFIED -> Kind.UNCLASSIFIED;
             default -> Kind.ENVIRONMENT;
         };
+        histories.computeIfAbsent(event.target(),id -> new CombatIntel.History(settings.historySize(),settings.historyWindow()))
+                .add(new Damage(event.elapsed(),attacker == null ? null : event.actor(),
+                        attacker == null ? null : event.source(),kind,event.cause(),event.augment(),event.root(),
+                        event.hp(),event.shield(),event.absorption()));
     }
 
     void death(Player player, org.bukkit.damage.DamageSource finalSource) {
@@ -341,7 +320,7 @@ final class PaperIntel implements Listener {
         var history = histories.remove(id);
         List<Damage> hits = history == null ? List.of() : history.snapshot(clock.get().elapsedNanos());
         var cards = new ArrayList<Card>();
-        String killer = player.getKiller() == null ? "확인되지 않음" : player.getKiller().getName();
+        String killer = finalSource.getCausingEntity() instanceof Player attacker ? attacker.getName() : "직접 처치자 확인되지 않음";
         double total = hits.stream().mapToDouble(Damage::health).sum();
         double shield = hits.stream().mapToDouble(Damage::shield).sum();
         double vanilla = hits.stream().mapToDouble(Damage::absorption).sum();
@@ -368,13 +347,30 @@ final class PaperIntel implements Listener {
         contributors.forEach((source, name) -> cards.add(card(Material.PLAYER_HEAD, name,
                 "체력 피해 기여 " + points(contributorDamage.get(source)))));
         for (String effect : effects) cards.add(card(Material.AMETHYST_SHARD, augments.augmentName(effect), effect));
+        long deathAt = clock.get().elapsedNanos();
+        var extra = hud.events(id).stream().filter(event -> match.equals(event.match()) && event.target().equals(id)
+                && deathAt - event.elapsed() <= settings.historyWindow()
+                && (event.kind() == CombatEvent.Kind.HEAL || event.kind() == CombatEvent.Kind.RESCUE
+                    || event.kind() == CombatEvent.Kind.PROC || event.blocked() || event.unclassified())).toList();
+        double recovery = extra.stream().mapToDouble(CombatEvent::healed).sum();
+        cards.add(card(Material.GOLDEN_APPLE,"확인된 회복",points(recovery) + " HP · 최근 사건 표본"));
+        var timeCards = new java.util.TreeMap<Long,List<Card>>();
+        for (CombatEvent event : extra) {
+            String detail = event.healed() > 0 ? "회복 +" + points(event.healed()) : event.blocked() ? "방패 방어"
+                    : event.unclassified() ? "UNCLASSIFIED · 최종 이벤트 값과 확인 체력 변화 불일치"
+                    : event.augment() == null ? event.cause() : augments.augmentName(event.augment());
+            timeCards.computeIfAbsent(event.elapsed(),ignored -> new ArrayList<>()).add(card(Material.BOOK,
+                    secondsBefore(deathAt,event.elapsed()) + " · " + event.kind(),detail));
+        }
         for (int index = hits.size() - 1; index >= 0; index--) {
             Damage hit = hits.get(index);
-            long elapsed = hit.time() / 1_000_000_000L;
-            cards.add(card(Material.BOOK, String.format(Locale.ROOT, "%02d:%02d · %s", elapsed / 60, elapsed % 60, hit.kind()),
+            timeCards.computeIfAbsent(hit.time(),ignored -> new ArrayList<>()).add(card(Material.BOOK,
+                    secondsBefore(deathAt,hit.time()) + " · " + hit.kind(),
                     "출처 " + (hit.attackerName() == null ? hit.cause() : hit.attackerName()),
                     "체력 피해 " + points(hit.health()) + " · 보호막 " + points(hit.shield()) + " · 흡수 " + points(hit.absorption())));
         }
+        timeCards.values().forEach(cards::addAll);
+        cards.add(card(Material.SKELETON_SKULL,"0초 · 실제 사망",finalSource.getDamageType().getKey().toString()));
         retain(deaths, id, new Report(match, "사망 분석", cards, System.nanoTime() + settings.deathDeliveryLifetime()));
         scouts.remove(id);
         clearAim(id);
@@ -383,12 +379,16 @@ final class PaperIntel implements Listener {
         player.sendMessage("사망 분석을 저장했습니다. 기본 리스폰 후 /aw death로 볼 수 있습니다.");
     }
 
-    void finalizeDeath(UUID player,boolean eliminated) {
+    private static String secondsBefore(long death,long event) {
+        return String.format(Locale.ROOT,"%.1f초 전",Math.max(0,death-event) / 1e9);
+    }
+
+    void finalizeDeath(UUID player,boolean eliminated,boolean farming) {
         var report = deaths.get(player);
         if (report == null) return;
         var cards = new ArrayList<>(report.cards());
         cards.addFirst(card(eliminated ? Material.BARRIER : Material.CLOCK,
-                eliminated ? "최종 탈락" : "리스폰 예정",
+                eliminated ? "최종 탈락 · 관전" : farming ? "파밍 사망 · 리스폰" : "목숨 제한 사망 · 리스폰",
                 eliminated ? "현재 위치와 생존자의 실시간 상태는 공개되지 않습니다." : "리스폰이 끝난 뒤에도 필요할 때 조회할 수 있습니다."));
         retain(deaths,player,new Report(report.matchId(),report.title(),cards,report.deadline()));
     }
@@ -424,7 +424,6 @@ final class PaperIntel implements Listener {
         dwell.clear();
         scouts.clear();
         histories.clear();
-        recorded.clear();
         match = null;
     }
 

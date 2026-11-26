@@ -41,6 +41,8 @@ final class PlayerSnapshots {
 
     private Path path(UUID id) { return directory.resolve(id + ".yml"); }
 
+    int pendingCount() { return pending.size(); }
+
     boolean pending(UUID id) { return pending.contains(id); }
     boolean restoring(UUID id) { return restoring.contains(id); }
 

@@ -221,6 +221,13 @@ final class PaperAugments implements Listener {
         return rows;
     }
     List<String> availableSkills(Player player) { return official.availableSkills(player); }
+    List<String> registeredIds(String rarity) { return registry.selectable().stream()
+            .filter(definition -> definition.rarity().name().equalsIgnoreCase(rarity))
+            .map(AugmentDefinition::id).sorted().toList(); }
+    List<String> ownedIds(UUID id) {
+        var profile = profiles.get(id);
+        return profile == null ? List.of() : profile.owned.stream().sorted().toList();
+    }
     List<String> registeredIds() { return registry.selectable().stream().map(AugmentDefinition::id).sorted().toList(); }
     List<String> ownedIds(Player player) {
         var profile = profiles.get(player.getUniqueId());
@@ -375,6 +382,7 @@ final class PaperAugments implements Listener {
         if (definition == null || !definition.selectable()) return;
         profile.grantedRound = round;
         telemetry.augments().add(id,definition.id(),Metric.PICKED,1);
+        telemetry.augments().pickRound(id,definition.id(),definition.rarity().name(),round);
         if (choice.status() == SelectionRound.Status.AUTOMATIC)
             telemetry.augments().add(id,definition.id(),Metric.AUTO_PICKED,1);
         telemetry.count(choice.status() == SelectionRound.Status.AUTOMATIC ? Counter.AUTO_PICKS : Counter.MANUAL_PICKS);

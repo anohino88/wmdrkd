@@ -182,7 +182,9 @@ jobs:
         if: always()
         with:
           name: paper-match-start-log
-          path: ${{ runner.temp }}/augmentwild-paper-smoke/server.log
+          path: |
+            ${{ runner.temp }}/augmentwild-paper-smoke/server.log
+            ${{ runner.temp }}/augmentwild-paper-smoke/archive-restart.log
           if-no-files-found: ignore
   paper-combat-load:
     needs: build

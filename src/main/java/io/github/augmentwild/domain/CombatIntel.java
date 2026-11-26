@@ -57,7 +57,7 @@ public final class CombatIntel {
         }
     }
 
-    public enum Kind { MELEE, PROJECTILE, AUGMENT, PERIODIC, AREA, ENVIRONMENT }
+    public enum Kind { MELEE, PROJECTILE, AUGMENT, PERIODIC, AREA, ENVIRONMENT, UNCLASSIFIED }
 
     public record Damage(long time, UUID attacker, String attackerName, Kind kind, String cause,
                          String augment, UUID origin, double health, double shield, double absorption) {

@@ -15,7 +15,7 @@ import org.bukkit.entity.Player;
 /** Permission-aware, source-of-truth tab suggestions for the single /aw command. */
 final class AwCompletion implements TabCompleter {
     private static final List<String> PLAYER = List.of(
-            "menu", "join", "leave", "status", "augment", "augments", "ui", "combatlog",
+            "menu", "join", "leave", "status", "augment", "augments", "ui", "combatlog", "history",
             "supply", "result", "scout", "death", "skill", "cast", "art", "guide");
     private static final List<String> SKILL = List.of("bind", "select", "next", "unbind", "use", "status","menu","input");
     private static final List<String> LAB = List.of(
@@ -60,13 +60,15 @@ final class AwCompletion implements TabCompleter {
             choices = List.of("status","retry","safe","menu");
         } else if (first.equals("cast") && play && args.length == 2 && player != null) {
             choices = matches.availableSkills(player);
+        } else if (first.equals("history") && args.length == 2) {
+            choices = List.of("last");
         } else if (first.equals("admin") && admin) {
             if (args.length == 2) {
-                var options = new ArrayList<>(List.of("start", "stop", "arena", "art", "dashboard", "stats", "config"));
+                var options = new ArrayList<>(List.of("start", "stop", "arena", "art", "dashboard", "stats", "config", "history", "recover"));
                 if (lab) options.add("test");
                 choices = options;
             } else if (args[1].equalsIgnoreCase("stats")) {
-                if (args.length == 3) choices = List.of("augment","export");
+                if (args.length == 3) choices = List.of("augment","export","group");
                 else if (args.length == 4 && args[2].equals("augment")) choices = matches.registeredAugments();
             } else if (args[1].equalsIgnoreCase("config")) {
                 if (args.length == 3) choices = List.of("check","migrate","backup");

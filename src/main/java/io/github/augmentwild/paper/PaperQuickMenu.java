@@ -124,6 +124,7 @@ public final class PaperQuickMenu implements Listener {
         control(p,m,5,Material.ENCHANTED_BOOK,"choice","증강 선택",joined && !lobby ? () -> matches.openAugments(p) : null);
         control(p,m,6,Material.PAPER,"result","최근 경기 결과",() -> matches.result(p));
         control(p,m,7,Material.WRITABLE_BOOK,"journal","경기 안내",() -> matches.newcomerGuide(p));
+        control(p,m,8,Material.BOOK,"journal","이전 경기 기록",() -> matches.history(p,new String[0]));
         section(p,m,9,Material.ENCHANTED_BOOK,"sector_archive","증강 기록관");
         control(p,m,10,Material.CHEST,"owned","보유 증강",() -> matches.augmentSection(p,"owned"));
         control(p,m,11,Material.BOOK,"codex","증강 도감",() -> matches.openCodex(p),"희귀도 · 전투 계열 · 발동 방식");

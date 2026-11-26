@@ -24,6 +24,14 @@ final class ConfigMigration {
     private ConfigMigration() {}
 
     static Plan plan(String original) throws InvalidConfigurationException {
+        try {
+            var options = new org.yaml.snakeyaml.LoaderOptions();
+            options.setAllowDuplicateKeys(false);
+            var syntax = new org.yaml.snakeyaml.Yaml(new org.yaml.snakeyaml.constructor.SafeConstructor(options));
+            if (!(syntax.load(original) instanceof Map<?,?>)) throw new InvalidConfigurationException("YAML 최상위는 설정 맵이어야 합니다.");
+        } catch (org.yaml.snakeyaml.error.YAMLException failure) {
+            throw new InvalidConfigurationException("YAML 검증 실패 · " + failure.getMessage());
+        }
         var yaml = new YamlConfiguration();
         yaml.loadFromString(original);
         if (yaml.getKeys(false).isEmpty()) throw new InvalidConfigurationException("설정 맵이 비었습니다.");
@@ -50,6 +58,7 @@ final class ConfigMigration {
     static String run(Path file,String[] args) {
         try {
             if (!Files.isRegularFile(file) || Files.isSymbolicLink(file)) return "FAIL · config.yml을 찾을 수 없습니다.";
+            if (Files.size(file) > 2_000_000) return "FAIL · config.yml이 검사 크기 한도를 초과했습니다.";
             String original = Files.readString(file);
             if (args.length == 1 && args[0].equals("backup")) return "백업 · " + backup(file,original).getFileName();
             var plan = plan(original);

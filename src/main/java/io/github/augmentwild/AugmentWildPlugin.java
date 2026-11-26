@@ -96,7 +96,7 @@ public final class AugmentWildPlugin extends JavaPlugin {
         }
         if (args.length >= 2 && args[0].equalsIgnoreCase("admin")) {
             String operation = args[1].toLowerCase(Locale.ROOT);
-            if (java.util.Set.of("dashboard","config","stats").contains(operation)) {
+            if (java.util.Set.of("dashboard","config","stats","history","recover").contains(operation)) {
                 sender.sendMessage(matches.operations(sender,operation,java.util.Arrays.copyOfRange(args,2,args.length)));
                 return true;
             }
@@ -136,6 +136,11 @@ public final class AugmentWildPlugin extends JavaPlugin {
         if (args.length == 2 && args[0].equalsIgnoreCase("cast")) {
             sender.sendMessage(sender instanceof Player player
                     ? matches.castAugment(player, args[1].toLowerCase(Locale.ROOT)) : "플레이어 전용 명령입니다.");
+            return true;
+        }
+        if (args.length > 0 && args[0].equalsIgnoreCase("history")) {
+            sender.sendMessage(sender instanceof Player p
+                    ? matches.history(p,java.util.Arrays.copyOfRange(args,1,args.length)) : "플레이어 전용 명령입니다.");
             return true;
         }
         if (args.length != 1) return false;

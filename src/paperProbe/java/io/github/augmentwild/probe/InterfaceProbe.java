@@ -17,6 +17,28 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 /** Real Paper inventories and a protocol client; clicks are injected at the Paper event boundary. */
 final class InterfaceProbe {
+    static void history(JavaPlugin plugin,Player player) {
+        open(player,"aw history",54);
+        require(top(player).getItem(9) != null,"archive page has a saved result");
+        require(event(player,9,ClickType.NUMBER_KEY,InventoryAction.UNKNOWN).isCancelled(),"archive number-key lock");
+        command(player,"aw history last");
+        new org.bukkit.scheduler.BukkitRunnable() {
+            private int attempts;
+            @Override public void run() {
+                String title = net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText()
+                        .serialize(player.getOpenInventory().title());
+                if (title.equals("경기 기록 상세")) {
+                    require(top(player).getItem(9) != null,"saved result populated");
+                    plugin.getLogger().info("AW_MATCH_ARCHIVE_RESTART_PASS");
+                    cancel();
+                } else if (++attempts >= 40) {
+                    cancel();
+                    throw new AssertionError("Persisted result did not open: " + title);
+                }
+            }
+        }.runTaskTimer(plugin,1,1);
+    }
+
     static void lobby(JavaPlugin plugin,Player player) {
         open(player,"aw menu",54);
         require(top(player).getItem(36) == null,"ordinary user has no admin section");

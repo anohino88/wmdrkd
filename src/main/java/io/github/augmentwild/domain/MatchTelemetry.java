@@ -17,6 +17,18 @@ public final class MatchTelemetry {
     private final Map<Pair, Long> lastCombat = new HashMap<>();
     private final Map<Long, Integer> engagements = new TreeMap<>();
     private final Map<Long, Integer> survivors = new TreeMap<>();
+    private final Map<String,Long> supplyEvents = new TreeMap<>();
+    public Map<String,Long> supplyEvents() { return Map.copyOf(supplyEvents); }
+    public void supplyFirst(String drop,String event,long nanos) {
+        if (active) supplyEvents.putIfAbsent(drop+"."+event+"_ms",nanos/1_000_000);
+    }
+    public void supplyCount(String drop,String event) {
+        if (active) supplyEvents.merge(drop+"."+event,1L,Long::sum);
+    }
+    public void supplyUnclaimed(String drop) {
+        if (supplyEvents.containsKey(drop+".spawn_ms") && !supplyEvents.containsKey(drop+".claim_ms"))
+            supplyCount(drop,"unclaimed");
+    }
     private final Map<String, Long> claimDelays = new TreeMap<>();
     private final Map<String, Integer> synergies = new TreeMap<>();
     private final Map<String, Long> evolutions = new TreeMap<>();
@@ -48,9 +60,11 @@ public final class MatchTelemetry {
         engagements.clear();
         survivors.clear();
         claimDelays.clear();
+        supplyEvents.clear();
         synergies.clear();
         evolutions.clear();
         completedSynergies.clear();
+        resonances.clear();
         firstPvpSecond = -1;
         Arrays.fill(tickBuckets, 0);
         ticks = slowTicks = 0;
@@ -110,6 +124,8 @@ public final class MatchTelemetry {
         evolutions.forEach((key,time) -> { if (key.startsWith(prefix)) lines.add("진화 · " + key.substring(prefix.length())); });
         String member = index + ":";
         completedSynergies.stream().filter(k -> k.startsWith(member)).forEach(k -> lines.add("시너지 · " + k.substring(member.length())));
+        resonances.stream().filter(k -> k.startsWith(member)).sorted()
+                .forEach(k -> lines.add("공명 · " + k.substring(member.length())));
         return List.copyOf(lines);
     }
 
@@ -125,6 +141,14 @@ public final class MatchTelemetry {
             synergies.merge(effect,1,Integer::sum);
             augments.add(player,effect,AugmentTelemetry.Metric.SYNERGY,1);
         }
+    }
+
+    private final Set<String> resonances = new HashSet<>();
+
+    public void resonance(UUID player,String effect) {
+        Integer index = players.get(player);
+        if (active && index != null && resonances.add(index+":"+effect))
+            augments.add(player,effect,AugmentTelemetry.Metric.RESONANCE,1);
     }
 
     public void evolution(UUID player, String effect, long elapsedSeconds) {

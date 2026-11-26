@@ -468,6 +468,8 @@ final class PaperOfficialCombat implements Listener {
         var previous = state.resonance;
         state.resonance = resonance.families().state(owned.apply(id), dinosaurMultiplier);
         int previousGrowth = previous == null ? AugmentResonance.BASE : previous.familyMultiplier();
+        if (state.resonance.familyMultiplier() > AugmentResonance.BASE) telemetry.resonance(id,"stacking");
+        if (state.resonance.shieldPoints() > 0) telemetry.resonance(id,"life_echo");
         if (resonance.announce() && state.resonance.familyMultiplier() > previousGrowth) {
             announce(id, resonance.families().stacking().name() + " · 영구 중첩 획득량 +"
                     + percent(state.resonance.familyMultiplier() - AugmentResonance.BASE), resonance.sound());
@@ -788,7 +790,7 @@ final class PaperOfficialCombat implements Listener {
     private void gainHealth(Player player, double amount, String effect) {
         double previous = player.getHealth();
         player.setHealth(Math.min(maxHealth(player), previous + amount));
-        hud.heal(player,previous,player.getHealth());
+        hud.heal(player,previous,player.getHealth(),"AUGMENT",effect,amount);
         audit.add(effect, Metric.HEALED, player.getHealth() - previous);
         telemetry.augments().add(player.getUniqueId(),effect,
                 io.github.augmentwild.domain.AugmentTelemetry.Metric.HEALED,player.getHealth()-previous);

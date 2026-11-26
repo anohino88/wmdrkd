@@ -67,6 +67,9 @@ public final class PaperMatchService implements Listener {
     private UUID labWorld;
     private boolean soloLab;
     private long matchStarted;
+    private java.time.Instant startedAt;
+    private final String rulesFingerprint;
+    private long archiveSnapshotNanos;
     private long lastSurvivorSample;
 
     private record TeleportPermit(UUID matchId, Location target) { }
@@ -101,12 +104,16 @@ public final class PaperMatchService implements Listener {
     private final PracticeTarget target = new PracticeTarget();
     private final MatchTelemetry telemetry = new MatchTelemetry();
     private final AugmentHistory analytics;
+    private final MatchArchive archive;
+    private final Map<UUID,MatchArchive.PlayerResult> departed = new LinkedHashMap<>();
 
     public PaperMatchService(JavaPlugin plugin, PaperMatchSettings settings, ArenaSearchService search) {
         this.plugin = plugin;
         this.settings = settings;
-        analytics = new AugmentHistory(plugin.getDataFolder().toPath().resolve("analytics"),plugin.getLogger(),
-                Math.clamp(plugin.getConfig().getInt("telemetry-retention-days",90),1,3650));
+        int retention = Math.clamp(plugin.getConfig().getInt("telemetry-retention-days",90),1,3650);
+        analytics = new AugmentHistory(plugin.getDataFolder().toPath().resolve("analytics"),plugin.getLogger(),retention);
+        archive = new MatchArchive(plugin.getDataFolder().toPath().resolve("match-history"),retention,plugin.getLogger());
+        rulesFingerprint = rulesFingerprint(plugin, settings);
         overhead = new PaperOverheadHealth(plugin, this::augmentActive);
         this.search = search;
         snapshots = new PlayerSnapshots(plugin);
@@ -131,6 +138,7 @@ public final class PaperMatchService implements Listener {
                 this::augmentActive, this::insideAugmentBorder, this::supplyNotice, telemetry, art);
         intel = new PaperIntel(plugin, () -> clock, () -> session.participantIds(), this::augmentActive,
                 this::insideAugmentBorder, augments, telemetry, hud, supply::nearbyPvp, art);
+        feedback.onConfirmed(intel::confirmed);
     }
 
     private void notice(String message) {
@@ -434,17 +442,19 @@ public final class PaperMatchService implements Listener {
         if (!sender.hasPermission("augmentwild.admin")) return "관리자 권한이 없습니다.";
         return switch (feature) {
             case "config" -> ConfigMigration.run(plugin.getDataFolder().toPath().resolve("config.yml"),args);
-            case "stats" -> {
-                if (args.length == 1 && args[0].equals("export")) yield analytics.export();
-                if ((args.length == 2 || args.length == 3) && args[0].equals("augment")
-                        && (augments.registeredIds().contains(args[1]) || java.util.Set.of("unclassified","life_echo").contains(args[1])
-                                || io.github.augmentwild.augment.AugmentCombinations.UNIQUE.containsKey(args[1]))) {
-                    var lines = analytics.report(args[1],args.length == 3 ? args[2] : "8.2");
-                    if (sender instanceof Player player) ArtGallery.read(player,art,PaperArt.Screen.JOURNAL,"증강 통계",lines);
-                    yield String.join("\n",lines);
+            case "stats" -> statistics(sender,args);
+            case "history" -> args.length == 1 ? historyLookup(sender,args[0],true) : "/aw admin history <match-id>";
+            case "recover" -> switch (args.length == 1 ? args[0] : "") {
+                case "history" -> archive.retry();
+                case "stats" -> analytics.retry();
+                case "snapshots" -> {
+                    if (session.state() != MatchState.WAITING) yield "BLOCKED · 대기 상태에서만 이전 스냅샷을 다시 검사합니다.";
+                    int before = snapshots.pendingCount();
+                    for (var player : plugin.getServer().getOnlinePlayers()) if (snapshots.pending(player.getUniqueId())) recover(player);
+                    yield "이전 상태 복원 · 대기 " + before + " → " + snapshots.pendingCount();
                 }
-                yield analytics.summary();
-            }
+                default -> "/aw admin recover <history|stats|snapshots>";
+            };
             case "dashboard" -> {
                 var online = roster(settings.autoJoin());
                 var world = plugin.getServer().getWorld(plugin.getConfig().getString("arena.world","world"));
@@ -456,6 +466,14 @@ public final class PaperMatchService implements Listener {
                         (labLoaded ? "PASS · 격리 실험 월드 로드" : "WARN · 실험 월드 미설정 또는 미로드") + " · /aw admin test check",
                         "리소스팩 · /aw admin art validate",art.diagnostics(false),
                         "통계 저장 " + analytics.status() + " · /aw admin stats",
+                        "경기 결과 " + archive.status() + " · /aw admin recover history",
+                        "경기 스냅샷 최근 ms " + String.format(java.util.Locale.ROOT,"%.2f",archiveSnapshotNanos/1e6),
+                        "이전 상태 복원 대기 " + snapshots.pendingCount() + " · 재접속 시 재확인",
+                        "경기장 · " + (preparation != null ? "CHECKING · 준비 중" : arena != null ? "PASS · 참가자 배치 완료"
+                                : "NOT_RUN · 운영 월드 로드 여부와 별개") + " · /aw admin arena check",
+                        "보급 복구 · " + supply.recoveryStatus(),
+                        "전투 저널 · " + feedback.metrics(),
+                        "HUD · " + hud.metrics(),
                         "설정 검사 · /aw admin config check",
                         "연출 · " + art.metrics(),
                         "최근 평균 틱 " + String.format(java.util.Locale.ROOT,"%.2fms",org.bukkit.Bukkit.getAverageTickTime()));
@@ -464,6 +482,50 @@ public final class PaperMatchService implements Listener {
             }
             default -> "지원하지 않는 운영 명령입니다.";
         };
+    }
+
+    private String statistics(CommandSender sender,String[] args) {
+        if (args.length == 1 && args[0].equals("export")) return analytics.export();
+        if (args.length == 0) {
+            var summary = analytics.summary();
+            if (sender instanceof Player player) ArtGallery.read(player,art,PaperArt.Screen.ADMIN,"증강 통계",List.of(summary.split("\n")));
+            return summary;
+        }
+        try {
+            final java.util.function.Supplier<List<String>> report;
+            if (args.length >= 2 && args[0].equals("augment")
+                    && (augments.registeredIds().contains(args[1]) || Set.of("unclassified","life_echo","stacking").contains(args[1])
+                        || io.github.augmentwild.augment.AugmentCombinations.UNIQUE.containsKey(args[1]))) {
+                String id = args[1];
+                var filter = AugmentHistory.Filter.parse(args,2);
+                report = () -> analytics.report(id,filter);
+            } else if (args.length >= 3 && args[0].equals("group")) {
+                var filter = AugmentHistory.Filter.parse(args,3);
+                List<String> ids = switch (args[1]) {
+                    case "rarity" -> augments.registeredIds(args[2]);
+                    case "family" -> augments.registeredIds().stream().filter(id -> art.family(id).equals(args[2])).toList();
+                    default -> List.of();
+                };
+                if (ids.isEmpty()) return "조회할 희귀도 또는 계열을 확인하세요.";
+                report = () -> analytics.group(ids,filter);
+            } else return analytics.summary();
+            var scheduler = plugin.getServer().getScheduler();
+            return analytics.async(() -> {
+                List<String> data = report.get();
+                try {
+                    scheduler.runTask(plugin,() -> {
+                        if (!sender.hasPermission("augmentwild.admin")) return;
+                        if (sender instanceof Player player) {
+                            if (player.isOnline()) ArtGallery.read(player,art,PaperArt.Screen.ADMIN,"증강 통계",data);
+                        } else sender.sendMessage(String.join("\n",data));
+                    });
+                } catch (org.bukkit.plugin.IllegalPluginAccessException stopping) {
+                    // A report can complete after plugin disable.
+                }
+            }) ? "통계를 조회합니다." : analytics.status();
+        } catch (IllegalArgumentException invalid) {
+            return "조회 조건이 올바르지 않습니다. " + analytics.summary();
+        }
     }
 
     public String labCommand(CommandSender sender, String[] args) {
@@ -733,6 +795,7 @@ public final class PaperMatchService implements Listener {
         // Start timing only after the placement and history write have succeeded.
         long started = System.nanoTime();
         matchStarted = started;
+        startedAt = java.time.Instant.now();
         if (labWorld != null) {
             notice("관리자 전투 실험 경기입니다. 결과는 실험실에서만 사용됩니다.");
             plugin.getLogger().info("Combat lab started match=" + session.matchId());
@@ -749,6 +812,7 @@ public final class PaperMatchService implements Listener {
         displayFailures.clear();
         telemetry.start(players);
         intel.start(session.matchId());
+        hud.startJournal(session.matchId(),clock::elapsedNanos);
         sender.sendMessage("경기가 시작됐습니다. 파밍 중 PvP 허용, 목숨 무제한.");
         for (UUID id : players) {
             Player player = available(id);
@@ -794,6 +858,7 @@ public final class PaperMatchService implements Listener {
         clearMatch();
         intel.shutdown();
         analytics.close();
+        archive.close();
     }
 
     private void clearMatch() {
@@ -826,7 +891,8 @@ public final class PaperMatchService implements Listener {
             if (session.state() == MatchState.ENDING) session.transition(MatchState.CLEANUP);
             if (played) {
                 if (!soloLab && labWorld == null && entrants.size() >= 2 && result.outcome() != GameSession.Outcome.CANCELLED)
-                    analytics.append(session.matchId(),entrants.size(),telemetry.augments().snapshot(result.winner()));
+                    analytics.append(session.matchId(),entrants.size(),telemetry.augments().snapshot(result.winner()),AugmentHistory.CURRENT);
+                archiveResult(result);
                 Player victor = result.winner() == null ? null : plugin.getServer().getPlayer(result.winner());
                 if (victor != null) killEffect(victor,"최종 우승",org.bukkit.Sound.UI_TOAST_CHALLENGE_COMPLETE,org.bukkit.Particle.END_ROD);
                 for (UUID id : entrants) {
@@ -869,6 +935,7 @@ public final class PaperMatchService implements Listener {
         feedback.clear();
         entrants.clear();
         departureStats.clear();
+        departed.clear();
         creditedKillers.clear();
         outAt.clear();
         causes.clear();
@@ -921,6 +988,7 @@ public final class PaperMatchService implements Listener {
                 feedback.finishSamples();
                 outAt.putIfAbsent(id,clock.elapsedNanos());
                 departureStats.put(id,resultLines(id));
+                departed.put(id,archivePlayer(id,0));
                 art.forget(id);
                 displays.detach(id);
                 overhead.detach(id);
@@ -945,7 +1013,7 @@ public final class PaperMatchService implements Listener {
                 telemetry.death(id,killer);
                 fallen.add(id);
                 boolean eliminated = session.player(id).life().status() == LifeState.Status.ELIMINATED;
-                intel.finalizeDeath(id,eliminated);
+                intel.finalizeDeath(id,eliminated,clock.elapsedSeconds() < settings.rules().pvpStartSeconds());
                 if (eliminated) outAt.putIfAbsent(id,clock.elapsedNanos());
                 String message = io.github.augmentwild.domain.CombatView.feed(causes.get(id),eliminated);
                 if (killer != null && !killer.equals(id)) {
@@ -1085,6 +1153,124 @@ public final class PaperMatchService implements Listener {
                         java.time.Duration.ofMillis(750),java.time.Duration.ofMillis(200))));
         if (PlayerUi.enabled(p,PlayerUi.Option.SOUND)) p.playSound(p.getLocation(),sound,.45f,1.3f);
         if (PlayerUi.enabled(p,PlayerUi.Option.PARTICLES)) p.spawnParticle(particle,p.getEyeLocation().add(0,.25,0),4);
+    }
+
+    private static String rulesFingerprint(JavaPlugin plugin,PaperMatchSettings settings) {
+        try {
+            var hash = java.security.MessageDigest.getInstance("SHA-256");
+            hash.update(settings.rules().toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            for (String key : List.of("augments.yml","official-augments.yml","synergies.yml","resonance.yml")) {
+                var file = plugin.getDataFolder().toPath().resolve(key);
+                if (java.nio.file.Files.isRegularFile(file)) hash.update(java.nio.file.Files.readAllBytes(file));
+                else try (var resource = plugin.getResource(key)) {
+                    if (resource != null) hash.update(resource.readAllBytes());
+                }
+            }
+            return java.util.HexFormat.of().formatHex(hash.digest());
+        } catch (java.io.IOException | java.security.NoSuchAlgorithmException failure) {
+            plugin.getLogger().log(Level.WARNING,"경기 규칙 지문을 읽을 수 없습니다.",failure);
+            return "UNCLASSIFIED";
+        }
+    }
+
+    private int rank(UUID id) {
+        Long finished = outAt.get(id);
+        return finished == null ? 1 : 1 + (int)entrants.stream()
+                .filter(other -> outAt.getOrDefault(other,Long.MAX_VALUE) > finished).count();
+    }
+
+    private MatchArchive.PlayerResult archivePlayer(UUID id,int rank) {
+        var left = departed.get(id);
+        if (left != null) return new MatchArchive.PlayerResult(id,rank,left.kills(),left.deaths(),left.lives(),
+                left.survival(),left.dealt(),left.received(),left.healed(),left.shield(),left.level(),left.levelCurrent(),
+                left.casts(),left.supplies(),left.augments(),left.attained());
+        var player = plugin.getServer().getPlayer(id);
+        return new MatchArchive.PlayerResult(id,rank,telemetry.kills(id),telemetry.deaths(id),
+                session.participantIds().contains(id) ? session.player(id).life().lives() : -1,
+                outAt.getOrDefault(id,clock.elapsedNanos()) / 1_000_000_000L,
+                feedback.dealt(id),feedback.received(id),hud.healed(id),feedback.shielded(id),
+                player == null ? augments.lastKnownLevel(id) : player.getLevel(),player != null,
+                augments.skillUses(id),telemetry.supplyClaims(id),augments.ownedIds(id),
+                java.util.stream.Stream.concat(telemetry.attained(id).stream(),
+                        augments.ownedNames(id).stream().map(name -> "획득 · " + name)).toList());
+    }
+
+    private void archiveResult(GameSession.Result result) {
+        long begin = System.nanoTime();
+        try {
+            var rows = new LinkedHashMap<UUID,MatchArchive.PlayerResult>();
+            for (UUID id : entrants) rows.put(id,archivePlayer(id,result.outcome() == GameSession.Outcome.CANCELLED ? 0 : rank(id)));
+            var outcome = switch (result.outcome()) {
+                case WINNER -> MatchArchive.Outcome.WIN;
+                case DRAW -> MatchArchive.Outcome.DRAW;
+                case CANCELLED, IN_PROGRESS -> MatchArchive.Outcome.CANCELLED;
+            };
+            var mode = soloLab ? MatchArchive.Mode.PRACTICE : labWorld != null ? MatchArchive.Mode.LAB : MatchArchive.Mode.NORMAL;
+            supply.snapshotAvailability();
+            var end = java.time.Instant.now();
+            archive.append(new MatchArchive.Result(session.matchId(),plugin.getPluginMeta().getVersion(),rulesFingerprint,
+                    end.isBefore(startedAt) ? end : startedAt,end,mode,outcome,result.winner(),clock.elapsedSeconds(),rows,
+                    telemetry.supplyEvents()));
+        } catch (RuntimeException failure) {
+            plugin.getLogger().log(Level.WARNING,"경기 결과 스냅샷 실패 " + session.matchId(),failure);
+        } finally { archiveSnapshotNanos = System.nanoTime()-begin; }
+    }
+
+    public String history(Player player,String[] args) {
+        if (args.length == 0) {
+            historyPage(player,0);
+            return "나의 경기 기록";
+        }
+        if (args.length == 1 && args[0].equalsIgnoreCase("last")) {
+            var last = archive.list(player.getUniqueId(),0,1);
+            return last.isEmpty() ? "저장된 기록 없음 · " + archive.status() : historyLookup(player,last.getFirst().id().toString(),false);
+        }
+        return args.length == 1 ? historyLookup(player,args[0],false) : "/aw history [last|match-id]";
+    }
+
+    private void historyPage(Player player,int page) {
+        var data = archive.list(player.getUniqueId(),page,9);
+        var lines = data.stream().map(e -> e.ended() + " · " + e.mode() + " · " + e.outcome() + " · "
+                + e.players() + "인 · 순위 " + (e.rank() == 0 ? "-" : e.rank())).toList();
+        ArtGallery.history(player,art,lines,data.stream().map(e -> (Runnable)() -> historyLookup(player,e.id().toString(),false)).toList(),
+                page > 0 ? () -> historyPage(player,page-1) : null,
+                archive.list(player.getUniqueId(),page+1,9).isEmpty() ? null : () -> historyPage(player,page+1));
+    }
+
+    private String historyLookup(CommandSender sender,String key,boolean admin) {
+        if (!key.matches("(?i)[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}")) return "올바른 경기 UUID를 입력하세요.";
+        UUID viewer = sender instanceof Player p ? p.getUniqueId() : null;
+        var scheduler = plugin.getServer().getScheduler();
+        return archive.lookup(UUID.fromString(key),viewer,admin,result -> {
+            try {
+                scheduler.runTask(plugin,() -> {
+                    if (sender instanceof Player p && !p.isOnline() || admin && !sender.hasPermission("augmentwild.admin")) return;
+                    if (result == null) { sender.sendMessage("조회 가능한 경기 기록이 없습니다."); return; }
+                    var header = new java.util.ArrayList<>(List.of("경기 " + result.id(),result.started() + " ~ " + result.ended(),
+                            result.mode() + " · " + result.outcome() + " · " + result.players().size() + "인 · " + result.elapsed() + "초",
+                            "우승자 · " + (result.winner() == null ? "-" : result.winner()),"규칙 지문 · " + result.rules()));
+                    if (admin) {
+                        header.add("보급 사건 · " + result.supplyEvents());
+                        result.players().values().stream().sorted(java.util.Comparator.comparingInt(MatchArchive.PlayerResult::rank))
+                                .forEach(row -> header.add(row.id() + " · 순위 " + row.rank() + " · 처치 " + row.kills() + " · 사망 " + row.deaths()));
+                    } else {
+                        var row = result.players().get(viewer);
+                        header.add("순위 " + (row.rank() == 0 ? "-" : row.rank()) + " · 처치 " + row.kills() + " · 사망 " + row.deaths());
+                        header.add("생존 " + row.survival() + "초 · 목숨 " + (row.lives() < 0 ? "미확인" : row.lives()));
+                        header.add(String.format(java.util.Locale.ROOT,"확인 HP · 가한 %.1f · 받은 %.1f · 회복 %.1f · 보호막 %.1f",
+                                row.dealt(),row.received(),row.healed(),row.shield()));
+                        header.add((row.levelCurrent() ? "최종 레벨 " : "마지막 확인 레벨 ") + row.level()
+                                + " · 스킬 " + row.casts() + " · 보급 " + row.supplies());
+                        header.add("최종 증강 · " + String.join(", ",row.augments()));
+                        header.addAll(row.attained());
+                    }
+                    if (sender instanceof Player p) ArtGallery.read(p,art,PaperArt.Screen.JOURNAL,"경기 기록 상세",header);
+                    else sender.sendMessage(String.join("\n",header));
+                });
+            } catch (org.bukkit.plugin.IllegalPluginAccessException stopping) {
+                // The server stopped between disk read and callback. Files are already safe.
+            }
+        }) ? "경기 기록을 조회합니다." : archive.status();
     }
 
     private List<String> resultLines(UUID id) {
@@ -1267,6 +1453,10 @@ public final class PaperMatchService implements Listener {
             awaitingNativeRespawn.add(id);
             supply.disconnect(id);
             intel.death(event.getEntity(), event.getDamageSource());
+            var journalKiller = creditedKillers.get(id);
+            var damage = event.getDamageSource().getDamageType().getKey().toString();
+            hud.record(event.getEntity(),hud.event(journalKiller,id,null,io.github.augmentwild.domain.CombatEvent.Kind.DEATH,damage,
+                    null,null,null,Double.NaN,Double.NaN,0,0,0,0,false,true,false,false,false),"사망 · " + damage);
         }
     }
 

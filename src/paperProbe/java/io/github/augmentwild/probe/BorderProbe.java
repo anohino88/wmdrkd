@@ -58,6 +58,7 @@ public final class BorderProbe extends JavaPlugin implements Listener {
                 var player = getServer().getPlayerExact(args[1]);
                 if (player == null) return false;
                 switch (args[0]) {
+                    case "history" -> getServer().getScheduler().runTask(this,() -> InterfaceProbe.history(this,player));
                     case "lobby" -> getServer().getScheduler().runTask(this,() -> InterfaceProbe.lobby(this,player));
                     case "selection" -> getServer().getScheduler().runTask(this,() -> InterfaceProbe.selection(this,player));
                     case "reconnect" -> getServer().getScheduler().runTask(this,() -> InterfaceProbe.reconnected(this,player));

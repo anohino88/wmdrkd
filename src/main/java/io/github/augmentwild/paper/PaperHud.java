@@ -1,6 +1,7 @@
 package io.github.augmentwild.paper;
 
 import io.github.augmentwild.domain.HudMessages;
+import io.github.augmentwild.domain.CombatEvent;
 import io.github.augmentwild.domain.HudMessages.Layer;
 import io.github.augmentwild.domain.HudMessages.Kind;
 import java.util.HashMap;
@@ -37,6 +38,29 @@ final class PaperHud {
     private final java.util.Set<UUID> low = new java.util.HashSet<>();
     private static final java.time.format.DateTimeFormatter UTC = java.time.format.DateTimeFormatter
             .ofPattern("HH:mm:ss").withZone(java.time.ZoneOffset.UTC);
+
+    private UUID match;
+    private long sequence;
+    private java.util.function.LongSupplier elapsed = () -> 0L;
+
+    void startJournal(UUID match,java.util.function.LongSupplier elapsed) {
+        this.match = match;
+        this.elapsed = elapsed;
+        sequence = 0;
+    }
+
+    CombatEvent event(UUID actor,UUID target,String source,CombatEvent.Kind kind,String cause,String augment,String skill,
+                      UUID root,double original,double finalDamage,double hp,double absorption,double shield,double gain,
+                      boolean cancelled,boolean death,boolean critical,boolean blocked,boolean unknown) {
+        return new CombatEvent(++sequence,match,java.time.Instant.now(),elapsed.getAsLong(),actor,target,source,kind,cause,
+                augment,skill,root,original,finalDamage,hp,absorption,shield,gain,cancelled,death,critical,blocked,unknown);
+    }
+
+    java.util.List<CombatEvent> events(UUID id) { return history.events(id); }
+
+    void record(Player p,CombatEvent event,String text) {
+        history.record(p.getUniqueId(),event,UTC.format(event.occurred()) + "  " + text);
+    }
 
     void record(Player p, String text) {
         history.record(p.getUniqueId(),UTC.format(java.time.Instant.now()) + "  " + text);
@@ -157,13 +181,21 @@ final class PaperHud {
     }
 
     void rescued(Player p,String name) {
+        UUID id = p.getUniqueId();
+        record(p,event(null,id,null,CombatEvent.Kind.RESCUE,"DEATH_PREVENTED",null,null,null,
+                Double.NaN,Double.NaN,0,0,0,0,false,false,false,false,false),"치명 피해 방지 · " + name);
         players.computeIfAbsent(p.getUniqueId(),ignored -> new View(queueMetrics)).layers.until(Layer.RESCUE,Component.text("치명 피해 방지 · " + name),System.nanoTime()+1_200_000_000L);
     }
-    void heal(Player player, double before, double after) {
+    void heal(Player player,double before,double after) {
+        heal(player,before,after,"UNCLASSIFIED",null,Double.NaN);
+    }
+    void heal(Player player,double before,double after,String cause,String augment,double attempted) {
         if (after <= before) return;
         healing.merge(player.getUniqueId(),after-before,Double::sum);
         String message = String.format(java.util.Locale.ROOT,"회복 +%.1f HP",after-before);
-        record(player,message);
+        UUID id = player.getUniqueId();
+        record(player,event(null,id,null,CombatEvent.Kind.HEAL,cause,augment,null,null,
+                attempted,Double.NaN,0,0,0,after-before,false,false,false,false,false),message + " · " + cause);
         damage(player,message);
     }
     void damage(Player p, String text) {
@@ -173,7 +205,9 @@ final class PaperHud {
     }
 
     void activated(Player player,String id,String name,boolean activeCast) {
-        record(player,"발동 · " + name);
+        UUID owner = player.getUniqueId();
+        record(player,event(owner,owner,null,CombatEvent.Kind.PROC,"PROC",id,activeCast ? id : null,null,
+                Double.NaN,Double.NaN,0,0,0,0,false,false,false,false,false),"발동 · " + name);
         if (!activeCast && PlayerUi.enabled(player,PlayerUi.Option.PROC))
             notification(player,Kind.PROC,id,"증강 발동 · " + name);
     }

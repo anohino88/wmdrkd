@@ -114,6 +114,30 @@ with log.open("wb") as output:
                 command("stop")
                 if server.wait(timeout=45) != 0:
                     raise RuntimeError("Paper exited with an error")
+                restart_log = pathlib.Path("archive-restart.log")
+                with restart_log.open("wb") as restarted_output:
+                    with subprocess.Popen(server.args,stdin=subprocess.PIPE,stdout=restarted_output,
+                                          stderr=subprocess.STDOUT) as restarted:
+                        def restart_command(text):
+                            restarted.stdin.write((text + "\n").encode())
+                            restarted.stdin.flush()
+                        try:
+                            deadline = time.monotonic() + 120
+                            while "Done (" not in restart_log.read_text(errors="replace"):
+                                if restarted.poll() is not None or time.monotonic() >= deadline:
+                                    raise RuntimeError("Archive fixture server failed to restart")
+                                time.sleep(1)
+                            driver["verify_archive"](restart_command,restart_log)
+                        finally:
+                            if restarted.poll() is None:
+                                restart_command("stop")
+                                try:
+                                    restarted.wait(timeout=45)
+                                except subprocess.TimeoutExpired:
+                                    restarted.kill()
+                                    restarted.wait()
+                        if restarted.returncode != 0:
+                            raise RuntimeError("Archive fixture server failed to shut down")
                 sys.exit(0)
             command("aw status")
             wait_for('경기 단계 WAITING', 15)

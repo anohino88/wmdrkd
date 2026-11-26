@@ -11,7 +11,7 @@ import java.util.UUID;
 /** Mutable on the match thread. Snapshots contain aggregate rows and no player identifiers. */
 public final class AugmentTelemetry {
     public enum Metric { OFFERED, PICKED, AUTO_PICKED, REROLLED, OWNED, WON, PROC, CAST_OK, CAST_FAILED,
-        HP_DAMAGE, HEALED, SHIELDED, EVOLVED, EVOLUTION_SECONDS, SYNERGY }
+        HP_DAMAGE, HEALED, SHIELDED, EVOLVED, EVOLUTION_SECONDS, SYNERGY, EVOLUTION_ELIGIBLE, RESONANCE }
 
     public record Snapshot(Map<String,Map<Metric,Double>> rows, Map<String,Long> offersByRound) {
         public Snapshot {
@@ -40,9 +40,15 @@ public final class AugmentTelemetry {
         offers.merge(id + "/" + rarity + "/" + round,1L,Long::sum);
     }
 
+    public void pickRound(UUID player,String id,String rarity,int round) {
+        if (members.contains(player)) offers.merge("pick/"+id+"/"+rarity+"/"+round,1L,Long::sum);
+    }
+
     public void own(UUID player,String id) {
-        if (members.contains(player) && owners.computeIfAbsent(id,ignored -> new HashSet<>()).add(player))
+        if (members.contains(player) && owners.computeIfAbsent(id,ignored -> new HashSet<>()).add(player)) {
             add(player,id,Metric.OWNED,1);
+            if (io.github.augmentwild.augment.AugmentEvolution.of(id) != null) add(player,id,Metric.EVOLUTION_ELIGIBLE,1);
+        }
     }
 
     public void add(UUID player,String id,Metric metric,double amount) {
