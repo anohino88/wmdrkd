@@ -255,6 +255,32 @@ def exercise(command, log):
             client.close()
 
 
+def configure_archive_fixture(server_root):
+    """Use accelerated rules only in the second boot of the disposable CI world."""
+    folder = server_root / "plugins/AugmentWild"
+    config = folder / "config.yml"
+    original = config.read_text()
+    game = """game:
+  gathering-seconds: 12
+  selection-interval-seconds: 12
+  selection-duration-seconds: 1
+  pvp-grace-seconds: 2
+"""
+    assert original.count("game:\n") == 1
+    config.write_text(original.replace("game:\n", game, 1) + """combat:
+  lives: 1
+supply:
+  announce-seconds: 2
+  coordinates-seconds: 1
+  windows:
+    first-normal: {min-seconds: 3, max-seconds: 3}
+    second-normal: {min-seconds: 6, max-seconds: 6}
+    premium: {min-seconds: 9, max-seconds: 9}
+""")
+    # Reuse the one eligible test rectangle for the new two-client match.
+    (folder / "used-regions.yml").unlink(missing_ok=True)
+
+
 def verify_archive(command, log):
     def wait(marker, timeout=25):
         deadline = time.monotonic() + timeout
@@ -275,12 +301,48 @@ def verify_archive(command, log):
         raise AssertionError("Practice or stopped matches polluted production analytics")
     command(f"aw admin history {saves[0].stem}")
     wait("규칙 지문")
-    client = Client(0)
+    clients = []
     try:
-        if not client.ready.wait(25) or client.failure:
-            raise RuntimeError(f"Archive client did not reconnect: {client.failure}")
-        wait("AW00 joined the game")
+        for number in (0, 1):
+            client = Client(number)
+            clients.append(client)
+            if not client.ready.wait(25) or client.failure:
+                raise RuntimeError(f"Archive client did not reconnect: {client.failure}")
+            wait(f"AW{number:02d} joined the game")
         command("aw821probe history AW00")
         wait("AW_MATCH_ARCHIVE_RESTART_PASS")
+
+        command("aw admin start")
+        wait("경기가 시작됐습니다",90)
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            command("aw status")
+            if "경기 단계 PVP" in log.read_text(errors="replace"):
+                break
+            time.sleep(.3)
+        else:
+            raise AssertionError("Accelerated fixture did not reach PvP")
+        command("damage AW01 4 minecraft:generic")
+        wait("Applied 4.0 damage to AW01")
+        command("kill AW01")
+        wait("ended with WINNER")
+
+        deadline = time.monotonic() + 20
+        completed = None
+        while time.monotonic() < deadline:
+            new = set((folders / "match-history").glob("*.tsv")) - set(saves)
+            if len(new) == 1 and (folders / "analytics" / next(iter(new)).name).is_file():
+                completed = next(iter(new))
+                break
+            time.sleep(.1)
+        if completed is None:
+            raise AssertionError("Normal winner result and analytics were not both committed")
+        rows = [row.split("\t") for row in completed.read_text().splitlines()]
+        participants = [row for row in rows[1:] if row[0] == "p"]
+        assert rows[0][6:8] == ["NORMAL", "WIN"] and len(participants) == 2
+        assert sorted(int(row[2]) for row in participants) == [1, 2]
+        assert any(int(row[4]) == 1 and float(row[8]) >= 4 for row in participants)
+        print("AW_MATCH_ARCHIVE_NORMAL_PASS stored_winner=true ranks=true actual_damage=true production_analytics=true", flush=True)
     finally:
-        client.close()
+        for client in clients:
+            client.close()

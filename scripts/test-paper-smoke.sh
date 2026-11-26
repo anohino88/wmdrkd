@@ -114,6 +114,7 @@ with log.open("wb") as output:
                 command("stop")
                 if server.wait(timeout=45) != 0:
                     raise RuntimeError("Paper exited with an error")
+                driver["configure_archive_fixture"](pathlib.Path.cwd())
                 restart_log = pathlib.Path("archive-restart.log")
                 with restart_log.open("wb") as restarted_output:
                     with subprocess.Popen(server.args,stdin=subprocess.PIPE,stdout=restarted_output,
